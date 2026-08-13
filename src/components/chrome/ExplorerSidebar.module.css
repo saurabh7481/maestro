@@ -18,6 +18,16 @@
   font-weight: var(--font-weight-regular);
 }
 
+.scmError {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: rgba(224, 108, 117, 0.12);
+  color: var(--red);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
 .scmActions {
   display: flex;
   gap: var(--space-5);

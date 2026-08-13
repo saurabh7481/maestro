@@ -10,6 +10,8 @@ vi.mock("@tauri-apps/api/window", () => ({
     minimize: vi.fn().mockResolvedValue(undefined),
     toggleMaximize: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    onCloseRequested: vi.fn().mockResolvedValue(() => {}),
   }),
 }));
 
@@ -19,3 +21,11 @@ vi.mock("@tauri-apps/plugin-store", () => ({
     set: vi.fn().mockResolvedValue(undefined),
   }),
 }));
+
+// jsdom doesn't implement the (deprecated but still-checked) execCommand
+// clipboard APIs Monaco probes at module-load time — polyfill so importing
+// anything that pulls in `monaco-editor` doesn't throw before a single test
+// even runs.
+if (typeof document.queryCommandSupported !== "function") {
+  document.queryCommandSupported = () => false;
+}

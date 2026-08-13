@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { DiffMode } from "../types/git";
 
 export type TabType = "agent" | "file" | "markdown" | "diff" | "terminal";
 
@@ -6,6 +7,37 @@ export interface Tab {
   id: string;
   type: TabType;
   title: string;
+  /** File/markdown tabs only. `id` is derived as `${worktreeId}:${filePath}`
+   * for these, so opening the same file twice reuses the tab via
+   * `ensureTab`'s existing dedup-by-`id` logic. */
+  filePath?: string;
+  worktreeRoot?: string;
+  /** Diff tabs only — which side of the working tree (or a specific
+   * commit) this diff shows. Combined with `filePath`/`commitHash` in
+   * `diffTabId()` so the same file can have distinct open tabs per mode. */
+  diffMode?: DiffMode;
+  /** Diff tabs in `commit` mode only. */
+  commitHash?: string;
+}
+
+export function fileTabId(worktreeId: string, relPath: string): string {
+  return `${worktreeId}:${relPath}`;
+}
+
+/** A diff tab's id is derived, same dedup-by-`id` reasoning as
+ * `fileTabId` — the same file can legitimately have separate open tabs
+ * for its unstaged diff, its staged diff, and any number of past-commit
+ * diffs, so `mode`/`commitHash` are part of the identity, not just
+ * display state. */
+export function diffTabId(
+  worktreeId: string,
+  relPath: string,
+  mode: DiffMode,
+  commitHash?: string,
+): string {
+  return mode === "commit"
+    ? `diff:${worktreeId}:${commitHash}:${relPath}`
+    : `diff:${worktreeId}:${mode}:${relPath}`;
 }
 
 interface TabsState {
@@ -18,12 +50,14 @@ interface TabsState {
   ensureTab: (tab: Tab) => void;
 }
 
-// Placeholder content matching docs/design/Maestro IDE.dc.html — swapped
-// for real project/session data starting in Phase 2+.
+// Placeholder content matching docs/design/Maestro IDE.dc.html, trimmed to
+// only the tab types still awaiting their real implementation (agent:
+// Phase 5, diff: Phase 4, terminal: Phase 7). "file"/"markdown" mock tabs
+// were dropped in Phase 3 — those types now expect a real `filePath`/
+// `worktreeRoot` (opened from the file tree), which fake placeholder tabs
+// don't have.
 const initialTabs: Tab[] = [
   { id: "a1", type: "agent", title: "Claude Code" },
-  { id: "f1", type: "file", title: "payment.service.ts" },
-  { id: "m1", type: "markdown", title: "README.md" },
   { id: "d1", type: "diff", title: "auth.controller.ts" },
   { id: "t1", type: "terminal", title: "zsh — payments" },
 ];

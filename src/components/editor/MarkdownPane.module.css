@@ -1,0 +1,112 @@
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+}
+
+.toggle {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-3);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+
+.pill {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+  font-size: 0.71875rem;
+  color: var(--text-mute);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+.pill[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.previewScroller {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 2.25rem 0;
+}
+
+.previewBody {
+  max-width: 45rem;
+  margin: 0 auto;
+  padding: 0 2rem;
+  line-height: var(--leading-relaxed);
+  color: var(--text-dim);
+}
+.previewBody h1,
+.previewBody h2 {
+  color: var(--text);
+  border-bottom: var(--border-width) solid var(--border);
+  padding-bottom: var(--space-4);
+}
+.previewBody h1 {
+  font-size: 1.875rem;
+  margin: 0 0 var(--space-4);
+}
+.previewBody h2 {
+  font-size: 1.3125rem;
+  margin: 1.875rem 0 var(--space-5);
+}
+.previewBody h3 {
+  font-size: 1.0625rem;
+  color: var(--text);
+  margin: 1.5rem 0 var(--space-4);
+}
+.previewBody p {
+  margin: var(--space-6) 0;
+}
+.previewBody code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--bg-2);
+  padding: 1px var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--orange);
+}
+.previewBody pre {
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  overflow-x: auto;
+}
+.previewBody pre code {
+  background: none;
+  padding: 0;
+  color: var(--text-dim);
+}
+.previewBody ul,
+.previewBody ol {
+  margin: var(--space-5) 0;
+  padding-left: 1.375rem;
+  line-height: 2;
+}
+.previewBody blockquote {
+  margin: var(--space-6) 0;
+  padding: 2px var(--space-6);
+  border-left: 3px solid var(--accent);
+  color: var(--text-mute);
+}
+.previewBody a {
+  color: var(--accent-2);
+}

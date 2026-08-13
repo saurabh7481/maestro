@@ -1,5 +1,7 @@
 import { X } from "@phosphor-icons/react";
 import { useTabsStore } from "../../state/tabsStore";
+import { useOpenFilesStore } from "../../state/openFilesStore";
+import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { TAB_VISUALS } from "../../design/tabVisuals";
 import { NewTabMenu } from "./NewTabMenu";
 import styles from "./TabStrip.module.css";
@@ -9,6 +11,16 @@ export function TabStrip() {
   const activeTabId = useTabsStore((s) => s.activeTabId);
   const setActiveTab = useTabsStore((s) => s.setActiveTab);
   const closeTab = useTabsStore((s) => s.closeTab);
+  const dirtyByTabId = useOpenFilesStore((s) => s.byTabId);
+  const requestClose = useCloseConfirmStore((s) => s.request);
+
+  function handleClose(tabId: string) {
+    if (dirtyByTabId[tabId]?.dirty) {
+      requestClose([tabId], "close-tab");
+    } else {
+      closeTab(tabId);
+    }
+  }
 
   return (
     <div className={styles.strip}>
@@ -17,6 +29,7 @@ export function TabStrip() {
           const visual = TAB_VISUALS[tab.type];
           const TabIcon = visual.icon;
           const isActive = tab.id === activeTabId;
+          const isDirty = dirtyByTabId[tab.id]?.dirty ?? false;
           return (
             <div
               key={tab.id}
@@ -30,13 +43,14 @@ export function TabStrip() {
               <span className={styles.tabIndicator} />
               <TabIcon size={16} color={visual.color} />
               <span className={styles.tabTitle}>{tab.title}</span>
+              {isDirty && <span className={styles.dirtyDot} aria-label="Unsaved changes" />}
               <button
                 type="button"
                 className={styles.tabClose}
                 aria-label={`Close ${tab.title}`}
                 onClick={(event) => {
                   event.stopPropagation();
-                  closeTab(tab.id);
+                  handleClose(tab.id);
                 }}
               >
                 <X size={12} />

@@ -1,0 +1,23 @@
+.banner {
+  position: absolute;
+  top: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border-2);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  animation: mo-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+}

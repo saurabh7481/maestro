@@ -1,0 +1,116 @@
+.wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.filename {
+  color: var(--text);
+}
+
+.dir {
+  color: var(--text-mute);
+}
+
+.added {
+  color: var(--green);
+}
+
+.removed {
+  color: var(--red);
+}
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  border: var(--border-width) solid var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+.actionBtn:hover {
+  background: var(--hover);
+}
+.actionBtn[data-variant="primary"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0c11;
+  font-weight: var(--font-weight-semibold);
+}
+
+.readOnlyBadge {
+  color: var(--text-mute);
+  font-size: var(--text-2xs);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 1px var(--space-4);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.centered {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+  font-size: var(--text-sm);
+}
+
+.binaryPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--text-dim);
+}
+
+.binarySizes {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-mute);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.errorPanel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: var(--space-6);
+}

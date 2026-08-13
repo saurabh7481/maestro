@@ -1,8 +1,10 @@
 mod commands;
 mod db;
+mod fs_ops;
 mod git;
 mod models;
 mod state;
+mod watcher;
 
 use state::AppState;
 use std::collections::HashMap;
@@ -33,6 +35,7 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(conn),
                 hook_cancel_senders: Mutex::new(HashMap::new()),
+                watchers: Mutex::new(HashMap::new()),
             });
             Ok(())
         })
@@ -50,6 +53,28 @@ pub fn run() {
             commands::hooks::set_hook_config,
             commands::hooks::run_worktree_hook,
             commands::hooks::cancel_worktree_hook,
+            commands::files::list_dir,
+            commands::files::read_file,
+            commands::files::write_file,
+            commands::files::create_entry,
+            commands::files::rename_entry,
+            commands::files::delete_entry,
+            commands::files::get_status_map,
+            commands::git::get_working_status,
+            commands::git::stage_paths,
+            commands::git::stage_all,
+            commands::git::unstage_paths,
+            commands::git::unstage_all,
+            commands::git::discard_change,
+            commands::git::commit_changes,
+            commands::git::push_changes,
+            commands::git::pull_changes,
+            commands::git::fetch_remote,
+            commands::git::get_diff_content,
+            commands::git::get_commit_log,
+            commands::git::get_commit_files,
+            watcher::start_worktree_watcher,
+            watcher::stop_worktree_watcher,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

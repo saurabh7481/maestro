@@ -8,21 +8,27 @@
 }
 
 .content {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
 }
 
 .placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-6);
   text-align: center;
-  max-width: 24rem;
   animation: mo-fade-in var(--duration-slow) var(--ease-out);
+}
+
+.placeholder > * {
+  max-width: 24rem;
 }
 
 .placeholderIcon {
@@ -49,9 +55,22 @@
 }
 
 .empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-4);
   color: var(--text-mute);
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+  font-size: var(--text-sm);
 }

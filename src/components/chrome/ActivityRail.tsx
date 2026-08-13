@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useUiStore, type SidebarView } from "../../state/uiStore";
+import { useScmStore } from "../../state/scmStore";
 import { IconButton } from "../primitives";
 import styles from "./ActivityRail.module.css";
 
@@ -19,19 +20,25 @@ interface RailItem {
   badge?: number;
 }
 
-const RAIL_ITEMS: RailItem[] = [
-  { id: "explorer", icon: Files, label: "Explorer" },
-  { id: "scm", icon: GitBranch, label: "Source Control", badge: 4 },
-  { id: "history", icon: ClockCounterClockwise, label: "History" },
-  { id: "search", icon: MagnifyingGlass, label: "Search" },
-];
-
 export function ActivityRail() {
   const sidebarView = useUiStore((s) => s.sidebarView);
   const setSidebarView = useUiStore((s) => s.setSidebarView);
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const toggleRightSidebar = useUiStore((s) => s.toggleRightSidebar);
   const openSettings = useUiStore((s) => s.openSettings);
+  const changedFileCount = useScmStore((s) => s.status?.entries.length ?? 0);
+
+  const RAIL_ITEMS: RailItem[] = [
+    { id: "explorer", icon: Files, label: "Explorer" },
+    {
+      id: "scm",
+      icon: GitBranch,
+      label: "Source Control",
+      badge: changedFileCount > 0 ? changedFileCount : undefined,
+    },
+    { id: "history", icon: ClockCounterClockwise, label: "History" },
+    { id: "search", icon: MagnifyingGlass, label: "Search" },
+  ];
 
   return (
     <div className={styles.rail}>

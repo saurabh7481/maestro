@@ -29,7 +29,9 @@ serde_json = "1"
 rusqlite = { version = "0.33", features = ["bundled"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "fs", "sync"] }
+notify = "7"
+notify-debouncer-full = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

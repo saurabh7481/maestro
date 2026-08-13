@@ -1,0 +1,55 @@
+.scroller {
+  flex: 1;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-5);
+}
+
+.rowWrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.caret {
+  flex: none;
+  width: 0.6875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+}
+
+.icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.statusGlyph {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  width: 0.875rem;
+  text-align: center;
+  flex: none;
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-base);
+  font-family: inherit;
+  padding: 0 var(--space-3);
+  height: 1.25rem;
+  outline: none;
+}
+
+.empty {
+  padding: var(--space-6);
+  color: var(--text-mute);
+  font-size: var(--text-sm);
+}

@@ -17,6 +17,10 @@ interface WorkspaceState {
   createWorktree: (projectId: string, branchName: string, baseRef: string) => Promise<Worktree>;
   removeWorktree: (projectId: string, worktreeId: string, force: boolean) => Promise<void>;
   selectWorktree: (projectId: string, worktreeId: string) => void;
+  updateWorktreeStatus: (
+    worktreeId: string,
+    patch: Partial<Pick<Worktree, "ahead" | "behind" | "dirty" | "changedFiles">>,
+  ) => void;
   clearError: () => void;
 }
 
@@ -134,6 +138,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   selectWorktree: (projectId, worktreeId) => {
     set({ activeProjectId: projectId, activeWorktreeId: worktreeId });
     void workspaceApi.touchWorktree(worktreeId);
+  },
+
+  // Patches a worktree's live status fields from an `scm://` event
+  // (`scmStore.applyScmEvent`) — searches every project's list rather than
+  // requiring the caller to know which project the worktree belongs to,
+  // since `scmStore` only carries a `worktreeId`/`worktreeRoot` pair.
+  updateWorktreeStatus: (worktreeId, patch) => {
+    set((s) => {
+      for (const [projectId, worktrees] of Object.entries(s.worktreesByProject)) {
+        const idx = worktrees.findIndex((w) => w.id === worktreeId);
+        if (idx === -1) continue;
+        const updated = [...worktrees];
+        updated[idx] = { ...updated[idx], ...patch };
+        return {
+          worktreesByProject: { ...s.worktreesByProject, [projectId]: updated },
+        };
+      }
+      return s;
+    });
   },
 
   clearError: () => set({ error: null }),
