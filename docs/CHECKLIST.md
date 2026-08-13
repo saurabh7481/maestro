@@ -6,17 +6,26 @@ to be edited, not archived.
 
 ## Phase 0 — Foundations
 
-- [ ] `electron-vite` scaffold: main / preload / renderer entry points
-- [ ] TypeScript strict mode, shared `tsconfig.base.json`
+- [x] Framework viability spike: Monaco + xterm.js rendered cleanly in a
+      Tauri v2 window on WebKitGTK 2.52.5 / Wayland / Intel iGPU — no
+      blank window, no `AcceleratedSurfaceDMABuf`/`Gdk-Message` errors, see
+      `ARCHITECTURE.md` header note. NVIDIA hardware still untested — carried
+      to Phase 9.
+- [ ] `create-tauri-app` scaffold (React + TS template): Cargo workspace
+      (`src-tauri/`) + Vite frontend (`src/`)
+- [ ] TypeScript strict mode on the frontend; `cargo clippy -D warnings` +
+      `cargo fmt --check` on the core
 - [ ] ESLint + Prettier configured, runs in CI
-- [ ] Vitest wired (even with zero real tests yet)
-- [ ] `BrowserWindow`: `contextIsolation: true`, `nodeIntegration: false`,
-      `sandbox: true`, restrictive CSP meta/header
-- [ ] `contextBridge`-only preload API surface (no `ipcRenderer` leak)
-- [ ] `app.requestSingleInstanceLock()` wired
-- [ ] Window bounds persisted/restored
-- [ ] electron-builder config: AppImage / dmg / nsis targets defined
-- [ ] GitHub Actions: 3-OS build matrix produces installable artifacts
+- [ ] Vitest wired on the frontend (even with zero real tests yet);
+      `cargo test` wired on the core
+- [ ] Capabilities/permissions baseline: default-deny, only explicitly
+      needed commands granted per window, restrictive CSP in
+      `tauri.conf.json`
+- [ ] `tauri-plugin-single-instance` wired
+- [ ] `tauri-plugin-window-state` wired (bounds persisted/restored)
+- [ ] Tauri bundler config: AppImage / deb / rpm / dmg / msi targets defined
+- [ ] GitHub Actions: 3-OS build matrix (`tauri-action`) produces
+      installable artifacts
 - [ ] `v0.0.1` tag → CI produces a working, quittable blank-window AppImage
 
 ## Phase 1 — Core shell & theming
@@ -125,9 +134,11 @@ to be edited, not archived.
 
 ## Phase 7 — Native terminal tab
 
-- [ ] `node-pty` spawn in main at active worktree's cwd, user's default
-      shell
-- [ ] `xterm.js` renderer, IPC-bridged, output batched (not per-byte IPC)
+- [ ] Evaluate `tauri-plugin-pty` vs hand-rolled `portable-pty` in the
+      Rust core; spawn at active worktree's cwd, user's default shell
+- [ ] `xterm.js` frontend, event-bridged, output batched (not per-byte)
+- [ ] PTY reads run off the async runtime's main workers (blocking
+      task/thread) so a busy terminal can't starve agent-process I/O
 - [ ] Resize handling (PTY + xterm both resized together)
 - [ ] Clean kill on tab close and app quit — verified no orphaned shell
       process survives (`ps`/Task Manager check)
@@ -147,12 +158,18 @@ to be edited, not archived.
 
 ## Phase 9 — Packaging & release hardening
 
-- [ ] AppImage auto-update verified against an **installed** AppImage
-      (not a raw `dist/` build) — `APPIMAGE` env var present
-- [ ] `latest-linux.yml`/equivalent published alongside release artifacts
+- [ ] `tauri signer generate` keypair created; public key in
+      `tauri.conf.json`, private key stored securely (never committed)
+- [ ] `tauri-plugin-updater` verified end-to-end against an **installed**
+      AppImage/deb/rpm (not a raw dev build)
+- [ ] Updater manifest published alongside release artifacts
 - [ ] `.desktop`/icon integration documented (AppImageLauncher or
       first-run self-integration prompt)
-- [ ] Release CI: tag → matrix build → publish → GitHub Release
+- [ ] **NVIDIA/WebKitGTK check**: packaged AppImage tested on at least one
+      NVIDIA Linux machine (Phase 0's spike only covered Intel/Mesa);
+      `WEBKIT_DISABLE_DMABUF_RENDERER=1` workaround documented if needed
+- [ ] Release CI: tag → matrix build (`tauri-action`) → publish → GitHub
+      Release
 - [ ] README: per-platform install steps, CLI binary path configuration,
       worktree hooks how-to
 - [ ] `V1_SCOPE.md` "Definition of done" verified literally on a fresh

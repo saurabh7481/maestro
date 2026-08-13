@@ -5,11 +5,14 @@ either explicitly deferred (**v2 candidate**) or explicitly rejected
 (**Non-goal**). When in doubt during implementation, this file wins over
 enthusiasm.
 
-Locked: 2026-08-13.
+Locked: 2026-08-13. Framework updated to Tauri v2 on 2026-08-13 after a
+rendering spike validated Monaco + xterm.js on this project's actual Linux
+target (WebKitGTK) — see `ARCHITECTURE.md` header note. Scope is
+unaffected; only the implementation stack changed.
 
 ## Product one-liner
 
-A cross-platform (Linux-first) Electron desktop app that gives Claude Code,
+A cross-platform (Linux-first) Tauri desktop app that gives Claude Code,
 Codex CLI, and Cursor Agent a native, VS Code-grade GUI, organized around
 git projects and worktrees, so you can run several agents on the same repo
 in parallel without them stepping on each other.
@@ -106,11 +109,15 @@ in parallel without them stepping on each other.
   built-in map; no plugin/extension system in v1).
 
 ### 9. Packaging & distribution
-- electron-builder producing: AppImage (Linux, primary target/daily-driven
-  platform), dmg (macOS), nsis exe (Windows).
-- Auto-update wired for AppImage via `electron-updater`'s generic/GitHub
-  provider; mac/Windows auto-update scaffolding present but code-signing
-  for those platforms is explicitly **not** blocking v1 (see non-goals).
+- Tauri's built-in bundler producing: AppImage (Linux, primary
+  target/daily-driven platform; deb/rpm also available), dmg (macOS),
+  msi/nsis (Windows).
+- Auto-update wired via `tauri-plugin-updater` (minisign-signed artifacts)
+  for AppImage/deb/rpm; mac/Windows auto-update scaffolding present but
+  code-signing for those platforms is explicitly **not** blocking v1 (see
+  non-goals). The Linux target must additionally be verified on NVIDIA
+  hardware, not just the Intel machine the initial rendering spike used —
+  see `ARCHITECTURE.md` §9.
 
 ## v2 candidates (deliberately deferred, not forgotten)
 

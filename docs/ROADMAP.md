@@ -24,23 +24,36 @@ each other, so they're parallelizable across phases 3–4 once the shell
 
 ## Phase 0 — Foundations (no UI features)
 
-**Goal:** a repo that builds, lints, tests, and packages an empty Electron
+**Goal:** a repo that builds, lints, tests, and packages an empty Tauri
 window, on all three OS targets in CI, before any real feature work.
 
-- Scaffold with `electron-vite` (main/preload/renderer split), TypeScript
-  strict mode everywhere.
-- ESLint + Prettier + `tsc --noEmit` in CI; Vitest wired but empty.
-- electron-builder config for AppImage/dmg/nsis producing an installable
-  "hello world" on all three platforms via GitHub Actions matrix.
-- `contextIsolation`/`sandbox`/CSP baseline from `ARCHITECTURE.md` §5 in
-  place from commit one — security posture is not a retrofit.
-- Single-instance lock, basic window state persistence (size/position).
+> **Framework note:** v1 was originally scoped on Electron; a live
+> rendering spike (Monaco + xterm.js in a Tauri/WebKitGTK window, this
+> project's actual Linux target) validated Tauri v2 instead — see
+> `ARCHITECTURE.md`'s header note for the full rationale. The items below
+> reflect that decision; the spike itself (framework viability + basic
+> Monaco/xterm rendering check) is effectively done and doesn't need to be
+> repeated, only formalized into the real project scaffold.
+
+- Scaffold with `create-tauri-app` (React + TS template), Cargo workspace
+  for the core process, TypeScript strict mode on the frontend.
+- ESLint + Prettier + `tsc --noEmit` for the frontend; `cargo fmt` +
+  `cargo clippy -D warnings` for the core; Vitest wired but empty on the
+  frontend, `cargo test` wired but empty on the core.
+- Tauri's built-in bundler configured for AppImage/deb/rpm/dmg/nsis,
+  producing an installable "hello world" on all three platforms via a
+  GitHub Actions matrix (`tauri-action`).
+- Capabilities/permissions baseline (default-deny, `ARCHITECTURE.md` §5)
+  and CSP in place from commit one — security posture is not a retrofit.
+- `tauri-plugin-single-instance` + `tauri-plugin-window-state` wired.
 
 **Exit criteria:** `git tag v0.0.1` produces a downloadable AppImage from CI
 that opens a blank frameless window and quits cleanly.
 
-**Risks:** electron-builder/AppImage toolchain quirks are easier to fight
-now, with zero feature code at stake, than in week 6.
+**Risks:** Tauri/AppImage bundler quirks and any WebKitGTK edge cases
+beyond what the spike already covered (see `ARCHITECTURE.md` §9 — NVIDIA/
+DMABUF specifically, untested on the Intel dev machine the spike ran on)
+are easier to fight now, with zero feature code at stake, than in week 6.
 
 ## Phase 1 — Core shell & theming
 
@@ -172,8 +185,9 @@ both Codex and Cursor Agent.
 
 **Goal:** a real PTY terminal tab, independent of the agent work.
 
-- `node-pty` in main, `xterm.js` in renderer, IPC-bridged per
-  `ARCHITECTURE.md` §3 diagram / §9 (throttled output batching).
+- `tauri-plugin-pty` (or `portable-pty` directly) in the Rust core,
+  `xterm.js` in the frontend, event-bridged per `ARCHITECTURE.md` §8/§9
+  (throttled output batching).
 - Spawned at the active worktree's path with the user's default shell
   (`$SHELL` on Unix, PowerShell/cmd on Windows).
 - Resize handling, clean kill on tab close and app quit (no orphaned shell
@@ -206,13 +220,17 @@ broken."
 
 **Goal:** ship it.
 
-- Finalize electron-builder config for all three targets; verify AppImage
-  auto-update end-to-end against an *installed* AppImage (not a dev build
-  — see the `APPIMAGE` env var gotcha in `ARCHITECTURE.md` §8).
+- Finalize Tauri bundler config for all three targets (AppImage/deb/rpm,
+  dmg, msi/nsis); generate the minisign updater keypair (`tauri signer
+  generate`), wire `tauri-plugin-updater` end to end.
 - `.desktop`/icon integration story for Linux (AppImageLauncher doc or
   first-run self-integration).
-- Release CI: tag → build matrix → publish artifacts + `latest*.yml` →
-  GitHub Release.
+- **NVIDIA/WebKitGTK check**: test the packaged AppImage on at least one
+  NVIDIA Linux box, not just the Intel machine the Phase 0 spike ran on
+  (`ARCHITECTURE.md` §9) — document the `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+  workaround if needed.
+- Release CI: tag → build matrix (`tauri-action`) → publish artifacts +
+  updater manifest → GitHub Release.
 - Final manual QA pass (kill -9 the app mid-agent-run, mid-hook-run,
   mid-commit; reboot the machine with tabs open; remove a worktree that
   has a running agent tab; etc. — full list in `CHECKLIST.md`).

@@ -1,17 +1,20 @@
 # Maestro
 
-A cross-platform (Linux-first) Electron GUI that wraps Claude Code, Codex
-CLI, and Cursor Agent with a native, VS Code-grade agentic development
-environment — projects and git worktrees on the left, a tab-based agent /
-editor / terminal workspace in the center.
+A cross-platform (Linux-first) Tauri (Rust + React) GUI that wraps Claude
+Code, Codex CLI, and Cursor Agent with a native, VS Code-grade agentic
+development environment — projects and git worktrees on the left, a
+tab-based agent / editor / terminal workspace in the center.
 
 Inspired by [Conductor](https://conductor.build), built around your own
 design system and theming.
 
 ## Status
 
-Pre-implementation. v1 scope is locked; no application code has been
-written yet. Start here:
+Pre-implementation, framework decided. v1 scope is locked and a live
+rendering spike (Monaco + xterm.js in a Tauri window, on this project's own
+Linux target) validated the Tauri v2 + Rust + React stack before any real
+scaffolding — see `docs/ARCHITECTURE.md`'s header note. No application
+feature code has been written yet. Start here:
 
 1. [`docs/V1_SCOPE.md`](./docs/V1_SCOPE.md) — what v1 is and isn't.
 2. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — tech stack, process
