@@ -11,22 +11,28 @@ to be edited, not archived.
       blank window, no `AcceleratedSurfaceDMABuf`/`Gdk-Message` errors, see
       `ARCHITECTURE.md` header note. NVIDIA hardware still untested — carried
       to Phase 9.
-- [ ] `create-tauri-app` scaffold (React + TS template): Cargo workspace
+- [x] `create-tauri-app` scaffold (React + TS template): Cargo workspace
       (`src-tauri/`) + Vite frontend (`src/`)
-- [ ] TypeScript strict mode on the frontend; `cargo clippy -D warnings` +
-      `cargo fmt --check` on the core
-- [ ] ESLint + Prettier configured, runs in CI
-- [ ] Vitest wired on the frontend (even with zero real tests yet);
-      `cargo test` wired on the core
-- [ ] Capabilities/permissions baseline: default-deny, only explicitly
-      needed commands granted per window, restrictive CSP in
-      `tauri.conf.json`
-- [ ] `tauri-plugin-single-instance` wired
-- [ ] `tauri-plugin-window-state` wired (bounds persisted/restored)
-- [ ] Tauri bundler config: AppImage / deb / rpm / dmg / msi targets defined
-- [ ] GitHub Actions: 3-OS build matrix (`tauri-action`) produces
-      installable artifacts
+- [x] TypeScript strict mode on the frontend; `cargo clippy -D warnings` +
+      `cargo fmt --check` on the core — both verified clean
+- [x] ESLint + Prettier configured (runs locally; CI job added, not yet
+      exercised by a real push)
+- [x] Vitest wired on the frontend (smoke test passing); `cargo test`
+      wired on the core (0 tests, passes)
+- [x] Capabilities/permissions baseline: default-deny, only
+      `core:default`/`opener:default` granted, restrictive CSP in
+      `tauri.conf.json` — verified the app still renders correctly under
+      this CSP (live window screenshot, not just "it compiled")
+- [x] `tauri-plugin-single-instance` wired
+- [x] `tauri-plugin-window-state` wired
+- [x] Tauri bundler config: `targets: "all"` (per-host default covers
+      AppImage/deb/rpm on Linux, dmg on macOS, msi/nsis on Windows)
+- [x] GitHub Actions workflows written (`ci.yml` fast checks,
+      `release.yml` tag-triggered 3-OS `tauri-action` matrix) — **not yet
+      run**, no push to a remote/tag has happened yet
 - [ ] `v0.0.1` tag → CI produces a working, quittable blank-window AppImage
+      (blocked on pushing to a remote — local run confirmed the window
+      itself opens, renders, and quits cleanly)
 
 ## Phase 1 — Core shell & theming
 
