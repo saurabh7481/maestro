@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",system-ui,Roboto,sans-serif;-webkit-font-smoothing:antialiased;background:#0d1016;overflow:hidden}
+::selection{background:var(--sel)}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-2)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:7px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18);background-clip:padding-box}
+.ph{line-height:1}
+@keyframes mst-blink{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes mst-spin{to{transform:rotate(360deg)}}
+@keyframes mst-type{0%,70%,100%{transform:translateY(0);opacity:.35}35%{transform:translateY(-3px);opacity:1}}
+</style>
+</helmet>
+<div ref="{{ setRoot }}" style="--bg:#0d1016;--bg-2:#12151c;--bg-3:#1a1f28;--titlebar:#0a0c11;--border:rgba(255,255,255,.07);--border-2:rgba(255,255,255,.12);--text:#d5dae2;--text-dim:#8a94a6;--text-mute:#59616f;--accent:#7c8cff;--accent-2:#61afef;--accent-soft:rgba(124,140,255,.14);--hover:rgba(255,255,255,.045);--active:rgba(124,140,255,.16);--green:#98c379;--red:#e06c75;--yellow:#e5c07b;--purple:#c678dd;--orange:#d19a66;--blue:#61afef;--cyan:#56b6c2;--sel:rgba(124,140,255,.25);--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-size:13px;position:relative">
+
+  <!-- ===== TITLEBAR ===== -->
+  <div style="height:44px;flex:none;display:flex;align-items:center;gap:14px;padding:0 12px 0 14px;background:var(--titlebar);border-bottom:1px solid var(--border)">
+    <div style="display:flex;align-items:center;gap:9px">
+      <div style="width:19px;height:19px;border-radius:6px;background:linear-gradient(135deg,var(--accent),var(--purple));transform:rotate(45deg);box-shadow:0 0 14px var(--accent-soft)"></div>
+      <span style="font-weight:600;font-size:13px;letter-spacing:.2px">Maestro</span>
+    </div>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <div onClick="{{ openNewTab }}" style="display:flex;align-items:center;gap:8px;padding:5px 11px;border-radius:8px;background:var(--bg-3);border:1px solid var(--border);cursor:pointer" style-hover="background:var(--hover);border-color:var(--border-2)">
+      <i class="ph ph-folder-open" style="color:var(--text-dim);font-size:15px"></i>
+      <span style="font-weight:600">my-app</span>
+      <i class="ph ph-caret-right" style="color:var(--text-mute);font-size:11px"></i>
+      <i class="ph ph-git-branch" style="color:var(--accent);font-size:14px"></i>
+      <span style="color:var(--text)">feat/payments-refactor</span>
+      <i class="ph ph-caret-down" style="color:var(--text-mute);font-size:12px;margin-left:2px"></i>
+    </div>
+
+    <div style="flex:1;display:flex;justify-content:center">
+      <div style="display:flex;align-items:center;gap:10px;width:min(440px,46%);padding:6px 12px;border-radius:9px;background:var(--bg-2);border:1px solid var(--border);color:var(--text-mute)">
+        <i class="ph ph-magnifying-glass" style="font-size:14px"></i>
+        <span style="flex:1;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search files, symbols, commands…</span>
+        <span style="font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:5px;background:var(--bg-3);border:1px solid var(--border)">⌘K</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:2px">
+      <div onClick="{{ setThemeMaestro }}" title="Maestro Dark" style="width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#7c8cff,#c678dd);cursor:pointer;border:1.5px solid var(--border-2)"></div>
+      <div onClick="{{ setThemeDarkPlus }}" title="VSCode Dark+" style="width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#1e1e1e,#569cd6);cursor:pointer;border:1.5px solid var(--border-2);margin-left:5px"></div>
+      <div onClick="{{ setThemeOneDark }}" title="One Dark Pro" style="width:15px;height:15px;border-radius:50%;background:linear-gradient(135deg,#282c34,#61afef);cursor:pointer;border:1.5px solid var(--border-2);margin-left:5px"></div>
+    </div>
+    <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-minus" style="font-size:14px"></i></div>
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-square" style="font-size:12px"></i></div>
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;color:var(--text-dim)" style-hover="background:#c14b52;color:#fff"><i class="ph ph-x" style="font-size:14px"></i></div>
+    </div>
+  </div>
+
+  <!-- ===== BODY ===== -->
+  <div style="flex:1;display:flex;min-height:0">
+
+    <!-- LEFT: WORKSPACE (projects & worktrees) -->
+    <sc-if value="{{ leftOpen }}" hint-placeholder-val="{{ true }}">
+    <div style="order:1;width:266px;flex:none;display:flex;flex-direction:column;background:var(--bg-2);border-right:1px solid var(--border);min-height:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 9px">
+        <span style="font-size:10.5px;font-weight:700;letter-spacing:.9px;color:var(--text-mute)">WORKSPACE</span>
+        <div style="display:flex;gap:10px;color:var(--text-dim)"><i class="ph ph-magnifying-glass" title="Search worktrees" style="font-size:14px;cursor:pointer"></i><i class="ph ph-plus" title="Add project" style="font-size:15px;cursor:pointer"></i><i onClick="{{ toggleLeft }}" class="ph ph-caret-line-left" title="Collapse" style="font-size:15px;cursor:pointer"></i></div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:0 6px 8px;display:flex;flex-direction:column;gap:1px">
+        <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;cursor:pointer" style-hover="background:var(--hover)">
+          <i class="ph ph-caret-down" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder-open" style="font-size:15px;color:var(--yellow)"></i><span style="font-weight:600">my-app</span><span style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text-mute)">3 wt</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px 5px 30px;border-radius:6px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-git-branch" style="font-size:14px"></i><span>main</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 6px 30px;border-radius:6px;cursor:pointer;background:var(--active);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)">
+          <i class="ph ph-git-branch" style="font-size:14px;color:var(--accent)"></i><span style="font-weight:600">feat/payments-refactor</span>
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:auto"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px 5px 30px;border-radius:6px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-git-branch" style="font-size:14px"></i><span>fix/login-crash</span><span style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--orange)">2↑</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:5px 8px 5px 30px;border-radius:6px;cursor:pointer;color:var(--accent);font-size:12px" style-hover="background:var(--hover)"><i class="ph ph-plus-circle" style="font-size:14px"></i><span>New worktree…</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;margin-top:2px;border-radius:6px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-caret-right" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder" style="font-size:15px;color:var(--text-mute)"></i><span>design-system</span><span style="margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text-mute)">1 wt</span></div>
+        <div style="height:1px;background:var(--border);margin:9px 8px"></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--accent);font-size:12.5px" style-hover="background:var(--hover)"><i class="ph ph-folder-plus" style="font-size:15px"></i><span>Add project…</span></div>
+      </div>
+    </div>
+    </sc-if>
+    <sc-if value="{{ leftCollapsed }}" hint-placeholder-val="{{ false }}">
+    <div style="order:1;width:46px;flex:none;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:15px;background:var(--bg-2);border-right:1px solid var(--border)">
+      <i onClick="{{ toggleLeft }}" class="ph ph-caret-line-right" title="Expand workspace" style="font-size:19px;color:var(--text-dim);cursor:pointer"></i>
+      <i class="ph ph-folder-open" title="my-app" style="font-size:19px;color:var(--yellow)"></i>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><i class="ph ph-git-branch" title="feat/payments-refactor" style="font-size:18px;color:var(--accent)"></i><span style="width:5px;height:5px;border-radius:50%;background:var(--green)"></span></div>
+    </div>
+    </sc-if>
+
+    <!-- ACTIVITY RAIL -->
+    <div style="order:4;width:52px;flex:none;display:flex;flex-direction:column;align-items:center;padding:10px 0;background:var(--titlebar);border-left:1px solid var(--border);gap:4px">
+      <div onClick="{{ toggleRight }}" title="Toggle panel" style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer;color:var(--text-mute);margin-bottom:4px" style-hover="color:var(--text);background:var(--hover)"><i class="ph ph-sidebar-simple" style="font-size:20px;transform:scaleX(-1)"></i></div>
+      <sc-for list="{{ rail }}" as="r" hint-placeholder-count="4">
+        <div onClick="{{ r.onClick }}" title="{{ r.label }}" style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer;color:var(--text-mute)">
+          <div style="position:absolute;left:-10px;top:9px;bottom:9px;width:2.5px;border-radius:3px;background:var(--accent);opacity:{{ r.activeOpacity }}"></div>
+          <i class="ph {{ r.icon }}" style="font-size:21px;color:{{ r.iconColor }}"></i>
+          <sc-if value="{{ r.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:5px;right:4px;min-width:15px;height:15px;padding:0 3px;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;border-radius:8px;background:var(--accent);color:#0a0c11">{{ r.badge }}</span></sc-if>
+        </div>
+      </sc-for>
+      <div style="flex:1"></div>
+      <div title="Accounts" style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer;color:var(--text-mute)" style-hover="color:var(--text)"><i class="ph ph-user-circle" style="font-size:22px"></i></div>
+      <div onClick="{{ openSettings }}" title="Settings" style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer;color:var(--text-mute)" style-hover="color:var(--text);background:var(--hover)"><i class="ph ph-gear-six" style="font-size:22px"></i></div>
+    </div>
+
+    <!-- RIGHT: EXPLORER / SOURCE CONTROL / HISTORY -->
+    <sc-if value="{{ rightOpen }}" hint-placeholder-val="{{ true }}">
+    <div style="order:3;width:304px;flex:none;display:flex;flex-direction:column;background:var(--bg-2);border-left:1px solid var(--border);min-height:0">
+
+      <!-- EXPLORER VIEW -->
+      <sc-if value="{{ viewExplorer }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;min-height:0;height:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 7px">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.9px;color:var(--text-mute)">EXPLORER · feat/payments-refactor</span>
+          <div style="display:flex;gap:4px;color:var(--text-dim)"><i class="ph ph-file-plus" style="font-size:14px;cursor:pointer"></i><i class="ph ph-folder-simple-plus" style="font-size:14px;cursor:pointer"></i></div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:0 6px 10px;display:flex;flex-direction:column;gap:1px;font-size:12.5px">
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-caret-down" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder-open" style="font-size:15px;color:var(--accent-2)"></i><span>src</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px 4px 26px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-caret-down" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder-open" style="font-size:15px;color:var(--accent-2)"></i><span>payment</span></div>
+          <div onClick="{{ openFileTab }}" style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 48px;border-radius:5px;cursor:pointer;background:var(--active)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">payment.service.ts</span><span style="font-family:var(--mono);font-size:11px;color:var(--yellow)">M</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 48px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">payment.controller.ts</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 48px;border-radius:5px;cursor:pointer;color:var(--green)" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">idempotency.ts</span><span style="font-family:var(--mono);font-size:11px">U</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px 4px 26px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-caret-down" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder-open" style="font-size:15px;color:var(--accent-2)"></i><span>auth</span></div>
+          <div onClick="{{ openDiffTab }}" style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 48px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">auth.controller.ts</span><span style="font-family:var(--mono);font-size:11px;color:var(--yellow)">M</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 26px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span>app.module.ts</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-caret-right" style="font-size:11px;color:var(--text-mute)"></i><i class="ph ph-folder" style="font-size:15px;color:var(--text-mute)"></i><span>test</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 25px;border-radius:5px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-file-text" style="font-size:15px;color:var(--text-mute)"></i><span>.env</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 25px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-js" style="font-size:15px;color:var(--yellow)"></i><span>package.json</span></div>
+          <div onClick="{{ openMdTab }}" style="display:flex;align-items:center;gap:7px;padding:4px 8px 4px 25px;border-radius:5px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-text" style="font-size:15px;color:var(--accent-2)"></i><span>README.md</span></div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- SOURCE CONTROL VIEW -->
+      <sc-if value="{{ viewScm }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;min-height:0;height:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px 8px">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.9px;color:var(--text-mute)">SOURCE CONTROL</span>
+          <span style="font-size:11px;font-family:var(--mono);color:var(--text-dim)"><i class="ph ph-git-branch" style="font-size:12px"></i> feat/payments-refactor</span>
+        </div>
+        <div style="padding:2px 12px 10px">
+          <div style="background:var(--bg-3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;min-height:58px;color:var(--text-mute);font-size:12.5px">Message (⌘Enter to commit)<div style="color:var(--text);margin-top:3px">feat(payments): add idempotency keys + retry backoff</div></div>
+          <div style="display:flex;gap:8px;margin-top:9px">
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px;border-radius:8px;background:var(--accent);color:#0a0c11;font-weight:600;cursor:pointer;font-size:12.5px"><i class="ph ph-check" style="font-size:15px"></i>Commit</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;background:var(--bg-3);border:1px solid var(--border);cursor:pointer;font-size:12.5px" style-hover="border-color:var(--border-2)"><i class="ph ph-arrow-up" style="font-size:15px"></i>Push<span style="font-family:var(--mono);color:var(--orange)">2</span></div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:0 6px">
+          <div style="display:flex;align-items:center;gap:6px;padding:7px 8px 5px;color:var(--text-mute);font-size:10.5px;font-weight:700;letter-spacing:.6px"><i class="ph ph-caret-down" style="font-size:11px"></i>STAGED CHANGES<span style="margin-left:auto;background:var(--bg-3);border-radius:9px;padding:1px 7px;color:var(--text-dim)">1</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">idempotency.ts</span><span style="font-size:12px;color:var(--text-mute);font-family:var(--mono)">src/payment</span><span style="font-family:var(--mono);width:14px;text-align:center;color:var(--green)">A</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:9px 8px 5px;color:var(--text-mute);font-size:10.5px;font-weight:700;letter-spacing:.6px"><i class="ph ph-caret-down" style="font-size:11px"></i>CHANGES<span style="margin-left:auto;background:var(--bg-3);border-radius:9px;padding:1px 7px;color:var(--text-dim)">3</span></div>
+          <div onClick="{{ openDiffTab }}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;background:var(--active)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">payment.service.ts</span><span style="font-size:12px;color:var(--text-mute);font-family:var(--mono)">src/payment</span><span style="font-family:var(--mono);width:14px;text-align:center;color:var(--yellow)">M</span></div>
+          <div onClick="{{ openDiffTab }}" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-ts" style="font-size:15px;color:var(--blue)"></i><span style="flex:1">auth.controller.ts</span><span style="font-size:12px;color:var(--text-mute);font-family:var(--mono)">src/auth</span><span style="font-family:var(--mono);width:14px;text-align:center;color:var(--yellow)">M</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-file-text" style="font-size:15px;color:var(--red)"></i><span style="flex:1">legacy-retry.ts</span><span style="font-size:12px;color:var(--text-mute);font-family:var(--mono)">src/payment</span><span style="font-family:var(--mono);width:14px;text-align:center;color:var(--red)">D</span></div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- HISTORY VIEW -->
+      <sc-if value="{{ viewHistory }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;min-height:0;height:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px 9px">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.9px;color:var(--text-mute)">COMMIT HISTORY</span>
+          <span style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">feat/payments-refactor</span>
+        </div>
+        <div style="flex:1;overflow:auto;padding:0 4px 10px">
+          <sc-for list="{{ commits }}" as="c" hint-placeholder-count="6">
+            <div style="display:flex;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer" style-hover="background:var(--hover)">
+              <div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">
+                <span style="width:9px;height:9px;border-radius:50%;background:{{ c.dot }};box-shadow:0 0 0 3px var(--bg-2)"></span>
+                <span style="flex:1;width:1.5px;background:var(--border-2);margin-top:2px"></span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.msg }}</div>
+                <div style="display:flex;align-items:center;gap:7px;margin-top:3px;font-size:11px;color:var(--text-mute)"><span style="font-family:var(--mono);color:var(--orange)">{{ c.hash }}</span><span>{{ c.author }}</span><span>·</span><span>{{ c.time }}</span></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- MAIN -->
+    <div style="order:2;flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)">
+
+      <!-- TAB STRIP -->
+      <div style="height:41px;flex:none;display:flex;align-items:stretch;background:var(--bg-2);border-bottom:1px solid var(--border);position:relative">
+        <div style="flex:1;display:flex;align-items:stretch;overflow-x:auto">
+          <sc-for list="{{ tabsView }}" as="t" hint-placeholder-count="5">
+            <div onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:8px;padding:0 12px 0 14px;max-width:220px;border-right:1px solid var(--border);cursor:pointer;background:{{ t.bg }};position:relative;flex:none">
+              <div style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent);opacity:{{ t.activeOpacity }}"></div>
+              <i class="ph {{ t.icon }}" style="font-size:16px;color:{{ t.color }}"></i>
+              <span style="font-size:12.5px;color:{{ t.titleColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.title }}</span>
+              <div onClick="{{ t.onClose }}" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:var(--text-mute);margin-left:2px" style-hover="background:var(--hover);color:var(--text)"><i class="ph ph-x" style="font-size:12px"></i></div>
+            </div>
+          </sc-for>
+          <div onClick="{{ openNewTab }}" style="width:38px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);cursor:pointer;flex:none" style-hover="background:var(--hover);color:var(--text)"><i class="ph ph-plus" style="font-size:16px"></i></div>
+        </div>
+
+        <!-- NEW TAB MENU -->
+        <sc-if value="{{ newTabMenuOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;top:44px;left:6px;width:328px;z-index:40;background:var(--bg-2);border:1px solid var(--border-2);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;padding:7px">
+          <div style="padding:8px 10px 5px;font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--text-mute)">START AN AGENT</div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--active)">
+            <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center"><i class="ph ph-sparkle" style="font-size:16px;color:#0a0c11"></i></div>
+            <div style="flex:1"><div style="font-weight:600;font-size:13px">Claude Code</div><div style="font-size:11px;color:var(--text-mute);font-family:var(--mono)">anthropic · claude</div></div>
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg-3);color:var(--text-mute)">⌘1</span>
+          </div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--active)">
+            <div style="width:30px;height:30px;border-radius:8px;background:#0a0c11;border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center"><i class="ph ph-hexagon" style="font-size:16px;color:var(--green)"></i></div>
+            <div style="flex:1"><div style="font-weight:600;font-size:13px">Codex CLI</div><div style="font-size:11px;color:var(--text-mute);font-family:var(--mono)">openai · codex</div></div>
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg-3);color:var(--text-mute)">⌘2</span>
+          </div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--active)">
+            <div style="width:30px;height:30px;border-radius:8px;background:#0a0c11;border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center"><i class="ph ph-cursor" style="font-size:16px;color:var(--accent-2)"></i></div>
+            <div style="flex:1"><div style="font-weight:600;font-size:13px">Cursor Agent</div><div style="font-size:11px;color:var(--text-mute);font-family:var(--mono)">cursor · agent</div></div>
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg-3);color:var(--text-mute)">⌘3</span>
+          </div>
+          <div style="height:1px;background:var(--border);margin:6px 4px"></div>
+          <div style="padding:5px 10px 5px;font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--text-mute)">RESUME SESSION</div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-clock-counter-clockwise" style="font-size:16px;color:var(--text-dim)"></i><div style="flex:1"><div style="font-size:12.5px">Refactor payments</div><div style="font-size:10.5px;color:var(--text-mute);font-family:var(--mono)">claude · 2h ago · 34 turns</div></div></div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-clock-counter-clockwise" style="font-size:16px;color:var(--text-dim)"></i><div style="flex:1"><div style="font-size:12.5px">Fix login crash</div><div style="font-size:10.5px;color:var(--text-mute);font-family:var(--mono)">codex · yesterday · 12 turns</div></div></div>
+          <div style="height:1px;background:var(--border);margin:6px 4px"></div>
+          <div onClick="{{ closeNewTab }}" style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-terminal-window" style="font-size:17px;color:var(--green)"></i><span style="font-size:12.5px">New Terminal</span><span style="margin-left:auto;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg-3);color:var(--text-mute)">⌃`</span></div>
+        </div>
+        </sc-if>
+      </div>
+
+      <!-- CONTENT -->
+      <div style="flex:1;min-height:0;position:relative">
+
+        <!-- AGENT CHAT -->
+        <sc-if value="{{ showAgent }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="flex:none;display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--border);background:var(--bg-2)">
+            <div style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center"><i class="ph ph-sparkle" style="font-size:15px;color:#0a0c11"></i></div>
+            <div><div style="font-weight:600;font-size:13px">Claude Code</div><div style="font-size:11px;color:var(--text-mute);font-family:var(--mono)">session · a3f9c1 · feat/payments-refactor</div></div>
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:var(--accent-soft);margin-left:6px"><span style="width:7px;height:7px;border-radius:50%;background:var(--green);animation:mst-blink 1.4s infinite"></span><span style="font-size:11.5px;color:var(--text);font-weight:500">working</span></div>
+            <div style="flex:1"></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 11px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:12px;color:var(--text-dim)" style-hover="border-color:var(--border-2);color:var(--text)"><i class="ph ph-clock-counter-clockwise" style="font-size:14px"></i>Resume</div>
+            <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-sliders-horizontal" style="font-size:16px"></i></div>
+          </div>
+
+          <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:26px 0">
+           <div style="max-width:780px;margin:0 auto;padding:0 26px;display:flex;flex-direction:column;gap:24px;min-width:0">
+
+            <!-- user msg -->
+            <div style="display:flex;gap:13px;align-items:flex-start">
+              <div style="width:26px;height:26px;flex:none;border-radius:7px;background:var(--bg-3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text-dim)">DS</div>
+              <div style="flex:1;padding-top:3px;line-height:1.6;color:var(--text)">Refactor the payment service to support idempotency keys, and add retries with exponential backoff for transient gateway failures.</div>
+            </div>
+
+            <!-- agent msg -->
+            <div style="display:flex;gap:13px;align-items:flex-start">
+              <div style="width:26px;height:26px;flex:none;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center"><i class="ph ph-sparkle" style="font-size:14px;color:#0a0c11"></i></div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;gap:8px;align-self:flex-start;padding:5px 11px;border-radius:8px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);font-size:12px;cursor:pointer"><i class="ph ph-brain" style="font-size:14px;color:var(--purple)"></i>Thought for 6s<i class="ph ph-caret-down" style="font-size:11px"></i></div>
+                <div style="line-height:1.65;color:var(--text)">I'll add an <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">idempotencyKey</code> to the charge flow and wrap the gateway call in a retry helper. Let me read the current implementation first.</div>
+
+                <!-- tool: read -->
+                <div style="border:1px solid var(--border);background:var(--bg-3);border-radius:9px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:12px;font-family:var(--mono)"><i class="ph ph-file-magnifying-glass" style="font-size:15px;color:var(--accent-2)"></i><span style="color:var(--text)">Read</span><span style="color:var(--text-dim)">src/payment/payment.service.ts</span><span style="margin-left:auto;color:var(--text-mute)">214 lines</span></div>
+                </div>
+                <!-- tool: grep -->
+                <div style="border:1px solid var(--border);background:var(--bg-3);border-radius:9px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:12px;font-family:var(--mono)"><i class="ph ph-magnifying-glass" style="font-size:15px;color:var(--cyan)"></i><span style="color:var(--text)">Grep</span><span style="color:var(--text-dim)">"idempotency"</span><span style="margin-left:auto;color:var(--text-mute)">0 matches</span></div>
+                </div>
+
+                <div style="line-height:1.65;color:var(--text)">No existing idempotency handling. I'll add an idempotency store, thread a key through <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">charge()</code>, and add a <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">withRetry</code> wrapper.</div>
+
+                <!-- tool: edit with mini diff -->
+                <div style="border:1px solid var(--border);background:var(--bg-3);border-radius:9px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:12px;font-family:var(--mono);border-bottom:1px solid var(--border)"><i class="ph ph-pencil-simple-line" style="font-size:15px;color:var(--yellow)"></i><span style="color:var(--text)">Edit</span><span style="color:var(--text-dim)">payment.service.ts</span><span style="margin-left:auto;color:var(--green)">+42</span><span style="color:var(--red)">−8</span></div>
+                  <div style="font-family:var(--mono);font-size:12px;line-height:1.7;padding:8px 0">
+                    <div style="padding:0 14px;color:var(--red);background:rgba(224,108,117,.09)"><span style="color:var(--text-mute);margin-right:12px">42</span>- return this.gateway.charge(amount, card)</div>
+                    <div style="padding:0 14px;color:var(--green);background:rgba(152,195,121,.09)"><span style="color:var(--text-mute);margin-right:12px">42</span>+ const key = idempotencyKey ?? randomUUID()</div>
+                    <div style="padding:0 14px;color:var(--green);background:rgba(152,195,121,.09)"><span style="color:var(--text-mute);margin-right:12px">43</span>+ return this.withRetry(() =&gt; this.gateway.charge(amount, card, key))</div>
+                  </div>
+                </div>
+
+                <!-- tool: bash -->
+                <div style="border:1px solid var(--border);background:var(--bg-3);border-radius:9px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:12px;font-family:var(--mono);border-bottom:1px solid var(--border)"><i class="ph ph-terminal" style="font-size:15px;color:var(--green)"></i><span style="color:var(--text)">Bash</span><span style="color:var(--text-dim)">npm run test -- payment</span></div>
+                  <div style="font-family:var(--mono);font-size:12px;line-height:1.65;padding:9px 14px;color:var(--text-dim)"><div>PASS  src/payment/payment.service.spec.ts</div><div style="color:var(--green)">Tests: 24 passed, 24 total</div></div>
+                </div>
+
+                <div style="line-height:1.65;color:var(--text)">Done. Summary of changes:</div>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <div style="display:flex;gap:9px;align-items:flex-start"><i class="ph ph-check-circle" style="font-size:16px;color:var(--green);margin-top:1px"></i><span style="line-height:1.5">Added <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">idempotency.ts</code> store with 24h TTL</span></div>
+                  <div style="display:flex;gap:9px;align-items:flex-start"><i class="ph ph-check-circle" style="font-size:16px;color:var(--green);margin-top:1px"></i><span style="line-height:1.5">Threaded idempotency key through <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">charge()</code></span></div>
+                  <div style="display:flex;gap:9px;align-items:flex-start"><i class="ph ph-check-circle" style="font-size:16px;color:var(--green);margin-top:1px"></i><span style="line-height:1.5">Added exponential backoff (3 attempts, jittered)</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- user follow up -->
+            <div style="display:flex;gap:13px;align-items:flex-start">
+              <div style="width:26px;height:26px;flex:none;border-radius:7px;background:var(--bg-3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text-dim)">DS</div>
+              <div style="flex:1;padding-top:3px;line-height:1.6;color:var(--text)">Also make the retry respect the <code style="font-family:var(--mono);font-size:12px;background:var(--bg-3);padding:1px 6px;border-radius:5px;color:var(--orange)">Retry-After</code> header when present.</div>
+            </div>
+
+            <!-- agent working -->
+            <div style="display:flex;gap:13px;align-items:flex-start">
+              <div style="width:26px;height:26px;flex:none;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center"><i class="ph ph-sparkle" style="font-size:14px;color:#0a0c11"></i></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:11px">
+                <div style="border:1px solid var(--border);background:var(--bg-3);border-radius:9px;overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:12px;font-family:var(--mono)"><i class="ph ph-spinner-gap" style="font-size:15px;color:var(--accent);animation:mst-spin 1s linear infinite"></i><span style="color:var(--text)">Read</span><span style="color:var(--text-dim)">withRetry helper · parsing headers…</span></div>
+                </div>
+                <div style="display:flex;gap:5px;align-items:center;padding-left:2px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:mst-type 1.2s infinite"></span>
+                  <span style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:mst-type 1.2s infinite .2s"></span>
+                  <span style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:mst-type 1.2s infinite .4s"></span>
+                </div>
+              </div>
+            </div>
+           </div>
+          </div>
+
+          <!-- composer -->
+          <div style="flex:none;padding:0 26px 20px">
+           <div style="max-width:780px;margin:0 auto">
+            <div style="border:1px solid var(--border-2);background:var(--bg-2);border-radius:13px;padding:12px 14px;box-shadow:0 6px 26px rgba(0,0,0,.35)">
+              <div style="display:flex;gap:7px;margin-bottom:9px">
+                <span style="display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:7px;background:var(--bg-3);border:1px solid var(--border);font-size:11.5px;font-family:var(--mono);color:var(--text-dim)"><i class="ph ph-file-ts" style="font-size:13px;color:var(--blue)"></i>payment.service.ts<i class="ph ph-x" style="font-size:11px;cursor:pointer"></i></span>
+                <span style="display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:7px;border:1px dashed var(--border-2);font-size:11.5px;color:var(--text-mute);cursor:pointer"><i class="ph ph-at" style="font-size:13px"></i>Add context</span>
+              </div>
+              <div style="color:var(--text-mute);font-size:13.5px;line-height:1.5;min-height:22px">Reply to Claude, or ask a follow-up…</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:11px">
+                <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:var(--bg-3);border:1px solid var(--border);cursor:pointer;font-size:12px"><i class="ph ph-sparkle" style="font-size:13px;color:var(--accent)"></i>Sonnet 4.5<i class="ph ph-caret-down" style="font-size:10px;color:var(--text-mute)"></i></div>
+                <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:var(--bg-3);border:1px solid var(--border);cursor:pointer;font-size:12px"><i class="ph ph-lightning" style="font-size:13px;color:var(--yellow)"></i>Agent<i class="ph ph-caret-down" style="font-size:10px;color:var(--text-mute)"></i></div>
+                <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--text-dim);cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-paperclip" style="font-size:16px"></i></div>
+                <div style="flex:1"></div>
+                <div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:var(--accent);cursor:pointer"><i class="ph ph-arrow-up" style="font-size:17px;color:#0a0c11"></i></div>
+              </div>
+            </div>
+           </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- FILE EDITOR -->
+        <sc-if value="{{ showFile }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="flex:none;display:flex;align-items:center;gap:7px;padding:7px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);font-family:var(--mono)">
+            <i class="ph ph-folder" style="font-size:14px"></i>src<i class="ph ph-caret-right" style="font-size:10px"></i>payment<i class="ph ph-caret-right" style="font-size:10px"></i><i class="ph ph-file-ts" style="font-size:14px;color:var(--blue)"></i><span style="color:var(--text)">payment.service.ts</span>
+            <span style="margin-left:auto;color:var(--yellow)">● Modified</span>
+          </div>
+          <div style="flex:1;overflow:auto;display:flex;font-family:var(--mono);font-size:13px;line-height:1.75">
+            <div style="flex:none;padding:14px 0;text-align:right;color:var(--text-mute);user-select:none;background:var(--bg)">
+              <div style="padding:0 16px 0 20px">1</div><div style="padding:0 16px 0 20px">2</div><div style="padding:0 16px 0 20px">3</div><div style="padding:0 16px 0 20px">4</div><div style="padding:0 16px 0 20px;position:relative"><span style="position:absolute;left:6px;top:6px;bottom:6px;width:3px;background:var(--green);border-radius:2px"></span>5</div><div style="padding:0 16px 0 20px;position:relative"><span style="position:absolute;left:6px;top:6px;bottom:6px;width:3px;background:var(--green);border-radius:2px"></span>6</div><div style="padding:0 16px 0 20px">7</div><div style="padding:0 16px 0 20px;position:relative"><span style="position:absolute;left:6px;top:6px;bottom:6px;width:3px;background:var(--yellow);border-radius:2px"></span>8</div><div style="padding:0 16px 0 20px">9</div><div style="padding:0 16px 0 20px">10</div><div style="padding:0 16px 0 20px">11</div><div style="padding:0 16px 0 20px">12</div><div style="padding:0 16px 0 20px">13</div>
+            </div>
+            <div style="flex:1;padding:14px 0;position:relative">
+              <div style="padding:0 18px"><span style="color:var(--purple)">import</span> { randomUUID } <span style="color:var(--purple)">from</span> <span style="color:var(--green)">'crypto'</span>;</div>
+              <div style="padding:0 18px"><span style="color:var(--purple)">import</span> { Injectable } <span style="color:var(--purple)">from</span> <span style="color:var(--green)">'@nestjs/common'</span>;</div>
+              <div style="padding:0 18px">&nbsp;</div>
+              <div style="padding:0 18px"><span style="color:var(--orange)">@Injectable</span>()</div>
+              <div style="padding:0 18px;background:rgba(152,195,121,.07)"><span style="color:var(--purple)">export class</span> <span style="color:var(--yellow)">PaymentService</span> {</div>
+              <div style="padding:0 18px;background:rgba(152,195,121,.07)">&nbsp;&nbsp;<span style="color:var(--purple)">constructor</span>(<span style="color:var(--purple)">private</span> gateway: <span style="color:var(--yellow)">Gateway</span>) {}</div>
+              <div style="padding:0 18px">&nbsp;</div>
+              <div style="padding:0 18px;background:rgba(124,140,255,.10);border-left:2px solid var(--accent)">&nbsp;&nbsp;<span style="color:var(--purple)">async</span> <span style="color:var(--blue)">charge</span>(amount: <span style="color:var(--yellow)">number</span>, card: <span style="color:var(--yellow)">Card</span>, idempotencyKey?: <span style="color:var(--yellow)">string</span>) {</div>
+              <div style="padding:0 18px">&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--purple)">const</span> key = idempotencyKey ?? <span style="color:var(--blue)">randomUUID</span>();</div>
+              <div style="padding:0 18px">&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--purple)">return</span> <span style="color:var(--purple)">this</span>.<span style="color:var(--blue)">withRetry</span>(() =&gt; <span style="color:var(--purple)">this</span>.gateway.<span style="color:var(--blue)">charge</span>(amount, card, key));</div>
+              <div style="padding:0 18px">&nbsp;&nbsp;}</div>
+              <div style="padding:0 18px">}</div>
+            </div>
+          </div>
+          <div style="flex:none;display:flex;align-items:center;gap:16px;padding:5px 16px;border-top:1px solid var(--border);background:var(--bg-2);font-size:11px;color:var(--text-mute);font-family:var(--mono)"><span>Ln 8, Col 42</span><span>Spaces: 2</span><span>UTF-8</span><span>TypeScript</span><span style="margin-left:auto;color:var(--green)"><i class="ph ph-check-circle" style="font-size:12px"></i> Prettier</span></div>
+        </div>
+        </sc-if>
+
+        <!-- MARKDOWN -->
+        <sc-if value="{{ showMarkdown }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="flex:none;display:flex;align-items:center;gap:10px;padding:7px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim)">
+            <span style="font-family:var(--mono)"><i class="ph ph-file-text" style="font-size:14px;color:var(--accent-2)"></i> README.md</span>
+            <div style="margin-left:auto;display:flex;gap:2px;background:var(--bg-3);border-radius:8px;padding:2px">
+              <span style="padding:4px 11px;border-radius:6px;font-size:11.5px;color:var(--text-mute);cursor:pointer">Source</span>
+              <span style="padding:4px 11px;border-radius:6px;font-size:11.5px;background:var(--accent-soft);color:var(--text);cursor:pointer">Preview</span>
+            </div>
+          </div>
+          <div style="flex:1;overflow:auto;padding:36px 0">
+            <div style="max-width:720px;margin:0 auto;padding:0 32px;line-height:1.7">
+              <h1 style="font-size:30px;margin:0 0 6px;font-weight:700;border-bottom:1px solid var(--border);padding-bottom:14px">my-app</h1>
+              <p style="color:var(--text-dim);margin:16px 0">A payments platform with pluggable gateways, idempotent charges, and automatic retry with backoff.</p>
+              <h2 style="font-size:21px;margin:30px 0 12px;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:8px">Getting started</h2>
+              <p style="color:var(--text-dim);margin:12px 0">Install dependencies and start the dev server:</p>
+              <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.8"><div><span style="color:var(--text-mute)">$</span> pnpm install</div><div><span style="color:var(--text-mute)">$</span> pnpm dev</div></div>
+              <h2 style="font-size:21px;margin:30px 0 12px;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:8px">Features</h2>
+              <ul style="color:var(--text-dim);margin:12px 0;padding-left:22px;line-height:2">
+                <li>Idempotency keys with a 24h TTL store</li>
+                <li>Exponential backoff, jittered, honoring <code style="font-family:var(--mono);font-size:12px;background:var(--bg-2);padding:1px 6px;border-radius:5px;color:var(--orange)">Retry-After</code></li>
+                <li>Gateway adapters for Stripe, Adyen, and Braintree</li>
+              </ul>
+              <blockquote style="margin:18px 0;padding:2px 16px;border-left:3px solid var(--accent);color:var(--text-mute)">Note: set <code style="font-family:var(--mono);font-size:12px;background:var(--bg-2);padding:1px 6px;border-radius:5px;color:var(--orange)">GATEWAY_KEY</code> in your <code style="font-family:var(--mono);font-size:12px;background:var(--bg-2);padding:1px 6px;border-radius:5px;color:var(--orange)">.env</code> before running.</blockquote>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- DIFF -->
+        <sc-if value="{{ showDiff }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);font-family:var(--mono)">
+            <i class="ph ph-git-diff" style="font-size:15px;color:var(--orange)"></i><span style="color:var(--text)">auth.controller.ts</span><span style="color:var(--text-mute)">src/auth</span>
+            <span style="color:var(--green)">+11</span><span style="color:var(--red)">−4</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <span style="display:flex;align-items:center;gap:6px;padding:4px 11px;border-radius:7px;background:var(--accent);color:#0a0c11;font-weight:600;cursor:pointer"><i class="ph ph-plus" style="font-size:13px"></i>Stage</span>
+              <span style="display:flex;align-items:center;gap:6px;padding:4px 11px;border-radius:7px;border:1px solid var(--border);color:var(--text-dim);cursor:pointer"><i class="ph ph-arrow-counter-clockwise" style="font-size:13px"></i>Revert</span>
+            </div>
+          </div>
+          <div style="flex:1;overflow:auto;display:flex;font-family:var(--mono);font-size:12.5px;line-height:1.85">
+            <div style="flex:1;border-right:1px solid var(--border);min-width:0">
+              <div style="padding:5px 14px;color:var(--text-mute);border-bottom:1px solid var(--border);background:var(--bg-2);font-size:11px">Original</div>
+              <div style="padding:8px 0">
+                <div style="padding:0 14px"><span style="color:var(--text-mute);margin-right:14px">18</span>async login(dto: LoginDto) {</div>
+                <div style="padding:0 14px"><span style="color:var(--text-mute);margin-right:14px">19</span>&nbsp;&nbsp;const user = await this.find(dto);</div>
+                <div style="padding:0 14px;background:rgba(224,108,117,.12)"><span style="color:var(--text-mute);margin-right:14px">20</span>&nbsp;&nbsp;return this.sign(user);</div>
+                <div style="padding:0 14px;background:rgba(224,108,117,.12)"><span style="color:var(--text-mute);margin-right:14px">21</span>}</div>
+                <div style="padding:0 14px"><span style="color:var(--text-mute);margin-right:14px">22</span>&nbsp;</div>
+              </div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="padding:5px 14px;color:var(--text-mute);border-bottom:1px solid var(--border);background:var(--bg-2);font-size:11px">feat/payments-refactor</div>
+              <div style="padding:8px 0">
+                <div style="padding:0 14px"><span style="color:var(--text-mute);margin-right:14px">18</span>async login(dto: LoginDto) {</div>
+                <div style="padding:0 14px"><span style="color:var(--text-mute);margin-right:14px">19</span>&nbsp;&nbsp;const user = await this.find(dto);</div>
+                <div style="padding:0 14px;background:rgba(152,195,121,.12)"><span style="color:var(--text-mute);margin-right:14px">20</span>&nbsp;&nbsp;await this.rateLimiter.check(user.id);</div>
+                <div style="padding:0 14px;background:rgba(152,195,121,.12)"><span style="color:var(--text-mute);margin-right:14px">21</span>&nbsp;&nbsp;const token = this.sign(user);</div>
+                <div style="padding:0 14px;background:rgba(152,195,121,.12)"><span style="color:var(--text-mute);margin-right:14px">22</span>&nbsp;&nbsp;return { token, expiresIn: 3600 };</div>
+                <div style="padding:0 14px;background:rgba(152,195,121,.12)"><span style="color:var(--text-mute);margin-right:14px">23</span>}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- TERMINAL -->
+        <sc-if value="{{ showTerminal }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#08090d">
+          <div style="flex:none;display:flex;align-items:center;gap:9px;padding:7px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);font-family:var(--mono)"><i class="ph ph-terminal-window" style="font-size:15px;color:var(--green)"></i>zsh<span style="color:var(--text-mute)">·</span><span style="color:var(--text-mute)">feat/payments-refactor</span><span style="margin-left:auto;color:var(--text-mute)">worktree ~/dev/my-app.wt/payments</span></div>
+          <div style="flex:1;overflow:auto;padding:14px 18px;font-family:var(--mono);font-size:13px;line-height:1.75;color:var(--text)">
+            <div><span style="color:var(--green)">➜</span> <span style="color:var(--cyan)">payments</span> <span style="color:var(--purple)">git:(</span><span style="color:var(--red)">feat/payments-refactor</span><span style="color:var(--purple)">)</span> pnpm test</div>
+            <div style="color:var(--text-dim)">&nbsp;</div>
+            <div style="color:var(--text-dim)">&gt; my-app@1.4.0 test</div>
+            <div style="color:var(--text-dim)">&gt; jest --runInBand</div>
+            <div style="color:var(--text-dim)">&nbsp;</div>
+            <div><span style="background:var(--green);color:#08090d;padding:0 6px;border-radius:3px;font-weight:700"> PASS </span> src/payment/payment.service.spec.ts</div>
+            <div><span style="background:var(--green);color:#08090d;padding:0 6px;border-radius:3px;font-weight:700"> PASS </span> src/payment/idempotency.spec.ts</div>
+            <div style="color:var(--text-dim)">&nbsp;</div>
+            <div><span style="color:var(--green)">Tests:</span> 24 passed, 24 total</div>
+            <div><span style="color:var(--green)">Time:</span>  3.918 s</div>
+            <div style="margin-top:8px"><span style="color:var(--green)">➜</span> <span style="color:var(--cyan)">payments</span> <span style="color:var(--purple)">git:(</span><span style="color:var(--red)">feat/payments-refactor</span><span style="color:var(--purple)">)</span> <span style="background:var(--text);width:8px;height:16px;display:inline-block;vertical-align:middle;animation:mst-blink 1.1s step-end infinite"></span></div>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+
+      <!-- STATUS BAR -->
+      <div style="height:26px;flex:none;display:flex;align-items:center;gap:15px;padding:0 14px;background:var(--titlebar);border-top:1px solid var(--border);font-size:11px;color:var(--text-dim);font-family:var(--mono)">
+        <span style="display:flex;align-items:center;gap:5px;color:var(--accent)"><i class="ph ph-git-branch" style="font-size:13px"></i>feat/payments-refactor</span>
+        <span style="display:flex;align-items:center;gap:4px"><i class="ph ph-arrows-clockwise" style="font-size:12px"></i>2↑ 0↓</span>
+        <span style="display:flex;align-items:center;gap:4px;color:var(--yellow)"><i class="ph ph-circle-half" style="font-size:12px"></i>4 changes</span>
+        <div style="flex:1"></div>
+        <span style="display:flex;align-items:center;gap:5px;color:var(--green)"><i class="ph ph-sparkle" style="font-size:12px"></i>Claude Code · working</span>
+        <span>Theme: {{ themeName }}</span>
+        <span><i class="ph ph-bell" style="font-size:13px"></i></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS MODAL ===== -->
+  <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeSettings }}" style="position:absolute;inset:0;z-index:60;background:rgba(4,6,10,.62);display:flex;align-items:center;justify-content:center;padding:40px">
+    <div onClick="{{ stop }}" style="width:min(920px,100%);height:min(640px,100%);background:var(--bg-2);border:1px solid var(--border-2);border-radius:15px;box-shadow:0 40px 100px rgba(0,0,0,.6);display:flex;overflow:hidden">
+      <div style="width:212px;flex:none;background:var(--titlebar);border-right:1px solid var(--border);padding:16px 10px;display:flex;flex-direction:column;gap:2px">
+        <div style="padding:4px 10px 12px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px"><i class="ph ph-gear-six" style="font-size:17px;color:var(--accent)"></i>Settings</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;color:var(--text-dim);cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-sliders" style="font-size:16px"></i>General</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;color:var(--text-dim);cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-palette" style="font-size:16px"></i>Appearance</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;color:var(--text-dim);cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-sparkle" style="font-size:16px"></i>Agents &amp; CLI</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;background:var(--active);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)"><i class="ph ph-git-branch" style="font-size:16px;color:var(--accent)"></i>Worktree Hooks</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;color:var(--text-dim);cursor:pointer" style-hover="background:var(--hover)"><i class="ph ph-keyboard" style="font-size:16px"></i>Keybindings</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;display:flex;align-items:center;padding:16px 22px;border-bottom:1px solid var(--border)">
+          <div><div style="font-weight:600;font-size:15px">Worktree Hooks</div><div style="font-size:12px;color:var(--text-mute);margin-top:2px">Scripts that run automatically after a new worktree is created</div></div>
+          <div onClick="{{ closeSettings }}" style="margin-left:auto;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;color:var(--text-dim)" style-hover="background:var(--hover)"><i class="ph ph-x" style="font-size:16px"></i></div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:20px 22px;display:flex;flex-direction:column;gap:18px">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.7px;color:var(--text-mute)">QUICK PRESETS</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:var(--bg-3)"><i class="ph ph-copy" style="font-size:18px;color:var(--accent-2)"></i><div style="flex:1"><div style="font-weight:500">Copy .env files</div><div style="font-size:11.5px;color:var(--text-mute)">Copies .env* from the source worktree</div></div><div style="width:38px;height:22px;border-radius:12px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff"></span></div></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:var(--bg-3)"><i class="ph ph-package" style="font-size:18px;color:var(--orange)"></i><div style="flex:1"><div style="font-weight:500">Run install command</div><div style="font-size:11.5px;color:var(--text-mute)">Detected: <span style="font-family:var(--mono);color:var(--text-dim)">pnpm install</span></div></div><div style="width:38px;height:22px;border-radius:12px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff"></span></div></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:var(--bg-3)"><i class="ph ph-link" style="font-size:18px;color:var(--text-mute)"></i><div style="flex:1"><div style="font-weight:500">Symlink node_modules</div><div style="font-size:11.5px;color:var(--text-mute)">Share deps instead of reinstalling</div></div><div style="width:38px;height:22px;border-radius:12px;background:var(--bg);border:1px solid var(--border-2);position:relative"><span style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--text-mute)"></span></div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:700;letter-spacing:.7px;color:var(--text-mute)">CUSTOM POST-CREATE HOOK</span><span style="font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:5px;background:var(--bg-3);color:var(--text-dim)">bash</span></div>
+            <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#08090d">
+              <div style="padding:12px 14px;font-family:var(--mono);font-size:12.5px;line-height:1.8">
+                <div style="display:flex"><span style="color:var(--text-mute);width:22px;flex:none">1</span><span style="color:var(--text-mute)">#!/usr/bin/env bash</span></div>
+                <div style="display:flex"><span style="color:var(--text-mute);width:22px;flex:none">2</span><span style="color:var(--text-dim)">cp <span style="color:var(--green)">"$SOURCE_WORKTREE"</span>/.env* <span style="color:var(--green)">"$NEW_WORKTREE"</span>/ 2&gt;/dev/null</span></div>
+                <div style="display:flex"><span style="color:var(--text-mute);width:22px;flex:none">3</span><span style="color:var(--text-dim)">cd <span style="color:var(--green)">"$NEW_WORKTREE"</span> &amp;&amp; pnpm install</span></div>
+                <div style="display:flex"><span style="color:var(--text-mute);width:22px;flex:none">4</span><span style="color:var(--text-dim)">pnpm exec prisma generate</span></div>
+                <div style="display:flex"><span style="color:var(--text-mute);width:22px;flex:none">5</span><span style="color:var(--text-dim)">code <span style="color:var(--green)">"$NEW_WORKTREE"</span></span></div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:7px">
+              <span style="font-size:11px;color:var(--text-mute);align-self:center">Variables:</span>
+              <span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--accent-2);cursor:pointer">$NEW_WORKTREE</span>
+              <span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--accent-2);cursor:pointer">$SOURCE_WORKTREE</span>
+              <span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--accent-2);cursor:pointer">$BRANCH</span>
+              <span style="font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--accent-2);cursor:pointer">$PROJECT_ROOT</span>
+            </div>
+          </div>
+        </div>
+        <div style="flex:none;display:flex;align-items:center;gap:10px;padding:14px 22px;border-top:1px solid var(--border)">
+          <span style="font-size:12px;color:var(--text-mute)">Applies to <span style="color:var(--text-dim)">my-app</span> · overrides global hooks</span>
+          <div style="flex:1"></div>
+          <div onClick="{{ closeSettings }}" style="padding:8px 16px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:13px;color:var(--text-dim)">Cancel</div>
+          <div onClick="{{ closeSettings }}" style="padding:8px 18px;border-radius:8px;background:var(--accent);color:#0a0c11;font-weight:600;cursor:pointer;font-size:13px">Save hooks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    theme: 'maestro',
+    activeTabId: 'a1',
+    sidebarView: 'explorer',
+    newTabMenuOpen: false,
+    settingsOpen: false,
+    leftCollapsed: false,
+    rightCollapsed: false,
+    tabs: [
+      { id: 'a1', type: 'agent',    title: 'Claude Code',            icon: 'ph-sparkle',         color: 'var(--accent)' },
+      { id: 'f1', type: 'file',     title: 'payment.service.ts',     icon: 'ph-file-ts',         color: 'var(--blue)' },
+      { id: 'm1', type: 'markdown', title: 'README.md',              icon: 'ph-file-text',       color: 'var(--accent-2)' },
+      { id: 'd1', type: 'diff',     title: 'auth.controller.ts',     icon: 'ph-git-diff',        color: 'var(--orange)' },
+      { id: 't1', type: 'terminal', title: 'zsh — payments',         icon: 'ph-terminal-window', color: 'var(--green)' },
+    ],
+  };
+
+  themes = {
+    maestro: { '--bg':'#0d1016','--bg-2':'#12151c','--bg-3':'#1a1f28','--titlebar':'#0a0c11','--border':'rgba(255,255,255,.07)','--border-2':'rgba(255,255,255,.12)','--text':'#d5dae2','--text-dim':'#8a94a6','--text-mute':'#59616f','--accent':'#7c8cff','--accent-2':'#61afef','--accent-soft':'rgba(124,140,255,.14)','--hover':'rgba(255,255,255,.045)','--active':'rgba(124,140,255,.16)','--green':'#98c379','--red':'#e06c75','--yellow':'#e5c07b','--purple':'#c678dd','--orange':'#d19a66','--blue':'#61afef','--cyan':'#56b6c2','--sel':'rgba(124,140,255,.25)' },
+    darkplus: { '--bg':'#1e1e1e','--bg-2':'#252526','--bg-3':'#2d2d30','--titlebar':'#323233','--border':'rgba(255,255,255,.06)','--border-2':'rgba(255,255,255,.1)','--text':'#d4d4d4','--text-dim':'#9d9d9d','--text-mute':'#6b6b6b','--accent':'#1a7fd4','--accent-2':'#4daafc','--accent-soft':'rgba(26,127,212,.22)','--hover':'rgba(255,255,255,.05)','--active':'rgba(26,127,212,.28)','--green':'#6a9955','--red':'#f14c4c','--yellow':'#dcdcaa','--purple':'#c586c0','--orange':'#ce9178','--blue':'#569cd6','--cyan':'#4ec9b0','--sel':'rgba(38,79,120,.7)' },
+    onedark: { '--bg':'#282c34','--bg-2':'#21252b','--bg-3':'#2c313a','--titlebar':'#21252b','--border':'rgba(255,255,255,.06)','--border-2':'rgba(255,255,255,.1)','--text':'#abb2bf','--text-dim':'#828997','--text-mute':'#5c6370','--accent':'#61afef','--accent-2':'#56b6c2','--accent-soft':'rgba(97,175,239,.16)','--hover':'rgba(255,255,255,.045)','--active':'rgba(97,175,239,.18)','--green':'#98c379','--red':'#e06c75','--yellow':'#e5c07b','--purple':'#c678dd','--orange':'#d19a66','--blue':'#61afef','--cyan':'#56b6c2','--sel':'rgba(97,175,239,.25)' },
+  };
+
+  applyTheme(name) {
+    const el = this.rootEl, t = this.themes[name];
+    if (el && t) Object.entries(t).forEach(([k, v]) => el.style.setProperty(k, v));
+  }
+
+  setRoot = (el) => { this.rootEl = el; if (el) this.applyTheme(this.state.theme); };
+  setTheme = (name) => { this.setState({ theme: name }); this.applyTheme(name); };
+  setTab = (id) => this.setState({ activeTabId: id, newTabMenuOpen: false });
+  ensureTab = (type, id) => this.setState(s => ({ activeTabId: s.tabs.some(t => t.id === id) ? id : s.activeTabId, newTabMenuOpen: false }));
+  closeTab = (id, e) => { if (e) e.stopPropagation(); this.setState(s => { const tabs = s.tabs.filter(t => t.id !== id); return { tabs, activeTabId: s.activeTabId === id ? (tabs[0] && tabs[0].id) : s.activeTabId }; }); };
+  setSidebar = (v) => this.setState({ sidebarView: v, settingsOpen: false, rightCollapsed: false });
+  toggleLeft = () => this.setState(s => ({ leftCollapsed: !s.leftCollapsed }));
+  toggleRight = () => this.setState(s => ({ rightCollapsed: !s.rightCollapsed }));
+
+  componentDidUpdate() { if (window.PhosphorIcons) {} }
+
+  renderVals() {
+    const { tabs, activeTabId, sidebarView, newTabMenuOpen, settingsOpen, theme } = this.state;
+    const active = tabs.find(t => t.id === activeTabId);
+    const type = active && active.type;
+
+    const tabsView = tabs.map(t => ({
+      ...t,
+      bg: t.id === activeTabId ? 'var(--bg)' : 'transparent',
+      titleColor: t.id === activeTabId ? 'var(--text)' : 'var(--text-dim)',
+      activeOpacity: t.id === activeTabId ? 1 : 0,
+      onClick: () => this.setTab(t.id),
+      onClose: (e) => this.closeTab(t.id, e),
+    }));
+
+    const rail = [
+      { id: 'explorer', icon: 'ph-files',                    label: 'Explorer' },
+      { id: 'scm',      icon: 'ph-git-branch',               label: 'Source Control', badge: 4 },
+      { id: 'history',  icon: 'ph-clock-counter-clockwise',  label: 'History' },
+      { id: 'search',   icon: 'ph-magnifying-glass',         label: 'Search' },
+    ].map(r => {
+      const activeItem = sidebarView === r.id;
+      return { ...r, hasBadge: !!r.badge, activeOpacity: activeItem ? 1 : 0, iconColor: activeItem ? 'var(--text)' : 'var(--text-mute)', onClick: () => this.setSidebar(r.id) };
+    });
+
+    const commits = [
+      { hash: 'a3f9c1', msg: 'feat(payments): idempotency keys + retry backoff', author: 'you',   time: '2h ago',  dot: 'var(--accent)' },
+      { hash: 'e21b70', msg: 'refactor: extract Gateway adapter interface',       author: 'you',   time: '5h ago',  dot: 'var(--text-dim)' },
+      { hash: '9c04af', msg: 'test: cover partial-failure retry paths',           author: 'maya',  time: 'yesterday', dot: 'var(--text-dim)' },
+      { hash: '77de12', msg: 'chore: bump nestjs to 10.3',                        author: 'you',   time: 'yesterday', dot: 'var(--text-dim)' },
+      { hash: '4b8a09', msg: 'fix: null card token on Adyen path',                author: 'liam',  time: '2 days ago', dot: 'var(--text-dim)' },
+      { hash: '0f1e55', msg: 'feat: Braintree gateway adapter',                   author: 'you',   time: '3 days ago', dot: 'var(--text-dim)' },
+    ];
+
+    return {
+      setRoot: this.setRoot,
+      stop: (e) => e.stopPropagation(),
+      tabsView, rail, commits,
+      showAgent: type === 'agent', showFile: type === 'file', showMarkdown: type === 'markdown', showDiff: type === 'diff', showTerminal: type === 'terminal',
+      viewExplorer: sidebarView === 'explorer' || sidebarView === 'search',
+      viewScm: sidebarView === 'scm',
+      viewHistory: sidebarView === 'history',
+      newTabMenuOpen, settingsOpen,
+      leftCollapsed: this.state.leftCollapsed, leftOpen: !this.state.leftCollapsed,
+      rightCollapsed: this.state.rightCollapsed, rightOpen: !this.state.rightCollapsed,
+      toggleLeft: this.toggleLeft, toggleRight: this.toggleRight,
+      openNewTab: () => this.setState(s => ({ newTabMenuOpen: !s.newTabMenuOpen })),
+      closeNewTab: () => this.setState({ newTabMenuOpen: false }),
+      openSettings: () => this.setState({ settingsOpen: true, newTabMenuOpen: false }),
+      closeSettings: () => this.setState({ settingsOpen: false }),
+      openFileTab: () => this.ensureTab('file', 'f1'),
+      openMdTab: () => this.ensureTab('markdown', 'm1'),
+      openDiffTab: () => this.ensureTab('diff', 'd1'),
+      setThemeMaestro: () => this.setTheme('maestro'),
+      setThemeDarkPlus: () => this.setTheme('darkplus'),
+      setThemeOneDark: () => this.setTheme('onedark'),
+      themeName: theme === 'maestro' ? 'Maestro Dark' : theme === 'darkplus' ? 'Dark+' : 'One Dark Pro',
+    };
+  }
+}
+</script>
+</body>
+</html>

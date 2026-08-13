@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-electron/
+release/
+out/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-journal
+.vscode/*
+!.vscode/extensions.json
+.claude/
