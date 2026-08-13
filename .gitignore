@@ -1,8 +1,6 @@
 node_modules/
 dist/
-dist-electron/
-release/
-out/
+*.local
 *.log
 .DS_Store
 .env
@@ -12,4 +10,7 @@ out/
 *.sqlite-journal
 .vscode/*
 !.vscode/extensions.json
+.idea
+*.suo
+*.sw?
 .claude/

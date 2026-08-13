@@ -140,7 +140,7 @@ Claude Code — validating the `AgentAdapter` interface before generalizing.
 - Capability probe (`detect()`): binary on PATH, version, logged-in state;
   surfaced clearly if any check fails (`V1_SCOPE.md` §6).
 - Spawn via `-p --input-format stream-json --output-format stream-json
-  --permission-prompt-tool stdio` (`ARCHITECTURE.md` §3.1); NDJSON parser
+--permission-prompt-tool stdio` (`ARCHITECTURE.md` §3.1); NDJSON parser
   with fixture-driven unit tests covering partial/interleaved lines.
 - Renderer: tool-call cards (Read/Grep/Edit/Bash), thinking-block collapse,
   inline mini-diffs on Edit — ported from the design file's agent-chat
@@ -222,7 +222,7 @@ broken."
 
 - Finalize Tauri bundler config for all three targets (AppImage/deb/rpm,
   dmg, msi/nsis); generate the minisign updater keypair (`tauri signer
-  generate`), wire `tauri-plugin-updater` end to end.
+generate`), wire `tauri-plugin-updater` end to end.
 - `.desktop`/icon integration story for Linux (AppImageLauncher doc or
   first-run self-integration).
 - **NVIDIA/WebKitGTK check**: test the packaged AppImage on at least one

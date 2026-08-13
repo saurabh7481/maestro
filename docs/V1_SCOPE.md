@@ -20,6 +20,7 @@ in parallel without them stepping on each other.
 ## In scope for v1
 
 ### 1. Shell & theming
+
 - Frameless custom titlebar, window controls, single-instance app.
 - Dark-mode-first. Three baseline themes shipped from the design file
   (Maestro Dark, VS Code Dark+, One Dark Pro) plus a theme JSON schema so
@@ -28,6 +29,7 @@ in parallel without them stepping on each other.
   and commands.
 
 ### 2. Project & worktree manager (left sidebar)
+
 - "Add project" by pointing at an existing local git repository (no clone-from-URL in v1).
 - Tree of projects → branches/worktrees.
 - Create worktree (new branch off a ref, or attach to an existing branch).
@@ -41,6 +43,7 @@ in parallel without them stepping on each other.
   to whichever worktree is currently selected.
 
 ### 3. Tab-based center pane
+
 - Tabs for: Claude Code, Codex CLI, Cursor Agent, native terminal, file
   editor, markdown preview, diff viewer.
 - New-tab menu offers "start fresh" per agent **and** "resume session" listing
@@ -51,6 +54,7 @@ in parallel without them stepping on each other.
   persists across app restarts.
 
 ### 4. File explorer & editor
+
 - VS Code-style file tree (expand/collapse, create/rename/delete/move,
   reveal-in-tree, git status glyphs) scoped to the active worktree.
 - Files open as tabs in the center pane, rendered with Monaco:
@@ -63,6 +67,7 @@ in parallel without them stepping on each other.
   reload-or-keep-mine prompt).
 
 ### 5. Git integration (SCM view)
+
 - Status list split into Staged / Changes, stage/unstage per file or all,
   commit (with message box), push, pull, fetch, branch indicator with
   ahead/behind counts.
@@ -70,11 +75,12 @@ in parallel without them stepping on each other.
   for any changed file; stage/unstage/revert (discard) from the diff tab.
 - Commit history view: linear log for the current branch, author/time/hash,
   click a commit to see its diff (read-only).
-- Conflict *display* (a file in a conflicted state is clearly flagged) but
+- Conflict _display_ (a file in a conflicted state is clearly flagged) but
   a full 3-way merge editor is a v2 candidate — v1 lets you drop to the
   native terminal or an editor to resolve, then re-stage normally.
 
 ### 6. Agent CLI wrapping (the core of the product)
+
 - Claude Code, Codex CLI, and Cursor Agent each launched in their
   **non-interactive/headless streaming JSON mode** (not a raw PTY) so
   Maestro can render structured, VS Code/Cursor-style tool-call cards
@@ -91,7 +97,7 @@ in parallel without them stepping on each other.
   exposes them via flags — no fake dropdowns for unsupported options),
   @-mention file context, attach files.
 - One live agent tab per (worktree, agent) at a time in v1 — running the
-  *same* agent twice in the *same* worktree concurrently is a non-goal
+  _same_ agent twice in the _same_ worktree concurrently is a non-goal
   (see below); different agents, or the same agent in different worktrees,
   run fully in parallel.
 - Pre-flight capability checks: detect CLI not installed, wrong/untested
@@ -99,16 +105,19 @@ in parallel without them stepping on each other.
   mid-session.
 
 ### 7. Native terminal tab
+
 - Real PTY (node-pty + xterm.js) opened at the worktree's working directory,
   full ANSI/color support, resizable, one per tab, killed cleanly on close.
 
 ### 8. Settings
+
 - General, Appearance (theme picker + custom theme JSON import), Agents &
   CLI (binary paths, detected versions, default flags), Worktree Hooks
   (per-project, with a global default), Keybindings (view + rebind the
   built-in map; no plugin/extension system in v1).
 
 ### 9. Packaging & distribution
+
 - Tauri's built-in bundler producing: AppImage (Linux, primary
   target/daily-driven platform; deb/rpm also available), dmg (macOS),
   msi/nsis (Windows).
@@ -123,10 +132,10 @@ in parallel without them stepping on each other.
 
 - Full LSP integration in Monaco (go-to-definition, hover, diagnostics).
 - Three-way merge conflict editor.
-- Multiple concurrent sessions of the *same* agent in the *same* worktree
+- Multiple concurrent sessions of the _same_ agent in the _same_ worktree
   (tab-per-session fan-out).
 - Clone-from-URL project onboarding; remote/SSH worktrees.
-- Plugin/extension system; custom keybinding *scripting* beyond remapping.
+- Plugin/extension system; custom keybinding _scripting_ beyond remapping.
 - Sandboxed/containerized agent execution (Docker/VM isolation per worktree).
 - Telemetry/analytics dashboards beyond local crash logs.
 - Team features: shared sessions, comments, PR review UI beyond opening the

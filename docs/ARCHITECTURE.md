@@ -76,35 +76,35 @@ but it's not a v1 need.
 rationale as before: they're long-running, must survive a webview
 reload during development, and must be reachable for cleanup on app
 quit/crash. The frontend only ever sees a stream of typed Tauri events.
-Rust's `tokio` async runtime is arguably a *better* fit for this than
+Rust's `tokio` async runtime is arguably a _better_ fit for this than
 Node's event loop was — multiplexing several long-lived child processes'
 stdio (agents + PTYs + hook scripts) concurrently is exactly what `tokio`
 is for, with no GC pauses to worry about under load.
 
 ## 2. Tech stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Shell | Tauri v2 | No bundled Chromium — uses the OS's native webview + a Rust core. ~30–50MB idle RAM and 3–15MB installers vs Electron's 150–300MB+/80–150MB, ~4x faster cold start (per current benchmarks). Validated on this project's own target environment via the rendering spike above. |
-| Backend language | Rust | Tauri's core process is Rust-only; no Node runtime is present in the shipped app. This is also just a good fit for what the backend actually does — spawning/multiplexing child processes (git, three agent CLIs, PTYs, hook scripts) — Rust's ecosystem (`tokio`, `portable-pty`) is mature here. |
-| Bundler/dev server | Vite | Same choice as before the framework switch — fast HMR, first-class React support, and Tauri's own tooling (`@tauri-apps/cli`) is built to sit in front of any Vite-based frontend. |
-| Language (frontend) | TypeScript | Shared types for the command/event contract (generated or hand-mirrored from the Rust side) and agent event schemas — still the #1 defense against "GUI shows garbage" bugs from frontend/backend drift. |
-| UI framework | React 18+ | Unchanged reasoning: team familiarity, ecosystem for Monaco/xterm wrappers, and the design file's component shape maps directly onto components. |
-| State | Zustand | Unchanged: least-ceremony match for the design file's already-store-shaped `state`/`setState`/`renderVals()` logic. |
-| Styling | CSS custom properties (theme tokens, 1:1 with the design file's `--bg`, `--accent`, etc.) + CSS Modules, or Tailwind v4 with `@theme` mapped onto the same variable set. | Unchanged: themes are runtime CSS-variable swaps on the root element, never compiled-in colors — preserves the design file's `applyTheme()` mechanism exactly. |
-| Primitives | Radix UI (unstyled) for menus, dialogs, dropdowns, tooltips | Unchanged: accessibility for free, we only supply the visual skin. |
-| Icons | Phosphor Icons | Unchanged: zero migration cost from the design file. |
-| Editor | Monaco Editor | Unchanged choice, **now validated to render cleanly in a Tauri/WebKitGTK window** by the spike in this document's header note. Needs explicit Vite worker configuration (`vite-plugin-monaco-editor` or manual `MonacoEnvironment.getWorker`) — the spike surfaced this as a dev-time warning, not a blocker. |
-| Terminal | `xterm.js` (webview) + a Rust PTY backend (core process), IPC-bridged via Tauri commands/events | Same architecture as the Electron plan, different plumbing: evaluate **`tauri-plugin-pty`** first (a maintained Tauri plugin built exactly for this — spawn a shell, pipe `onData`/`write` to xterm.js) before hand-rolling on top of the lower-level `portable-pty` crate (what `tauri-plugin-pty` itself and wezterm are built on) — validated in prior art by Heroi's `xterm.js` + `tauri-pty` terminal tab. |
-| Agent transport | Each CLI's own headless/stream-json mode, spawned via `tokio::process::Command` in the core process — **not** PTY. | Unchanged rationale: these CLIs already emit structured NDJSON (tool calls, diffs, thinking, results); PTY+ANSI-scraping would throw that structure away. PTY stays reserved for the native-terminal tab. (Note: this is a deliberate divergence from Heroi's simpler raw-PTY-per-agent approach — Heroi doesn't attempt structured tool-call-card rendering; Maestro's design file requires it.) |
-| Local persistence | `rusqlite` (embedded SQLite, accessed directly from Rust, no separate server) | Same embedded/zero-server reasoning as `better-sqlite3` before it — Rust's SQLite bindings are mature and this keeps the whole persistence layer inside the core process, no IPC round-trip needed to query it. (`tauri-plugin-sql`, which fronts `sqlx`, is a reasonable alternative if async-from-the-frontend access is ever needed — not needed for v1 since all persistence is core-process-side.) |
-| Git operations | Shell out to the system `git` binary via `std::process::Command`/`tokio::process::Command` (not `git2`/libgit2) | Unchanged rationale: `git worktree` support in libgit2-based bindings (Rust's `git2` included) is incomplete/unreliable; shelling to the real binary is what VS Code's own Git extension does and is the only way to get worktree semantics right. Confirmed as the right call independent of language — this isn't an Electron-vs-Tauri question. |
-| File watching | `notify` crate (Rust's cross-platform equivalent of `chokidar`), one watcher per **open** worktree | Same bounding rationale as before: a project with 10 worktrees shouldn't run 10 watchers if only 2 are open in tabs. |
-| App lifecycle plugins | Official Tauri plugins: `tauri-plugin-single-instance`, `tauri-plugin-window-state` | Purpose-built, maintained by the Tauri org, cover exactly the single-instance-lock and window-bounds-persistence needs called out in `V1_SCOPE.md`/`ROADMAP.md` Phase 0 — no need to hand-roll either. |
-| Packaging | Tauri's built-in bundler (`tauri build`, via `tauri-cli`) | Native support for AppImage/deb/rpm (Linux), dmg (macOS), msi/nsis (Windows) — no separate tool (no electron-builder equivalent needed, it's built into the Tauri CLI). |
-| Auto-update | `tauri-plugin-updater` | Supports all the Linux bundle types we care about (deb/rpm/AppImage) as well as Windows/macOS, minisign-signed update artifacts (§9). |
-| Testing | Rust: `cargo test` (unit) for `GitService`, adapters, hook runner. Frontend: Vitest (unit). E2E: `tauri-driver` + WebdriverIO (Tauri's WebDriver-based E2E story, analogous to Playwright's Electron driver in the old plan). | Mirrors the old testing pyramid one-for-one, swapped onto Tauri's actual tooling. |
-| CI | GitHub Actions, 3-OS build matrix, using `tauri-action` (official GitHub Action for building/releasing Tauri apps) | Same need as before (produce AppImage/dmg/msi on every tag); `tauri-action` is the maintained, purpose-built way to do it rather than hand-rolling the matrix from scratch. |
+| Layer                 | Choice                                                                                                                                                                                                                        | Why                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell                 | Tauri v2                                                                                                                                                                                                                      | No bundled Chromium — uses the OS's native webview + a Rust core. ~30–50MB idle RAM and 3–15MB installers vs Electron's 150–300MB+/80–150MB, ~4x faster cold start (per current benchmarks). Validated on this project's own target environment via the rendering spike above.                                                                                                                                  |
+| Backend language      | Rust                                                                                                                                                                                                                          | Tauri's core process is Rust-only; no Node runtime is present in the shipped app. This is also just a good fit for what the backend actually does — spawning/multiplexing child processes (git, three agent CLIs, PTYs, hook scripts) — Rust's ecosystem (`tokio`, `portable-pty`) is mature here.                                                                                                              |
+| Bundler/dev server    | Vite                                                                                                                                                                                                                          | Same choice as before the framework switch — fast HMR, first-class React support, and Tauri's own tooling (`@tauri-apps/cli`) is built to sit in front of any Vite-based frontend.                                                                                                                                                                                                                              |
+| Language (frontend)   | TypeScript                                                                                                                                                                                                                    | Shared types for the command/event contract (generated or hand-mirrored from the Rust side) and agent event schemas — still the #1 defense against "GUI shows garbage" bugs from frontend/backend drift.                                                                                                                                                                                                        |
+| UI framework          | React 18+                                                                                                                                                                                                                     | Unchanged reasoning: team familiarity, ecosystem for Monaco/xterm wrappers, and the design file's component shape maps directly onto components.                                                                                                                                                                                                                                                                |
+| State                 | Zustand                                                                                                                                                                                                                       | Unchanged: least-ceremony match for the design file's already-store-shaped `state`/`setState`/`renderVals()` logic.                                                                                                                                                                                                                                                                                             |
+| Styling               | CSS custom properties (theme tokens, 1:1 with the design file's `--bg`, `--accent`, etc.) + CSS Modules, or Tailwind v4 with `@theme` mapped onto the same variable set.                                                      | Unchanged: themes are runtime CSS-variable swaps on the root element, never compiled-in colors — preserves the design file's `applyTheme()` mechanism exactly.                                                                                                                                                                                                                                                  |
+| Primitives            | Radix UI (unstyled) for menus, dialogs, dropdowns, tooltips                                                                                                                                                                   | Unchanged: accessibility for free, we only supply the visual skin.                                                                                                                                                                                                                                                                                                                                              |
+| Icons                 | Phosphor Icons                                                                                                                                                                                                                | Unchanged: zero migration cost from the design file.                                                                                                                                                                                                                                                                                                                                                            |
+| Editor                | Monaco Editor                                                                                                                                                                                                                 | Unchanged choice, **now validated to render cleanly in a Tauri/WebKitGTK window** by the spike in this document's header note. Needs explicit Vite worker configuration (`vite-plugin-monaco-editor` or manual `MonacoEnvironment.getWorker`) — the spike surfaced this as a dev-time warning, not a blocker.                                                                                                   |
+| Terminal              | `xterm.js` (webview) + a Rust PTY backend (core process), IPC-bridged via Tauri commands/events                                                                                                                               | Same architecture as the Electron plan, different plumbing: evaluate **`tauri-plugin-pty`** first (a maintained Tauri plugin built exactly for this — spawn a shell, pipe `onData`/`write` to xterm.js) before hand-rolling on top of the lower-level `portable-pty` crate (what `tauri-plugin-pty` itself and wezterm are built on) — validated in prior art by Heroi's `xterm.js` + `tauri-pty` terminal tab. |
+| Agent transport       | Each CLI's own headless/stream-json mode, spawned via `tokio::process::Command` in the core process — **not** PTY.                                                                                                            | Unchanged rationale: these CLIs already emit structured NDJSON (tool calls, diffs, thinking, results); PTY+ANSI-scraping would throw that structure away. PTY stays reserved for the native-terminal tab. (Note: this is a deliberate divergence from Heroi's simpler raw-PTY-per-agent approach — Heroi doesn't attempt structured tool-call-card rendering; Maestro's design file requires it.)               |
+| Local persistence     | `rusqlite` (embedded SQLite, accessed directly from Rust, no separate server)                                                                                                                                                 | Same embedded/zero-server reasoning as `better-sqlite3` before it — Rust's SQLite bindings are mature and this keeps the whole persistence layer inside the core process, no IPC round-trip needed to query it. (`tauri-plugin-sql`, which fronts `sqlx`, is a reasonable alternative if async-from-the-frontend access is ever needed — not needed for v1 since all persistence is core-process-side.)         |
+| Git operations        | Shell out to the system `git` binary via `std::process::Command`/`tokio::process::Command` (not `git2`/libgit2)                                                                                                               | Unchanged rationale: `git worktree` support in libgit2-based bindings (Rust's `git2` included) is incomplete/unreliable; shelling to the real binary is what VS Code's own Git extension does and is the only way to get worktree semantics right. Confirmed as the right call independent of language — this isn't an Electron-vs-Tauri question.                                                              |
+| File watching         | `notify` crate (Rust's cross-platform equivalent of `chokidar`), one watcher per **open** worktree                                                                                                                            | Same bounding rationale as before: a project with 10 worktrees shouldn't run 10 watchers if only 2 are open in tabs.                                                                                                                                                                                                                                                                                            |
+| App lifecycle plugins | Official Tauri plugins: `tauri-plugin-single-instance`, `tauri-plugin-window-state`                                                                                                                                           | Purpose-built, maintained by the Tauri org, cover exactly the single-instance-lock and window-bounds-persistence needs called out in `V1_SCOPE.md`/`ROADMAP.md` Phase 0 — no need to hand-roll either.                                                                                                                                                                                                          |
+| Packaging             | Tauri's built-in bundler (`tauri build`, via `tauri-cli`)                                                                                                                                                                     | Native support for AppImage/deb/rpm (Linux), dmg (macOS), msi/nsis (Windows) — no separate tool (no electron-builder equivalent needed, it's built into the Tauri CLI).                                                                                                                                                                                                                                         |
+| Auto-update           | `tauri-plugin-updater`                                                                                                                                                                                                        | Supports all the Linux bundle types we care about (deb/rpm/AppImage) as well as Windows/macOS, minisign-signed update artifacts (§9).                                                                                                                                                                                                                                                                           |
+| Testing               | Rust: `cargo test` (unit) for `GitService`, adapters, hook runner. Frontend: Vitest (unit). E2E: `tauri-driver` + WebdriverIO (Tauri's WebDriver-based E2E story, analogous to Playwright's Electron driver in the old plan). | Mirrors the old testing pyramid one-for-one, swapped onto Tauri's actual tooling.                                                                                                                                                                                                                                                                                                                               |
+| CI                    | GitHub Actions, 3-OS build matrix, using `tauri-action` (official GitHub Action for building/releasing Tauri apps)                                                                                                            | Same need as before (produce AppImage/dmg/msi on every tag); `tauri-action` is the maintained, purpose-built way to do it rather than hand-rolling the matrix from scratch.                                                                                                                                                                                                                                     |
 
 ## 3. Agent CLI protocol reference (researched, not assumed)
 
@@ -145,7 +145,7 @@ below are identical to the Electron-era plan.
 - Headless mode: `codex exec "<prompt>"`.
 - JSON events: `codex exec --json` → NDJSON, one event per state change.
 - Resume: `codex exec resume --last` (most recent in cwd), `codex exec
-  resume <SESSION_ID>` (specific), `--all` to search beyond cwd.
+resume <SESSION_ID>` (specific), `--all` to search beyond cwd.
 - **Known gap to design around**: at least one shipped version's
   `--json` output does not reliably surface a `session_id` in the stream,
   which breaks the naive "capture id → resume by id" pattern. Maestro's
@@ -167,7 +167,7 @@ below are identical to the Electron-era plan.
   "Resume session" menu), `agent --continue` (continue most recent),
   `agent --resume <id>` (specific), `agent resume` (shorthand for latest).
 - Exposes a `--mode` flag mirroring the editor's modes — surface it in the
-  composer's mode picker *only* if present for the installed version
+  composer's mode picker _only_ if present for the installed version
   (per the "no fake dropdowns" rule in `V1_SCOPE.md` §6).
 
 ### 3.4 Adapter interface (shared shape, per-CLI implementation)
@@ -245,11 +245,11 @@ what it exposes):
 
 - Every command the frontend can call is an explicit
   `#[tauri::command]` function in Rust. Nothing is reachable unless it's
-  both defined *and* granted to the calling window via a **capability**
+  both defined _and_ granted to the calling window via a **capability**
   file (`src-tauri/capabilities/*.json`).
-- **Three-layer model**: *Capabilities* (JSON files binding permissions to
-  specific windows/platforms) → *Permissions* (which commands/features are
-  allowed) → *Scopes* (fine-grained limits within a permission, e.g. which
+- **Three-layer model**: _Capabilities_ (JSON files binding permissions to
+  specific windows/platforms) → _Permissions_ (which commands/features are
+  allowed) → _Scopes_ (fine-grained limits within a permission, e.g. which
   filesystem paths). All three are additive-only and default-deny — an
   unlisted command simply cannot be invoked from the webview, full stop.
 - The frontend never receives raw file-system paths it didn't ask for and
@@ -295,17 +295,17 @@ concern and doesn't care what shell hosts the webview:
   interpolation of user-controlled strings (args passed as an array, not a
   formatted shell string).
 - `git worktree add <path> <branch>` (new branch: `-b`), `git worktree
-  remove <path>` (guarded — refuse on dirty tree unless `--force` is
+remove <path>` (guarded — refuse on dirty tree unless `--force` is
   explicitly confirmed in the UI), `git worktree list --porcelain` to
   reconcile Maestro's SQLite view against actual on-disk state on every
   project open (external `git worktree` CLI use outside Maestro must not
   desync the sidebar).
 - Status/diff computation is **debounced and incremental**: `notify`
   events coalesce (150–300ms) before triggering `git status
-  --porcelain=v2`, and only the active worktree's SCM view recomputes
+--porcelain=v2`, and only the active worktree's SCM view recomputes
   eagerly; background worktrees refresh lazily when selected.
 - Diff rendering: feed Monaco's diff editor the two blobs (`git show
-  HEAD:<path>` vs working tree, or index vs working tree for unstaged) —
+HEAD:<path>` vs working tree, or index vs working tree for unstaged) —
   reuses Monaco's own diff algorithm/rendering rather than hand-rolling a
   line-diff UI.
 
@@ -388,18 +388,20 @@ concern and doesn't care what shell hosts the webview:
 ## Sources consulted while researching this document
 
 Agent CLI protocols (unchanged by the framework switch):
+
 - [Headless mode — Claude Code Docs](https://cld-docs.onlinetool.cc/en/docs/claude-code/headless.html)
 - [10 Claude Code CLI flags you probably aren't using](https://www.mager.co/blog/2026-04-20-claude-code-cli-flags/)
 - [Wrapping Claude CLI for Agentic Applications](https://avasdream.com/blog/claude-cli-agentic-wrapper)
 - [`--input-format stream-json` usage is undocumented — anthropics/claude-code#24594](https://github.com/anthropics/claude-code/issues/24594)
 - [Claude Code Hooks reference](https://code.claude.com/docs/en/hooks)
-- [Headless Execution Mode (`codex exec`) — DeepWiki](https://deepwiki.com/openai/codex/4.2-headless-execution-mode-(codex-exec))
+- [Headless Execution Mode (`codex exec`) — DeepWiki](<https://deepwiki.com/openai/codex/4.2-headless-execution-mode-(codex-exec)>)
 - [Non-interactive mode — ChatGPT Learn (Codex)](https://developers.openai.com/codex/noninteractive)
 - [No way to resume in non-interactive mode when session id is not outputted — openai/codex#3817](https://github.com/openai/codex/issues/3817)
 - [Cursor CLI Overview — Cursor Docs](https://cursor.com/docs/cli/overview)
 - [Using Agent in CLI — Cursor Docs](https://cursor.com/docs/cli/using)
 
 Tauri vs Electron / framework decision:
+
 - [Tauri vs Electron 2026: Tauri Wins on Size, RAM, and Speed — Rustify](https://rustify.rs/articles/rust-tauri-vs-electron-2026)
 - [Tauri vs. Electron: performance, bundle size, and the real trade-offs](https://www.gethopp.app/blog/tauri-vs-electron)
 - [Tauri vs Electron [2026]: 96% Smaller Apps, 1 Winner](https://tech-insider.org/tauri-vs-electron-2026/)

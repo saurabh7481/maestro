@@ -97,7 +97,7 @@ to be edited, not archived.
 - [ ] Clear UI state for "not installed" / "not logged in" / "unsupported
       version" — no silent failure
 - [ ] Spawn: `-p --input-format stream-json --output-format stream-json
-      --permission-prompt-tool stdio`
+--permission-prompt-tool stdio`
 - [ ] NDJSON parser with unit tests for partial lines, interleaved events,
       malformed input
 - [ ] `AgentEvent` normalization layer implemented
@@ -180,6 +180,7 @@ to be edited, not archived.
 ## Edge cases — dedicated sweep (test explicitly, don't assume Phase work covers these)
 
 ### Worktrees / git
+
 - [ ] Create worktree for a branch already checked out elsewhere → git's
       own error surfaced clearly, not swallowed
 - [ ] Remove a worktree that has uncommitted changes → guarded, explicit
@@ -210,6 +211,7 @@ to be edited, not archived.
       no `.env` to copy) → non-fatal, clearly logged, not a crash
 
 ### Agent CLIs
+
 - [ ] CLI binary missing from PATH → actionable message, not a hung tab
 - [ ] CLI installed but not logged in → actionable message with the CLI's
       own login instructions, not a silent failure mid-session
@@ -226,7 +228,7 @@ to be edited, not archived.
 - [ ] Network interruption mid-stream (agent CLI's own API call fails) →
       surfaced as an agent-level error event, not a Maestro crash
 - [ ] Two different agents (e.g. Claude Code + Codex) editing files in
-      the *same* worktree concurrently → both see each other's on-disk
+      the _same_ worktree concurrently → both see each other's on-disk
       changes correctly (this is normal filesystem behavior, but the UI's
       file-tree/editor must reflect it live, not go stale)
 - [ ] Resume a session whose worktree has since been deleted → handled
@@ -238,6 +240,7 @@ to be edited, not archived.
       state
 
 ### File editor
+
 - [ ] Open a very large file (e.g. >5MB or >50k lines) → warned/degraded
       mode, doesn't hang the renderer
 - [ ] Open a binary file (image, PDF, compiled artifact) → appropriate
@@ -252,6 +255,7 @@ to be edited, not archived.
       mojibake with a silent corrupting save
 
 ### App lifecycle
+
 - [ ] `kill -9` the app mid-agent-run → on relaunch, session state is
       consistent (no partial/corrupt SQLite writes — use transactions)
 - [ ] `kill -9` mid-hook-run → same
@@ -266,6 +270,7 @@ to be edited, not archived.
       surfaced as an error, not silent data loss
 
 ### Cross-platform
+
 - [ ] Git executable discovery works when not on default PATH (e.g.
       macOS app launched from Finder without shell profile PATH)
 - [ ] Default shell detection correct per OS (bash/zsh/fish on Unix,
