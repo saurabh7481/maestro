@@ -145,3 +145,88 @@
   line-height: var(--leading-relaxed);
   max-width: 32rem;
 }
+
+.presetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-3);
+}
+
+.presetText {
+  flex: 1;
+  min-width: 0;
+}
+
+.presetTitle {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--text-base);
+}
+
+.presetDescription {
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+  margin-top: var(--space-2);
+}
+
+.presetInline {
+  margin-top: var(--space-3);
+}
+
+.scriptHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.scriptBadge {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0.0625rem var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-dim);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.chipsLabel {
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  color: var(--accent-2);
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--border-2);
+}
+
+.footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-8);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.footerNote {
+  font-size: var(--text-sm);
+  color: var(--text-mute);
+}

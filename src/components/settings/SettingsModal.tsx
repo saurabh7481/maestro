@@ -17,6 +17,7 @@ import type { ThemeId } from "../../design/themes";
 import { themes, THEME_LABELS } from "../../design/themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
 import { Modal, IconButton } from "../primitives";
+import { HooksPane } from "./HooksPane";
 import styles from "./SettingsModal.module.css";
 
 type Section = "general" | "appearance" | "agents" | "hooks" | "keybindings";
@@ -29,12 +30,10 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
 ];
 
-const PLACEHOLDER_COPY: Record<Exclude<Section, "appearance">, string> = {
+const PLACEHOLDER_COPY: Record<Exclude<Section, "appearance" | "hooks">, string> = {
   general: "General preferences land alongside their features in later phases.",
   agents:
     "Agent binary paths, detected versions, and default flags — wired in Phase 5/6 once the CLI adapters exist.",
-  hooks:
-    "Worktree post-create hooks (presets + custom script editor) — wired in Phase 2 alongside the worktree manager.",
   keybindings:
     "View and rebind the built-in keymap — wired once every command it references actually exists.",
 };
@@ -156,9 +155,9 @@ export function SettingsModal() {
           </div>
         </div>
         <div className={styles.paneBody}>
-          {section === "appearance" ? (
-            <AppearancePane />
-          ) : (
+          {section === "appearance" && <AppearancePane />}
+          {section === "hooks" && <HooksPane />}
+          {section !== "appearance" && section !== "hooks" && (
             <p className={styles.placeholder}>{PLACEHOLDER_COPY[section]}</p>
           )}
         </div>

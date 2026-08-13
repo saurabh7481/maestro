@@ -10,20 +10,24 @@ import {
 } from "@phosphor-icons/react";
 import { useTabsStore } from "../../state/tabsStore";
 import { useUiStore } from "../../state/uiStore";
+import { useActiveWorktree } from "../../state/workspaceStore";
 import { IconButton, Button } from "../primitives";
 import sidebar from "./Sidebar.module.css";
 import styles from "./ExplorerSidebar.module.css";
 
-const MOCK_BRANCH = "feat/payments-refactor";
-
+// The file/diff/commit lists below stay mock data (Phase 3/4 scope) — only
+// the branch label reflects the real active worktree, wired in Phase 2.
 function ExplorerView() {
   const ensureTab = useTabsStore((s) => s.ensureTab);
   const activeTabId = useTabsStore((s) => s.activeTabId);
+  const activeWorktree = useActiveWorktree();
 
   return (
     <div className={sidebar.panel} data-side="right">
       <div className={sidebar.header}>
-        <span className={sidebar.headerLabel}>Explorer · {MOCK_BRANCH}</span>
+        <span className={sidebar.headerLabel}>
+          Explorer · {activeWorktree?.branch ?? "no worktree selected"}
+        </span>
         <div className={sidebar.headerActions}>
           <IconButton icon={FilePlus} label="New file" size="sm" iconSize={14} />
           <IconButton icon={FolderSimplePlus} label="New folder" size="sm" iconSize={14} />
@@ -107,6 +111,7 @@ function ExplorerView() {
 function ScmView() {
   const ensureTab = useTabsStore((s) => s.ensureTab);
   const activeTabId = useTabsStore((s) => s.activeTabId);
+  const activeWorktree = useActiveWorktree();
 
   return (
     <div className={sidebar.panel} data-side="right">
@@ -119,7 +124,7 @@ function ScmView() {
             color: "var(--text-dim)",
           }}
         >
-          {MOCK_BRANCH}
+          {activeWorktree?.branch ?? "—"}
         </span>
       </div>
       <div className={styles.scmBox}>
@@ -248,6 +253,7 @@ const MOCK_COMMITS: MockCommit[] = [
 ];
 
 function HistoryView() {
+  const activeWorktree = useActiveWorktree();
   return (
     <div className={sidebar.panel} data-side="right">
       <div className={sidebar.header}>
@@ -259,7 +265,7 @@ function HistoryView() {
             color: "var(--text-dim)",
           }}
         >
-          {MOCK_BRANCH}
+          {activeWorktree?.branch ?? "—"}
         </span>
       </div>
       <div className={sidebar.body}>

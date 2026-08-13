@@ -89,6 +89,10 @@ a:hover {
   flex-shrink: 0;
 }
 
+.mo-spin {
+  animation: mo-spin 1s linear infinite;
+}
+
 .mo-visually-hidden {
   position: absolute;
   width: 1px;

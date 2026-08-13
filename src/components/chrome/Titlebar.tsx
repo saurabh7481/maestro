@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useUiStore } from "../../state/uiStore";
+import { useActiveProject, useActiveWorktree } from "../../state/workspaceStore";
 import type { ThemeId } from "../../design/themes";
 import { THEME_LABELS } from "../../design/themes";
 import { IconButton, Kbd, Tooltip } from "../primitives";
@@ -22,14 +23,12 @@ const THEME_SWATCH_GRADIENT: Record<ThemeId, string> = {
   onedark: "linear-gradient(135deg,#282c34,#61afef)",
 };
 
-// Placeholder project/branch until Phase 2 wires the real workspace state.
-const MOCK_PROJECT = "my-app";
-const MOCK_BRANCH = "feat/payments-refactor";
-
 export function Titlebar() {
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const activeProject = useActiveProject();
+  const activeWorktree = useActiveWorktree();
 
   const appWindow = getCurrentWindow();
 
@@ -44,10 +43,14 @@ export function Titlebar() {
 
       <button type="button" className={styles.breadcrumb}>
         <FolderOpen size={15} color="var(--yellow)" />
-        <span className={styles.breadcrumbProject}>{MOCK_PROJECT}</span>
-        <CaretRight size={11} color="var(--text-mute)" />
-        <GitBranch size={14} color="var(--accent)" />
-        <span className={styles.breadcrumbBranch}>{MOCK_BRANCH}</span>
+        <span className={styles.breadcrumbProject}>{activeProject?.name ?? "No project"}</span>
+        {activeWorktree && (
+          <>
+            <CaretRight size={11} color="var(--text-mute)" />
+            <GitBranch size={14} color="var(--accent)" />
+            <span className={styles.breadcrumbBranch}>{activeWorktree.branch}</span>
+          </>
+        )}
         <CaretDown size={12} color="var(--text-mute)" />
       </button>
 

@@ -77,23 +77,58 @@ to be edited, not archived.
 
 ## Phase 2 — Project & worktree manager
 
-- [ ] SQLite schema created: `projects`, `worktrees`, `worktree_hooks`
-- [ ] `GitService.status/diff/log/branchList` implemented via `execa`
-- [ ] `GitService.worktreeAdd/worktreeRemove/worktreeList` implemented
-- [ ] "Add project": native folder picker, validate `.git` present, index
-- [ ] Sidebar renders real project → branch/worktree tree with badges
-- [ ] Reconciliation: external `git worktree` changes (made outside
-      Maestro) reflected in sidebar on next focus/poll
-- [ ] New-worktree flow: base ref picker, branch name, create
-- [ ] Worktree removal: dirty-tree guard + explicit force-confirm path
-- [ ] Selecting a worktree updates a single global "active worktree" store
-- [ ] Hook presets: copy `.env*`, run detected install command, symlink
-      `node_modules` — each toggleable
-- [ ] Custom hook script editor with `$NEW_WORKTREE` / `$SOURCE_WORKTREE`
-      / `$BRANCH` / `$PROJECT_ROOT` variable chips
-- [ ] Hook execution: streamed stdout/stderr panel, pass/fail result,
-      timeout, cancel button
-- [ ] Global default hooks + per-project override, documented precedence
+- [x] SQLite schema created: `projects`, `worktrees` (reconciled cache, not
+      source of truth — see `ARCHITECTURE.md` §4), `worktree_hooks`
+- [x] `GitService` implemented in Rust (`src-tauri/src/git.rs`): shells out
+      to system `git` via `tokio::process::Command`, not `execa` (that was
+      the Electron-era plan — see the Tauri pivot commit) — status/dirty
+      check, branch list, worktree add/remove/list (porcelain parser)
+- [x] "Add project": native folder picker (`tauri-plugin-dialog`), validates
+      `.git` present via `git rev-parse --is-inside-work-tree`, indexes
+- [x] Sidebar renders real project → branch/worktree tree with ahead/behind
+      badges (dirty-file count surfaced in the status bar, not a sidebar
+      dot — see `ARCHITECTURE.md`/component comments for why)
+- [x] Reconciliation: external `git worktree` changes reflected on window
+      focus (`window.addEventListener("focus", ...)` in `WorkspaceSidebar`)
+- [x] New-worktree flow: base ref picker (defaults to current worktree's
+      branch), branch name, create — dialog transitions into the hook run
+- [x] Worktree removal: dirty-tree guard (checked both in the Tauri command
+      and by git itself) + explicit force-confirm path via `AlertDialog`,
+      primary worktree removal blocked
+- [x] Selecting a worktree updates a single global "active worktree" store
+      (`workspaceStore`), which now drives the titlebar breadcrumb, explorer
+      header, and status bar — not just the sidebar highlight
+- [x] Hook presets: copy `.env*`, run detected install command (lockfile
+      sniffing in `git::detect_install_command`), symlink `node_modules` —
+      each toggleable, persisted per project
+- [x] Custom hook script editor with `$NEW_WORKTREE` / `$SOURCE_WORKTREE`
+      / `$BRANCH` / `$PROJECT_ROOT` variable chips (click-to-insert at
+      cursor)
+- [x] Hook execution: streamed stdout/stderr panel (Tauri events, one per
+      line), pass/fail/cancelled/timed-out result, 120s timeout, cancel
+      button (oneshot-channel based, doesn't require holding the child
+      process handle across the command boundary)
+- [ ] Global default hooks + per-project override — **simplified for v1**:
+      each project gets sensible built-in defaults at add-time (env-copy
+      on, install-command on with auto-detected command, symlink off) via
+      SQL column defaults, not a separately editable global template. A
+      true global-defaults editor is deferred; not blocking, since the
+      per-project experience is what V1_SCOPE actually requires.
+
+**Bugs found and fixed during real end-to-end testing** (against the
+user's actual multi-worktree production repo, not just the scratch demo
+repo) — kept here because both were the kind of thing that only shows up
+under real use, not code review:
+
+- `cp`/`ln -s` succeed silently, so a working hook produced zero streamed
+  lines and the UI showed a misleading "No hooks configured" — fixed by
+  making the generated script always echo what it did (or didn't do).
+- The source-worktree fallback for the post-create hook resolved to the
+  _newly created_ worktree itself, because `createWorktree()` flips the
+  store's active-worktree pointer to the new worktree as part of that
+  call, and the fallback was computed reactively _after_ that flip instead
+  of captured before it. Fixed by capturing the source path synchronously
+  before calling `createWorktree()`.
 
 ## Phase 3 — File explorer & editor
 

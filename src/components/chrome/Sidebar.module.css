@@ -106,6 +106,15 @@
   flex: none;
 }
 
+.rowAction {
+  opacity: 0;
+  flex: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.row:hover .rowAction {
+  opacity: 1;
+}
+
 .dot {
   width: 0.375rem;
   height: 0.375rem;

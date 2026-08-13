@@ -1,0 +1,31 @@
+.root {
+  width: 2.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-full);
+  position: relative;
+  flex: none;
+  background: var(--bg);
+  border: var(--border-width) solid var(--border-2);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.root[data-state="checked"] {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.thumb {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--radius-full);
+  background: var(--text-mute);
+  position: absolute;
+  top: 0.0625rem;
+  left: 0.0625rem;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.root[data-state="checked"] .thumb {
+  background: #fff;
+  transform: translateX(1rem);
+}
