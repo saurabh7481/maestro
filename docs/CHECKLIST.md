@@ -36,19 +36,44 @@ to be edited, not archived.
 
 ## Phase 1 — Core shell & theming
 
-- [ ] Titlebar: app icon, project/branch breadcrumb, search bar, theme
-      swatches, window controls — ported from `Maestro IDE.dc.html`
-- [ ] Activity rail (explorer / SCM / history / search icons + badges)
-- [ ] Tab strip: render, switch, close, new-tab `+` button
-- [ ] New-tab menu: agent list, resume list section, terminal entry
-      (static/mock data OK for this phase)
-- [ ] Status bar: branch, ahead/behind, changes count, active agent status
-- [ ] Theme token schema defined (matches design file's CSS variable set)
-- [ ] 3 baseline themes shipped as JSON (Maestro Dark, VS Code Dark+, One
-      Dark Pro), ported verbatim from the design file's `themes` object
-- [ ] Runtime theme switch: no flash, persists across restart
-- [ ] Settings modal: nav + empty panels except Appearance (functional)
-- [ ] Command palette: opens on ⌘/Ctrl-K, fuzzy filter over a static list
+- [x] Titlebar: app icon, project/branch breadcrumb, search bar, theme
+      swatches, window controls — ported from `Maestro IDE.dc.html`, window
+      controls wired to real `@tauri-apps/api/window` calls, drag region
+      via `data-tauri-drag-region`
+- [x] Activity rail (explorer / SCM / history / search icons + badges)
+- [x] Tab strip: render, switch, close, new-tab `+` button
+- [x] New-tab menu: agent list, resume list section, terminal entry
+      (static/mock data, per this phase's scope)
+- [x] Status bar: branch, ahead/behind, changes count, active agent status
+      (static/mock, real wiring lands with git/agent phases)
+- [x] Design token system: color (per-theme), typography (incl. a rem-based
+      zoom scale), spacing, radius, shadow, motion, z-index — see
+      `src/styles/tokens.css`
+- [x] 3 baseline themes shipped as data (Maestro Dark, VS Code Dark+, One
+      Dark Pro), ported verbatim from the design file's `themes` object —
+      `src/design/themes.ts`
+- [x] Runtime theme switch: no flash (direct `style.setProperty`, no
+      re-render/recompile), persists across restart via `tauri-plugin-store`
+      — verified end-to-end by editing the persisted prefs file and
+      confirming the relaunched window hydrates with the new theme _and_
+      zoom, not just by clicking through the UI once
+- [x] Adjustable UI zoom (Ctrl/Cmd +/-/0), rem-based so the whole UI scales
+      together rather than only font-size in isolation — verified visually
+      at 1.3x, not just unit-tested
+- [x] Self-hosted fonts (Inter Variable + JetBrains Mono via `@fontsource*`,
+      no CDN) + WebKitGTK's ~100-unit font-weight-bolding bug compensated
+      via a `data-platform="linux"` CSS override (tauri-apps/tauri#14286)
+- [x] Settings modal: nav + Appearance panel functional (theme picker +
+      zoom control), other panels show an honest "not wired yet" placeholder
+      rather than fake controls
+- [x] Command palette: opens on ⌘/Ctrl-K, in-order-subsequence fuzzy filter
+      over a static command list, wired to real store actions (theme,
+      zoom, sidebar toggles, new terminal tab)
+- [x] Found and fixed a real bug during visual verification: raw
+      `<button>` elements without an explicit background/border fell back
+      to WebKitGTK's native button chrome (a glossy gray rounded rect) —
+      fixed with a global form-element reset in `src/styles/global.css`
+      rather than patching the one instance found
 
 ## Phase 2 — Project & worktree manager
 

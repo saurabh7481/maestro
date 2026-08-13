@@ -1,0 +1,124 @@
+.titlebar {
+  height: 2.75rem;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 var(--space-5) 0 var(--space-6);
+  background: var(--titlebar);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.mark {
+  width: 1.1875rem;
+  height: 1.1875rem;
+  border-radius: 6px;
+  transform: rotate(45deg);
+}
+
+.brandName {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-normal);
+}
+
+.divider {
+  width: var(--border-width);
+  height: 1.125rem;
+  background: var(--border);
+  flex: none;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.3125rem var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+  color: var(--text-dim);
+}
+.breadcrumb:hover {
+  background: var(--hover);
+  border-color: var(--border-2);
+}
+
+.breadcrumbProject {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.breadcrumbBranch {
+  color: var(--text);
+}
+
+.searchWrap {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: min(27.5rem, 46%);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.search:hover {
+  border-color: var(--border-2);
+}
+
+.searchLabel {
+  flex: 1;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.themeSwatches {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.swatch {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  border: 1.5px solid var(--border-2);
+  padding: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.swatch:hover {
+  transform: scale(1.15);
+}
+.swatch[data-active="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}

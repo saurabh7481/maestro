@@ -1,0 +1,128 @@
+/* Shared styling for the two flanking sidebars (workspace + explorer). */
+
+.panel {
+  width: 16.625rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  min-height: 0;
+}
+.panel[data-side="left"] {
+  order: 1;
+  border-right: var(--border-width) solid var(--border);
+}
+.panel[data-side="right"] {
+  order: 3;
+  width: 19rem;
+  border-left: var(--border-width) solid var(--border);
+}
+
+.collapsed {
+  width: 2.875rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-5) 0;
+  gap: var(--space-6);
+  background: var(--bg-2);
+}
+.collapsed[data-side="left"] {
+  order: 1;
+  border-right: var(--border-width) solid var(--border);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6) var(--space-3);
+}
+
+.headerLabel {
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: var(--text-base);
+  min-width: 0;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row[data-active="true"] {
+  background: var(--active);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.row[data-emphasis="true"] {
+  color: var(--text);
+  font-weight: var(--font-weight-semibold);
+}
+.row[data-accent="true"] {
+  color: var(--accent);
+  font-size: var(--text-sm);
+}
+
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  font-size: var(--text-2xs);
+  font-family: var(--font-mono);
+  color: var(--text-mute);
+  flex: none;
+}
+
+.dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-full);
+  background: var(--green);
+  flex: none;
+}
+
+.divider {
+  height: var(--border-width);
+  background: var(--border);
+  margin: var(--space-5) var(--space-4);
+}
+
+.indent1 {
+  padding-left: 1.875rem;
+}
+.indent2 {
+  padding-left: 3rem;
+}

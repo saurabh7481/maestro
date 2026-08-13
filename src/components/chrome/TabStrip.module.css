@@ -1,0 +1,202 @@
+.strip {
+  height: 2.5625rem;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-2);
+  border-bottom: var(--border-width) solid var(--border);
+  position: relative;
+}
+
+.scroller {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-5) 0 var(--space-6);
+  max-width: 13.75rem;
+  border-right: var(--border-width) solid var(--border);
+  cursor: pointer;
+  background: transparent;
+  position: relative;
+  flex: none;
+  color: var(--text-dim);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.tab:hover {
+  background: var(--hover);
+}
+.tab[data-active="true"] {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tabIndicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.tab[data-active="true"] .tabIndicator {
+  opacity: 1;
+}
+
+.tabTitle {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabClose {
+  width: 1.125rem;
+  height: 1.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-mute);
+  margin-left: 0.125rem;
+  flex: none;
+}
+.tabClose:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.newTabTrigger {
+  width: 2.375rem;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.newTabTrigger:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* --- New tab dropdown menu --- */
+
+.menu {
+  width: 20.5rem;
+  z-index: var(--z-dropdown);
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding: var(--space-3);
+  animation: mo-scale-in var(--duration-fast) var(--ease-out);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.sectionLabel {
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+
+.menuDivider {
+  height: var(--border-width);
+  background: var(--border);
+  margin: var(--space-3) var(--space-2);
+}
+
+.agentItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+}
+.agentItem:hover,
+.agentItem[data-highlighted] {
+  background: var(--active);
+}
+
+.agentIcon {
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: none;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agentText {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentName {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-base);
+}
+
+.agentSubtitle {
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+}
+
+.resumeItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+}
+.resumeItem:hover,
+.resumeItem[data-highlighted] {
+  background: var(--hover);
+}
+
+.resumeTitle {
+  font-size: var(--text-sm);
+}
+
+.resumeMeta {
+  font-size: var(--text-2xs);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+}
+
+.terminalItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+}
+.terminalItem:hover,
+.terminalItem[data-highlighted] {
+  background: var(--hover);
+}

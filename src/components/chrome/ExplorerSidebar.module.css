@@ -1,0 +1,129 @@
+.scmBox {
+  padding: 0.125rem var(--space-6) var(--space-5);
+}
+
+.commitMessage {
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  min-height: 3.625rem;
+  color: var(--text-mute);
+  font-size: var(--text-base);
+}
+.commitMessage strong {
+  display: block;
+  margin-top: 0.1875rem;
+  color: var(--text);
+  font-weight: var(--font-weight-regular);
+}
+
+.scmActions {
+  display: flex;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
+}
+
+.scmActions .push {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  font-size: var(--text-sm);
+}
+.scmActions .push span {
+  font-family: var(--font-mono);
+  color: var(--orange);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-3);
+  color: var(--text-mute);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-wide);
+}
+
+.sectionCount {
+  margin-left: auto;
+  background: var(--bg-3);
+  border-radius: var(--radius-full);
+  padding: 0.0625rem var(--space-4);
+  color: var(--text-dim);
+}
+
+.statusGlyph {
+  font-family: var(--font-mono);
+  width: 0.875rem;
+  text-align: center;
+  flex: none;
+}
+
+.filePath {
+  font-size: var(--text-sm);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  flex: none;
+}
+
+.commitRow {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.commitRow:hover {
+  background: var(--hover);
+}
+
+.commitGraph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.1875rem;
+}
+
+.commitDot {
+  width: 0.5625rem;
+  height: 0.5625rem;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 3px var(--bg-2);
+}
+
+.commitLine {
+  flex: 1;
+  width: 1.5px;
+  background: var(--border-2);
+  margin-top: var(--space-2);
+}
+
+.commitBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.commitMsg {
+  font-size: var(--text-sm);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commitMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+}
+
+.commitHash {
+  font-family: var(--font-mono);
+  color: var(--orange);
+}

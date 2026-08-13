@@ -1,0 +1,42 @@
+.rail {
+  order: 4;
+  width: 3.25rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-5) 0;
+  background: var(--titlebar);
+  border-left: var(--border-width) solid var(--border);
+  gap: var(--space-2);
+}
+
+.divider {
+  width: 1.5rem;
+  height: var(--border-width);
+  background: var(--border);
+  margin: var(--space-3) 0;
+}
+
+.item {
+  position: relative;
+}
+
+.indicator {
+  position: absolute;
+  left: -0.625rem;
+  top: 0.5625rem;
+  bottom: 0.5625rem;
+  width: 0.15625rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.indicator[data-active="true"] {
+  opacity: 1;
+}
+
+.spacer {
+  flex: 1;
+}

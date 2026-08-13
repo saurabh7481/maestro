@@ -1,0 +1,88 @@
+:root {
+  /* Zoom — the single control for "adjustable/zoomable" UI scale. Every
+     size below is in rem so it scales off this root font-size. Border
+     widths and radii stay in fixed px so 1px hairlines never go blurry
+     at fractional zoom levels. See src/design/zoom.ts. */
+  --zoom: 1;
+  font-size: calc(16px * var(--zoom));
+
+  /* Typography */
+  --font-ui: "Inter Variable", -apple-system, "Segoe UI", system-ui, Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 0.625rem; /* 10px */
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.75rem; /* 12px */
+  --text-base: 0.8125rem; /* 13px — matches the design file's global size */
+  --text-md: 0.875rem; /* 14px */
+  --text-lg: 0.9375rem; /* 15px */
+  --text-xl: 1.3125rem; /* 21px */
+  --text-2xl: 1.875rem; /* 30px */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+  --tracking-wider: 0.06em;
+
+  /* Spacing — 4px base grid at zoom 1 */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.375rem; /* 6px */
+  --space-3: 0.5rem; /* 8px */
+  --space-4: 0.625rem; /* 10px */
+  --space-5: 0.75rem; /* 12px */
+  --space-6: 0.875rem; /* 14px */
+  --space-7: 1rem; /* 16px */
+  --space-8: 1.25rem; /* 20px */
+  --space-9: 1.5rem; /* 24px */
+  --space-10: 1.75rem; /* 28px */
+
+  /* Radius — fixed px, doesn't scale with zoom */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 9px;
+  --radius-xl: 12px;
+  --radius-2xl: 15px;
+  --radius-full: 999px;
+  --border-width: 1px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 40px 100px rgba(0, 0, 0, 0.6);
+
+  /* Motion — keep animated properties to opacity/transform; WebKitGTK on
+     Linux is known to blur surrounding text while a broader-property
+     animation runs (docs/ARCHITECTURE.md §9). */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration-base: 160ms;
+  --duration-slow: 240ms;
+
+  /* Stacking */
+  --z-rail: 10;
+  --z-dropdown: 40;
+  --z-modal: 60;
+  --z-toast: 80;
+}
+
+/* WebKitGTK on Linux synthesizes fonts ~100 weight units bolder than
+   requested (tauri-apps/tauri#14286). Since Inter ships as a variable
+   font across the full 100–900 axis, compensating by simply requesting
+   one step lighter is exact and free — no synthesis involved either way.
+   Platform is detected once at startup (src/design/platform.ts). */
+:root[data-platform="linux"] {
+  --font-weight-regular: 350;
+  --font-weight-medium: 450;
+  --font-weight-semibold: 550;
+  --font-weight-bold: 650;
+}

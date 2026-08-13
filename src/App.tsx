@@ -1,11 +1,7 @@
-import "./App.css";
+import { AppShell } from "./components/chrome/AppShell";
 
 function App() {
-  return (
-    <main className="app-shell">
-      <span>Maestro</span>
-    </main>
-  );
+  return <AppShell />;
 }
 
 export default App;
