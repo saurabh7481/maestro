@@ -26,6 +26,7 @@ import { AlertDialog, Button, IconButton, Tooltip } from "../primitives";
 import { ICON_SIZE } from "../../design/iconSize";
 import { FileTree } from "../explorer/FileTree";
 import { SearchPanel } from "../search/SearchPanel";
+import { ProblemsPanel } from "../problems/ProblemsPanel";
 import { ScmContextMenu } from "./ScmContextMenu";
 import type { CommitFileEntry, FileStatusEntry, StatusKind } from "../../types/git";
 import sidebar from "./Sidebar.module.css";
@@ -719,5 +720,6 @@ export function ExplorerSidebar() {
   // needing a setState-in-effect to do it.
   if (sidebarView === "history") return <HistoryView key={activeWorktree?.id} />;
   if (sidebarView === "search") return <SearchPanel key={activeWorktree?.id} />;
+  if (sidebarView === "problems") return <ProblemsPanel key={activeWorktree?.id} />;
   return <FileTree />;
 }

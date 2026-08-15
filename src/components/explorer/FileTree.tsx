@@ -11,6 +11,8 @@ import type { TreeRow } from "./FileTreeRow";
 import sidebar from "../chrome/Sidebar.module.css";
 import styles from "./FileTree.module.css";
 import type { FsEntry, GitGlyph } from "../../types/fs";
+import { buildProblemPathSummaries, useProblemsStore } from "../../state/problemsStore";
+import type { ProblemSummary } from "../../types/problem";
 
 const PENDING_PATH = "__pending__";
 
@@ -24,6 +26,7 @@ function flatten(
   expandedPaths: Set<string>,
   statusMap: Record<string, GitGlyph>,
   pendingCreate: PendingCreate | null,
+  problemSummaries: Record<string, ProblemSummary>,
 ): TreeRow[] {
   const rows: TreeRow[] = [];
 
@@ -38,6 +41,7 @@ function flatten(
         isDir: entry.isDir,
         isExpanded,
         glyph: statusMap[entry.relPath],
+        problemSummary: problemSummaries[entry.relPath],
       });
       if (isExpanded) walk(entry.relPath, depth + 1);
     }
@@ -71,6 +75,7 @@ export function FileTree() {
   const createEntry = useExplorerStore((s) => s.createEntry);
   const renameEntry = useExplorerStore((s) => s.renameEntry);
   const deleteEntry = useExplorerStore((s) => s.deleteEntry);
+  const problemsByOwner = useProblemsStore((state) => state.byOwner);
 
   const ensureTab = useTabsStore((s) => s.ensureTab);
   const activeTabId = useTabsStore((s) => s.activeTabId);
@@ -79,9 +84,13 @@ export function FileTree() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TreeRow | null>(null);
 
+  const problemSummaries = useMemo(
+    () => buildProblemPathSummaries(problemsByOwner, worktreeId),
+    [problemsByOwner, worktreeId],
+  );
   const rows = useMemo(
-    () => flatten(childrenByDir, expandedPaths, statusMap, pendingCreate),
-    [childrenByDir, expandedPaths, statusMap, pendingCreate],
+    () => flatten(childrenByDir, expandedPaths, statusMap, pendingCreate, problemSummaries),
+    [childrenByDir, expandedPaths, statusMap, pendingCreate, problemSummaries],
   );
 
   const zoom = useUiStore((s) => s.zoom);
@@ -101,7 +110,11 @@ export function FileTree() {
   // recomputed from the current `estimateSize`.
   useEffect(() => {
     virtualizer.measure();
-  }, [zoom, virtualizer]);
+    // The virtualizer object is not referentially stable: including it in
+    // this dependency list creates a render -> measure -> render loop in
+    // WebKit. Re-measurement is needed only when our row estimate changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
 
   function openFile(row: TreeRow) {
     if (!worktreeId || !worktreeRoot) return;
@@ -111,6 +124,7 @@ export function FileTree() {
       title: row.name,
       filePath: row.relPath,
       worktreeRoot,
+      worktreeId,
     });
   }
 

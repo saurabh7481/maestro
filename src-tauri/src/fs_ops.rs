@@ -7,6 +7,15 @@ use std::path::{Component, Path, PathBuf};
 /// pathological file from hanging the renderer.
 const MAX_READ_BYTES: u64 = 20 * 1024 * 1024;
 const BINARY_SNIFF_BYTES: usize = 8192;
+const DEFAULT_IGNORED_DIRECTORIES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+];
 
 /// Joins `rel_path` onto `worktree_root`, rejecting anything that isn't a
 /// plain relative path under the root: absolute paths (including Windows
@@ -52,35 +61,47 @@ pub struct FsEntry {
 /// tree is built lazily, per-directory, on expand (see explorerStore.ts).
 pub async fn list_dir(worktree_root: &Path, rel_dir: &str) -> Result<Vec<FsEntry>, String> {
     let dir = safe_join(worktree_root, rel_dir)?;
-    let mut read_dir = tokio::fs::read_dir(&dir).await.map_err(|e| e.to_string())?;
-
-    let mut entries = Vec::new();
-    while let Some(entry) = read_dir.next_entry().await.map_err(|e| e.to_string())? {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name == ".git" {
-            continue;
+    let rel_dir = rel_dir.to_string();
+    tokio::task::spawn_blocking(move || {
+        let read_dir = std::fs::read_dir(&dir).map_err(|error| error.to_string())?;
+        let mut entries = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            if file_type.is_dir() && DEFAULT_IGNORED_DIRECTORIES.contains(&name.as_str()) {
+                continue;
+            }
+            let rel_path = if rel_dir.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel_dir}/{name}")
+            };
+            // Directory sizes are not useful in the explorer and querying
+            // full metadata for every folder doubles the syscall count.
+            let size_bytes = if file_type.is_file() {
+                entry.metadata().map_err(|error| error.to_string())?.len()
+            } else {
+                0
+            };
+            entries.push(FsEntry {
+                name,
+                rel_path,
+                is_dir: file_type.is_dir(),
+                size_bytes,
+                is_symlink: file_type.is_symlink(),
+            });
         }
-        let metadata = entry.metadata().await.map_err(|e| e.to_string())?;
-        let rel_path = if rel_dir.is_empty() {
-            name.clone()
-        } else {
-            format!("{rel_dir}/{name}")
-        };
-        entries.push(FsEntry {
-            name,
-            rel_path,
-            is_dir: metadata.is_dir(),
-            size_bytes: metadata.len(),
-            is_symlink: metadata.is_symlink(),
-        });
-    }
 
-    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
-    Ok(entries)
+        entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+        Ok(entries)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn mtime_millis(metadata: &std::fs::Metadata) -> i64 {
@@ -264,6 +285,8 @@ mod tests {
     async fn lists_directory_dirs_first_skips_git() {
         let dir = TempDir::new().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+        std::fs::create_dir(dir.path().join(".next")).unwrap();
         std::fs::create_dir(dir.path().join("src")).unwrap();
         std::fs::write(dir.path().join("README.md"), "hi").unwrap();
         std::fs::write(dir.path().join("app.ts"), "x").unwrap();

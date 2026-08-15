@@ -6,6 +6,7 @@ import { useTabsStore } from "./tabsStore";
 import { useAgentSessionStore } from "./agentSessionStore";
 import { useTerminalSessionStore } from "./terminalSessionStore";
 import type { Project, Worktree } from "../types/workspace";
+import { useProblemsStore } from "./problemsStore";
 
 /** A stable, module-scoped empty array — use as `worktreesByProject[id]
  * ?? EMPTY_WORKTREES` in selectors, never `?? []`. A fresh `[]` literal
@@ -142,6 +143,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   removeProject: async (projectId) => {
     try {
+      const removedWorktreeIds = (get().worktreesByProject[projectId] ?? []).map(
+        (worktree) => worktree.id,
+      );
       await workspaceApi.removeProject(projectId);
       set((s) => {
         const rest = Object.fromEntries(
@@ -159,6 +163,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             : s.activeWorktreeId,
         };
       });
+      for (const worktreeId of removedWorktreeIds) {
+        useProblemsStore.getState().clearWorktree(worktreeId);
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -200,6 +207,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // codebase's tabs generally: they aren't otherwise worktree-scoped —
     // see docs/ROADMAP.md's Phase 8 note on tab/window state).
     await teardownWorktreeProcessTabs(worktreeId, worktreePath);
+    useProblemsStore.getState().clearWorktree(worktreeId);
   },
 
   selectWorktree: (projectId, worktreeId) => {

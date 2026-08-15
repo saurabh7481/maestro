@@ -3,11 +3,14 @@ import { X } from "@phosphor-icons/react";
 import { useTabsStore } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
+import { useFileLoadStore } from "../../state/fileLoadStore";
 import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentSessionStore } from "../../state/agentSessionStore";
 import { useTerminalSessionStore } from "../../state/terminalSessionStore";
+import { problemSummaryForPath, useProblemsStore } from "../../state/problemsStore";
 import { agentsApi } from "../../api/agents";
 import { terminalApi } from "../../api/terminal";
+import { disposeEditorModel } from "../../editor/modelBridge";
 import { TAB_VISUALS } from "../../design/tabVisuals";
 import { ICON_SIZE } from "../../design/iconSize";
 import { NewTabMenu } from "./NewTabMenu";
@@ -38,6 +41,7 @@ export function TabStrip() {
   const requestClose = useCloseConfirmStore((s) => s.request);
   const closeAgentRun = useAgentSessionStore((s) => s.closeRun);
   const closeTerminalSession = useTerminalSessionStore((s) => s.closeSession);
+  const problemsByOwner = useProblemsStore((state) => state.byOwner);
 
   /** Agent/terminal tabs own a real backend process — closing the tab is
    * the "last resort, kill it" moment (docs/ARCHITECTURE.md §3.4), not
@@ -52,6 +56,10 @@ export function TabStrip() {
     } else if (tab?.type === "terminal") {
       void terminalApi.kill(tabId);
       closeTerminalSession(tabId);
+    } else if (tab?.type === "file" || tab?.type === "markdown") {
+      disposeEditorModel(tabId);
+      useOpenFilesStore.getState().forget(tabId);
+      useFileLoadStore.getState().forget(tabId);
     }
   }
 
@@ -81,6 +89,11 @@ export function TabStrip() {
           const TabIcon = visual.icon;
           const isActive = tab.id === activeTabId;
           const isDirty = dirtyByTabId[tab.id]?.dirty ?? false;
+          const problemSummary = problemSummaryForPath(
+            problemsByOwner,
+            tab.worktreeId,
+            tab.filePath ?? "",
+          );
           const otherIds = tabs.filter((t) => t.id !== tab.id).map((t) => t.id);
           const toRightIds = tabs.slice(index + 1).map((t) => t.id);
           const savedIds = tabs.filter((t) => !dirtyByTabId[t.id]?.dirty).map((t) => t.id);
@@ -116,6 +129,15 @@ export function TabStrip() {
                   <TabIcon size={ICON_SIZE.md} color={visual.color} />
                 )}
                 <span className={styles.tabTitle}>{tab.title}</span>
+                {problemSummary.total > 0 && tab.filePath && (
+                  <span
+                    className={styles.problemBadge}
+                    data-severity={problemSummary.highestSeverity}
+                    title={`${problemSummary.total} problem${problemSummary.total === 1 ? "" : "s"}`}
+                  >
+                    {problemSummary.total}
+                  </span>
+                )}
                 {isDirty && <span className={styles.dirtyDot} aria-label="Unsaved changes" />}
                 <button
                   type="button"

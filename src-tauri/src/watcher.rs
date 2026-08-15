@@ -1,8 +1,9 @@
 use crate::commands::git::{scm_event_channel, ScmEvent};
 use crate::git;
 use crate::state::AppState;
+use notify::RecommendedWatcher;
 use notify::RecursiveMode;
-use notify_debouncer_full::{new_debouncer, DebounceEventResult};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -23,6 +24,27 @@ const IGNORED_DIR_SEGMENTS: &[&str] = &[
     ".next",
     "coverage",
 ];
+
+pub struct WorktreeWatcher {
+    debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
+    watched_dirs: HashSet<PathBuf>,
+    root: PathBuf,
+}
+
+impl WorktreeWatcher {
+    fn watch_directory(&mut self, path: PathBuf) -> Result<(), String> {
+        if self.watched_dirs.insert(path.clone()) {
+            self.debouncer
+                .watch(&path, RecursiveMode::NonRecursive)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn stop(self) {
+        self.debouncer.stop_nonblocking();
+    }
+}
 
 fn fs_event_channel(worktree_id: &str) -> String {
     format!("fs://{worktree_id}")
@@ -78,7 +100,7 @@ pub async fn start_worktree_watcher(
     let event_worktree_id = worktree_id.clone();
     let watch_root = root.clone();
 
-    let mut debouncer = new_debouncer(
+    let debouncer = new_debouncer(
         Duration::from_millis(250),
         None,
         move |result: DebounceEventResult| {
@@ -138,13 +160,41 @@ pub async fn start_worktree_watcher(
     )
     .map_err(|e| e.to_string())?;
 
-    debouncer
-        .watch(&root, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    let mut watcher = WorktreeWatcher {
+        debouncer,
+        watched_dirs: HashSet::new(),
+        root: root.clone(),
+    };
+    watcher.watch_directory(root)?;
 
     let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
-    watchers.insert(worktree_id, debouncer);
+    watchers.insert(worktree_id, watcher);
     Ok(())
+}
+
+/// Adds one explorer-visible directory to the non-recursive watch set. This
+/// makes watcher cost proportional to directories the user is actually
+/// working in instead of every directory in a potentially multi-gigabyte
+/// monorepo.
+#[tauri::command]
+pub async fn watch_worktree_directory(
+    state: State<'_, AppState>,
+    worktree_id: String,
+    rel_dir: String,
+) -> Result<(), String> {
+    let mut watchers = state.watchers.lock().map_err(|error| error.to_string())?;
+    let watcher = watchers
+        .get_mut(&worktree_id)
+        .ok_or("Worktree watcher is not running.")?;
+    let directory = crate::fs_ops::safe_join(&watcher.root, &rel_dir)?;
+    if is_ignored(&directory) {
+        return Ok(());
+    }
+    let metadata = std::fs::symlink_metadata(&directory).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Watch target must be a real directory.".to_string());
+    }
+    watcher.watch_directory(directory)
 }
 
 #[tauri::command]
@@ -157,7 +207,21 @@ pub async fn stop_worktree_watcher(
         watchers.remove(&worktree_id)
     };
     if let Some(debouncer) = debouncer {
-        debouncer.stop_nonblocking();
+        debouncer.stop();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn ignored_paths_match_generated_and_dependency_trees() {
+        let root = TempDir::new().unwrap();
+        assert!(!is_ignored(&root.path().join("src/components")));
+        assert!(is_ignored(&root.path().join("node_modules/pkg/deep")));
+        assert!(is_ignored(&root.path().join("apps/web/.next/cache")));
+    }
 }

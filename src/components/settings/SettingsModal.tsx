@@ -10,6 +10,7 @@ import {
   Palette,
   Sliders,
   Sparkle,
+  Code,
   X,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
@@ -21,14 +22,16 @@ import { Modal, IconButton, Switch } from "../primitives";
 import { HooksPane } from "./HooksPane";
 import { AgentsPane } from "./AgentsPane";
 import { KeybindingsPane } from "./KeybindingsPane";
+import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
 import styles from "./SettingsModal.module.css";
 
-type Section = "general" | "appearance" | "agents" | "hooks" | "keybindings";
+type Section = "general" | "appearance" | "agents" | "language" | "hooks" | "keybindings";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "general", label: "General", icon: Sliders },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "agents", label: "Agents & CLI", icon: Sparkle },
+  { id: "language", label: "Language Intelligence", icon: Code },
   { id: "hooks", label: "Worktree Hooks", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
 ];
@@ -176,6 +179,7 @@ export function SettingsModal() {
           {section === "appearance" && <AppearancePane />}
           {section === "hooks" && <HooksPane scope={{ kind: "global" }} />}
           {section === "agents" && <AgentsPane />}
+          {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}
           {section === "keybindings" && <KeybindingsPane />}
         </div>
       </div>

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { ThemeId } from "../design/themes";
 import { ZOOM_DEFAULT } from "../design/zoom";
 
-export type SidebarView = "explorer" | "scm" | "history" | "search";
+export type SidebarView = "explorer" | "scm" | "history" | "search" | "problems";
 
 export const LEFT_SIDEBAR_WIDTH_DEFAULT = 16.625;
 export const RIGHT_SIDEBAR_WIDTH_DEFAULT = 19;

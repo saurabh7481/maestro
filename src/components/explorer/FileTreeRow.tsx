@@ -6,6 +6,7 @@ import { ExplorerContextMenu } from "./ExplorerContextMenu";
 import sidebar from "../chrome/Sidebar.module.css";
 import styles from "./FileTree.module.css";
 import type { GitGlyph } from "../../types/fs";
+import type { ProblemSummary } from "../../types/problem";
 
 const ROW_HEIGHT = 26;
 const DEPTH_STEP = 20;
@@ -26,6 +27,7 @@ export interface TreeRow {
   isDir: boolean;
   isExpanded: boolean;
   glyph?: GitGlyph;
+  problemSummary?: ProblemSummary;
 }
 
 interface FileTreeRowProps {
@@ -148,6 +150,15 @@ export function FileTreeRow({
         {!isRenaming && row.glyph && (
           <span className={styles.statusGlyph} style={{ color: GLYPH_COLOR[row.glyph] }}>
             {row.glyph}
+          </span>
+        )}
+        {!isRenaming && row.problemSummary && row.problemSummary.total > 0 && (
+          <span
+            className={styles.problemBadge}
+            data-severity={row.problemSummary.highestSeverity}
+            title={`${row.problemSummary.total} problem${row.problemSummary.total === 1 ? "" : "s"}`}
+          >
+            {row.problemSummary.total}
           </span>
         )}
       </div>

@@ -6,10 +6,17 @@ import {
   MagnifyingGlass,
   SidebarSimple,
   UserCircle,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useUiStore, type SidebarView } from "../../state/uiStore";
 import { useScmStore } from "../../state/scmStore";
+import { useActiveWorktree } from "../../state/workspaceStore";
+import {
+  problemsForWorktree,
+  summarizeProblems,
+  useProblemsStore,
+} from "../../state/problemsStore";
 import { IconButton } from "../primitives";
 import styles from "./ActivityRail.module.css";
 
@@ -27,6 +34,11 @@ export function ActivityRail() {
   const toggleRightSidebar = useUiStore((s) => s.toggleRightSidebar);
   const openSettings = useUiStore((s) => s.openSettings);
   const changedFileCount = useScmStore((s) => s.status?.entries.length ?? 0);
+  const activeWorktree = useActiveWorktree();
+  const problemsByOwner = useProblemsStore((state) => state.byOwner);
+  const problemCount = summarizeProblems(
+    problemsForWorktree(problemsByOwner, activeWorktree?.id),
+  ).total;
 
   const RAIL_ITEMS: RailItem[] = [
     { id: "explorer", icon: Files, label: "Explorer" },
@@ -38,6 +50,12 @@ export function ActivityRail() {
     },
     { id: "history", icon: ClockCounterClockwise, label: "History" },
     { id: "search", icon: MagnifyingGlass, label: "Search" },
+    {
+      id: "problems",
+      icon: WarningCircle,
+      label: "Problems",
+      badge: problemCount > 0 ? problemCount : undefined,
+    },
   ];
 
   return (

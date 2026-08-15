@@ -1,15 +1,14 @@
+import { lazy, Suspense } from "react";
 import { Stack } from "@phosphor-icons/react";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
 import { TAB_VISUALS } from "../../design/tabVisuals";
 import { TabStrip } from "./TabStrip";
-import { MonacoHost } from "../editor/MonacoHost";
 import { MarkdownPane } from "../editor/MarkdownPane";
 import { BinaryFileView } from "../editor/BinaryFileView";
 import { TooLargeFileView } from "../editor/TooLargeFileView";
 import { ExternalChangeBanner } from "../editor/ExternalChangeBanner";
-import { DiffView } from "../diff/DiffView";
 import { AgentTab } from "../agent/AgentTab";
 import { TerminalTab } from "../terminal/TerminalTab";
 import styles from "./MainContent.module.css";
@@ -18,30 +17,40 @@ const NOTE: Record<string, string> = {
   diff: "Open a diff from Source Control or History to review it here.",
 };
 
+const MonacoHost = lazy(() =>
+  import("../editor/MonacoHost").then((module) => ({ default: module.MonacoHost })),
+);
+const DiffView = lazy(() =>
+  import("../diff/DiffView").then((module) => ({ default: module.DiffView })),
+);
+
 export function MainContent() {
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabId = useTabsStore((s) => s.activeTabId);
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const isEditorTab = activeTab?.type === "file" || activeTab?.type === "markdown";
 
-  // Mounted lazily — only once a file/markdown tab actually exists (see
-  // MonacoHost.tsx) — and unmounts again once none remain, which is fine:
-  // closing a file/markdown tab already goes through the unsaved-changes
-  // guard, so there's never a hidden dirty buffer at stake here.
-  const monacoNeeded = tabs.some((t) => t.type === "file" || t.type === "markdown");
+  // A restored/background file tab must not load the editor while the user is
+  // working in an agent or terminal. Monaco's module and models stay cached
+  // after their first use, so returning to an editor remains quick.
+  const monacoNeeded = isEditorTab;
 
   const loadState = useFileLoadStore((s) => (activeTab ? s.byTabId[activeTab.id] : undefined));
   const externalChangePending = useOpenFilesStore((s) =>
     activeTab ? (s.byTabId[activeTab.id]?.externalChangePending ?? false) : false,
   );
 
-  const isEditorTab = activeTab?.type === "file" || activeTab?.type === "markdown";
   const isRealDiffTab = activeTab?.type === "diff" && !!activeTab.filePath && !!activeTab.diffMode;
 
   return (
     <div className={styles.main}>
       <TabStrip />
       <div className={styles.content}>
-        {monacoNeeded && <MonacoHost />}
+        {monacoNeeded && (
+          <Suspense fallback={null}>
+            <MonacoHost />
+          </Suspense>
+        )}
 
         {activeTab?.type === "markdown" && <MarkdownPane tab={activeTab} />}
 
@@ -69,7 +78,11 @@ export function MainContent() {
           />
         )}
 
-        {isRealDiffTab && activeTab && <DiffView key={activeTab.id} tab={activeTab} />}
+        {isRealDiffTab && activeTab && (
+          <Suspense fallback={<div className={styles.loading}>Loading diff…</div>}>
+            <DiffView key={activeTab.id} tab={activeTab} />
+          </Suspense>
+        )}
 
         {activeTab?.type === "agent" && <AgentTab key={activeTab.id} tab={activeTab} />}
         {activeTab?.type === "terminal" && activeTab.worktreeRoot && (

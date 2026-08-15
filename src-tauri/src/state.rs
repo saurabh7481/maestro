@@ -1,8 +1,7 @@
 use crate::agents::adapter::PermissionMode;
 use crate::agents::{AgentKind, CliStatus};
+use crate::lsp::{LspProcessKey, LspServerEntry, LspServerKind, LspServerStatus};
 use crate::terminal::TerminalHandle;
-use notify::RecommendedWatcher;
-use notify_debouncer_full::{Debouncer, RecommendedCache};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -59,11 +58,19 @@ pub struct AppState {
     /// Live file watchers, keyed by worktree id — one per *open* worktree,
     /// not all worktrees at once (see docs/ROADMAP.md Phase 3). Dropping a
     /// worktree's entry stops its watcher.
-    pub watchers: Mutex<HashMap<String, Debouncer<RecommendedWatcher, RecommendedCache>>>,
+    pub watchers: Mutex<HashMap<String, crate::watcher::WorktreeWatcher>>,
     /// Cached CLI detection results, keyed by kind — the centralized
     /// availability service every feature (agent tabs, commit-message
     /// generation) reads from rather than re-shelling out per mount.
     pub agent_status_cache: Mutex<HashMap<AgentKind, CliStatus>>,
+    /// Server availability probes are independent of live LSP processes.
+    /// The transport milestone will add a separate `(worktree, server)` map;
+    /// this cache only prevents repeated version subprocesses on UI mounts.
+    pub lsp_status_cache: Mutex<HashMap<LspServerKind, LspServerStatus>>,
+    /// Live language servers, one per `(worktree, language adapter)`. Child
+    /// ownership stays inside each server's Tokio supervisor; this map holds
+    /// the bounded control channel and generation used for race-safe cleanup.
+    pub lsp_servers: Mutex<HashMap<LspProcessKey, LspServerEntry>>,
     /// Live agent tab runs, keyed by run id (== the tab id).
     pub agent_runs: Mutex<HashMap<String, AgentRunEntry>>,
     /// Live terminal tabs, keyed by terminal id (== the tab id).

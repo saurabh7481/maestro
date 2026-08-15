@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
-import * as monaco from "monaco-editor";
+import * as monaco from "monaco-editor/editor/editor.api";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useUiStore } from "../../state/uiStore";
 import { useSearchStore } from "../../state/searchStore";
+import { useEditorNavigationStore } from "../../state/editorNavigationStore";
 import { fsApi } from "../../api/fs";
 import { listenToFsEvents } from "../../api/fsEvents";
 import { getModel, getOrCreateModel } from "../../editor/monacoModelRegistry";
@@ -45,6 +46,10 @@ export function MonacoHost() {
   const worktreeId = useExplorerStore((s) => s.worktreeId);
 
   const zoom = useUiStore((s) => s.zoom);
+  const leftSidebarWidth = useUiStore((s) => s.leftSidebarWidth);
+  const rightSidebarWidth = useUiStore((s) => s.rightSidebarWidth);
+  const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
+  const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
 
   const loadState = useFileLoadStore((s) => (activeTab ? s.byTabId[activeTab.id] : undefined));
   const isNonTextKind =
@@ -59,15 +64,32 @@ export function MonacoHost() {
   useEffect(() => {
     if (!containerRef.current) return;
     const editor = monaco.editor.create(containerRef.current, {
-      automaticLayout: true,
+      automaticLayout: false,
       theme: "vs-dark",
       fontFamily: MONACO_FONT_FAMILY,
       fontSize: BASE_FONT_SIZE,
-      minimap: { enabled: true },
+      // Minimap painting is disproportionately expensive in WebKitGTK and
+      // duplicates the scrollbar for navigation. Keep the primary editing
+      // surface responsive; this can return later as an opt-in preference.
+      minimap: { enabled: false },
+      // WebKitGTK can retain enormous compositor surfaces for Monaco's
+      // promoted text/margin layers. Monaco exposes this specifically for
+      // browsers where layer hinting causes high GPU memory usage.
+      disableLayerHinting: true,
       scrollBeyondLastLine: false,
     });
     editorRef.current = editor;
     const timers = autoSaveTimers.current;
+    let layoutFrame: number | null = null;
+    const scheduleLayout = () => {
+      if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = null;
+        editor.layout();
+      });
+    };
+    window.addEventListener("resize", scheduleLayout);
+    scheduleLayout();
 
     const changeSub = editor.onDidChangeModelContent(() => {
       const tabId = loadedTabIdRef.current;
@@ -96,6 +118,8 @@ export function MonacoHost() {
 
     return () => {
       changeSub.dispose();
+      window.removeEventListener("resize", scheduleLayout);
+      if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
       editor.dispose();
       editorRef.current = null;
       for (const timer of timers.values()) clearTimeout(timer);
@@ -108,8 +132,16 @@ export function MonacoHost() {
   // --zoom, but Monaco manages its own canvas-rendered font size — it
   // never picks that up on its own, so mirror it explicitly here.
   useEffect(() => {
-    editorRef.current?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
-  }, [zoom]);
+    const editor = editorRef.current;
+    editor?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
+    editor?.layout();
+  }, [
+    zoom,
+    leftSidebarWidth,
+    rightSidebarWidth,
+    leftSidebarOpen,
+    rightSidebarOpen,
+  ]);
 
   // Attach the right model whenever the visible target tab changes.
   useEffect(() => {
@@ -119,7 +151,8 @@ export function MonacoHost() {
     const prevTabId = loadedTabIdRef.current;
     if (prevTabId) viewStates.current.set(prevTabId, editor.saveViewState());
 
-    if (!isTarget || !activeTab?.filePath || !activeTab.worktreeRoot) {
+    const modelWorktreeId = activeTab?.worktreeId ?? worktreeId;
+    if (!isTarget || !activeTab?.filePath || !activeTab.worktreeRoot || !modelWorktreeId) {
       editor.setModel(null);
       loadedTabIdRef.current = null;
       return;
@@ -130,11 +163,12 @@ export function MonacoHost() {
 
     function attach(model: monaco.editor.ITextModel, isLarge: boolean) {
       editor?.updateOptions({
-        minimap: { enabled: !isLarge },
+        minimap: { enabled: false },
         folding: !isLarge,
         wordWrap: isLarge ? "off" : "on",
       });
       editor?.setModel(model);
+      editor?.layout();
       const saved = viewStates.current.get(tabId);
       if (saved) editor?.restoreViewState(saved);
 
@@ -153,6 +187,23 @@ export function MonacoHost() {
         editor?.revealLineInCenter(line);
         editor?.setSelection(selection);
         useSearchStore.getState().clearPendingReveal();
+      }
+
+      const pendingNavigation = useEditorNavigationStore.getState().consume(tabId);
+      if (pendingNavigation?.selection) {
+        const selection = pendingNavigation.selection;
+        const line = "lineNumber" in selection ? selection.lineNumber : selection.startLineNumber;
+        editor?.revealLineInCenter(line);
+        editor?.setSelection(
+          "lineNumber" in selection
+            ? new monaco.Selection(
+                selection.lineNumber,
+                selection.column,
+                selection.lineNumber,
+                selection.column,
+              )
+            : selection,
+        );
       }
 
       editor?.focus();
@@ -181,7 +232,14 @@ export function MonacoHost() {
           return;
         }
         const isLarge = result.sizeBytes > LARGE_FILE_BYTES;
-        const model = getOrCreateModel(tabId, filePath, result.content, isLarge);
+        const model = getOrCreateModel(
+          tabId,
+          modelWorktreeId,
+          worktreeRoot,
+          filePath,
+          result.content,
+          isLarge,
+        );
         attach(model, isLarge);
         registerLoaded(tabId, result.mtimeMs);
       })

@@ -19,7 +19,8 @@ export interface Tab {
   diffMode?: DiffMode;
   /** Diff tabs in `commit` mode only. */
   commitHash?: string;
-  /** Agent tabs only. `id` doubles as the run id the Rust side keys
+  /** Worktree id for process-backed/editor tabs. Agent tab `id` doubles
+   * as the run id the Rust side keys
    * `AgentRunEntry`/events on (`agents/manager.rs`), and `worktreeId` is
    * what `kill_agent_runs_for_worktree` matches against on worktree
    * removal. */

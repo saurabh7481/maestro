@@ -4,7 +4,7 @@ import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
-import { disposeModel } from "../../editor/monacoModelRegistry";
+import { disposeEditorModel } from "../../editor/modelBridge";
 
 /** The single "discard unsaved changes?" confirmation, reused for both
  * closing one dirty tab and quitting with any dirty tabs open — driven by
@@ -27,7 +27,7 @@ export function UnsavedChangesDialog() {
   function discard() {
     if (!pendingTabIds) return;
     for (const id of pendingTabIds) {
-      disposeModel(id);
+      disposeEditorModel(id);
       forgetOpenFile(id);
       forgetLoadState(id);
       if (intent === "close-tab") closeTab(id);

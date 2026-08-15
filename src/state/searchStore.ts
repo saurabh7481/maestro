@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { searchApi } from "../api/search";
 import { listenToSearchEvents } from "../api/searchEvents";
 import { fsApi } from "../api/fs";
-import { getModel } from "../editor/monacoModelRegistry";
+import { getEditorModel } from "../editor/modelBridge";
 import { useTabsStore, fileTabId } from "./tabsStore";
 import { useOpenFilesStore } from "./openFilesStore";
 import type { FileMatches, SearchMatch, SearchOptions } from "../types/search";
@@ -168,7 +168,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       if (!tab || dirtyByTabId[tabId]?.dirty) continue;
       const result = await fsApi.readFile(worktreeRoot, relPath);
       if (result.kind !== "text") continue;
-      getModel(tabId)?.setValue(result.content);
+      getEditorModel(tabId)?.setValue(result.content);
       registerLoaded(tabId, result.mtimeMs);
     }
 
@@ -188,6 +188,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       title: path.split("/").pop() ?? path,
       filePath: path,
       worktreeRoot,
+      worktreeId,
     });
     set({
       pendingReveal: {

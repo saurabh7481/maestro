@@ -29,3 +29,18 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 if (typeof document.queryCommandSupported !== "function") {
   document.queryCommandSupported = () => false;
 }
+
+// Monaco observes OS contrast/theme media queries. jsdom omits matchMedia,
+// which otherwise surfaces as delayed unhandled errors after model creation.
+if (typeof window.matchMedia !== "function") {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn().mockReturnValue(false),
+  }));
+}

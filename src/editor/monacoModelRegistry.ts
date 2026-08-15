@@ -1,5 +1,26 @@
-import * as monaco from "monaco-editor";
+import * as monaco from "monaco-editor/editor/editor.api";
+// Register only the grammars Maestro can assign. Monaco's aggregate
+// contribution eagerly registers 80+ languages and adds several megabytes to
+// the first editor load in large projects.
+import "monaco-editor/languages/definitions/css/register";
+import "monaco-editor/languages/definitions/go/register";
+import "monaco-editor/languages/definitions/html/register";
+import "monaco-editor/languages/definitions/ini/register";
+import "monaco-editor/languages/definitions/javascript/register";
+import "monaco-editor/languages/definitions/less/register";
+import "monaco-editor/languages/definitions/markdown/register";
+import "monaco-editor/languages/definitions/python/register";
+import "monaco-editor/languages/definitions/ruby/register";
+import "monaco-editor/languages/definitions/rust/register";
+import "monaco-editor/languages/definitions/scss/register";
+import "monaco-editor/languages/definitions/shell/register";
+import "monaco-editor/languages/definitions/sql/register";
+import "monaco-editor/languages/definitions/typescript/register";
+import "monaco-editor/languages/definitions/yaml/register";
 import { ensureMonacoEnvironment } from "./monacoSetup";
+import { lspClientManager } from "../lsp/clientManager";
+import { languageForPath } from "./languages";
+import { registerEditorModelApi } from "./modelBridge";
 
 ensureMonacoEnvironment();
 
@@ -9,49 +30,17 @@ const MAX_MODELS = 10;
  * re-inserts it so the least-recently-used entry always sits first. */
 const models = new Map<string, monaco.editor.ITextModel>();
 
-const EXTENSION_LANGUAGE: Record<string, string> = {
-  ts: "typescript",
-  mts: "typescript",
-  cts: "typescript",
-  tsx: "typescript",
-  js: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  jsx: "javascript",
-  json: "json",
-  jsonc: "json",
-  css: "css",
-  scss: "scss",
-  less: "less",
-  html: "html",
-  htm: "html",
-  md: "markdown",
-  mdx: "markdown",
-  rs: "rust",
-  py: "python",
-  yaml: "yaml",
-  yml: "yaml",
-  sh: "shell",
-  bash: "shell",
-  sql: "sql",
-  rb: "ruby",
-  go: "go",
-  toml: "ini",
-  vue: "html",
-};
-
-export function languageForPath(relPath: string): string {
-  const dot = relPath.lastIndexOf(".");
-  if (dot <= 0) return "plaintext";
-  const ext = relPath.slice(dot + 1).toLowerCase();
-  return EXTENSION_LANGUAGE[ext] ?? "plaintext";
-}
+export { languageForPath } from "./languages";
 
 function evictLeastRecentlyUsed() {
   while (models.size > MAX_MODELS) {
     const oldestKey = models.keys().next().value;
     if (oldestKey === undefined) break;
-    models.get(oldestKey)?.dispose();
+    const oldest = models.get(oldestKey);
+    if (oldest) {
+      lspClientManager.detachModel(oldest);
+      oldest.dispose();
+    }
     models.delete(oldestKey);
   }
 }
@@ -60,6 +49,8 @@ function evictLeastRecentlyUsed() {
  * `tabsStore.ts` — so it doubles as the model's URI path. */
 export function getOrCreateModel(
   tabId: string,
+  worktreeId: string,
+  worktreeRoot: string,
   relPath: string,
   content: string,
   plaintextOverride = false,
@@ -71,10 +62,13 @@ export function getOrCreateModel(
     return existing;
   }
 
-  const uri = monaco.Uri.from({ scheme: "maestro-file", path: `/${tabId}` });
+  const separator = worktreeRoot.endsWith("/") || worktreeRoot.endsWith("\\") ? "" : "/";
+  const absolutePath = `${worktreeRoot}${separator}${relPath}`;
+  const uri = monaco.Uri.file(absolutePath);
   const language = plaintextOverride ? "plaintext" : languageForPath(relPath);
   const model = monaco.editor.createModel(content, language, uri);
   models.set(tabId, model);
+  lspClientManager.attachModel(model, worktreeId, worktreeRoot);
   evictLeastRecentlyUsed();
   return model;
 }
@@ -86,7 +80,17 @@ export function getModel(tabId: string): monaco.editor.ITextModel | undefined {
 export function disposeModel(tabId: string) {
   const model = models.get(tabId);
   if (model) {
+    lspClientManager.detachModel(model);
     model.dispose();
     models.delete(tabId);
   }
 }
+
+registerEditorModelApi({
+  get: getModel,
+  dispose: disposeModel,
+  didSave: (tabId) => {
+    const model = getModel(tabId);
+    if (model) lspClientManager.didSave(model);
+  },
+});

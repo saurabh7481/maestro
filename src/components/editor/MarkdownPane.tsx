@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { FileText } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
 import { useOpenFilesStore } from "../../state/openFilesStore";
-import { getModel } from "../../editor/monacoModelRegistry";
+import { getEditorModel } from "../../editor/modelBridge";
 import { renderMarkdownToHtml } from "../../design/renderMarkdown";
 import type { Tab } from "../../state/tabsStore";
 import styles from "./MarkdownPane.module.css";
@@ -27,7 +27,7 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
   // (see `monacoModelRegistry.ts`) — guarding with `isDisposed()` here
   // means a stale/disposed reference falls back to `fetchedContent`
   // instead of a `.getValue()` call throwing during render.
-  const rawLiveModel = mode === "preview" ? getModel(tab.id) : undefined;
+  const rawLiveModel = mode === "preview" ? getEditorModel(tab.id) : undefined;
   const liveModel = rawLiveModel && !rawLiveModel.isDisposed() ? rawLiveModel : undefined;
 
   useEffect(() => {

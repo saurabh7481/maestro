@@ -28,6 +28,8 @@ export const fsApi = {
 
   startWorktreeWatcher: (worktreeId: string, worktreePath: string) =>
     invoke<void>("start_worktree_watcher", { worktreeId, worktreePath }),
+  watchWorktreeDirectory: (worktreeId: string, relDir: string) =>
+    invoke<void>("watch_worktree_directory", { worktreeId, relDir }),
   stopWorktreeWatcher: (worktreeId: string) =>
     invoke<void>("stop_worktree_watcher", { worktreeId }),
 

@@ -8,6 +8,10 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  // `vscode-jsonrpc` exposes its runtime initializer behind the `browser`
+  // export condition. Keep the same implementation in production and
+  // Vitest/jsdom so transport tests don't accidentally exercise Node streams.
+  resolve: { conditions: ["browser"] },
 
   test: {
     environment: "jsdom",

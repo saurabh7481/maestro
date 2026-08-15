@@ -28,20 +28,31 @@ interface ExplorerState {
 
 export const useExplorerStore = create<ExplorerState>((set, get) => {
   async function loadDir(relPath: string) {
-    const { worktreeRoot } = get();
-    if (!worktreeRoot) return;
+    const { worktreeRoot, worktreeId, loadingDirs } = get();
+    if (!worktreeRoot || !worktreeId || loadingDirs.has(relPath)) return;
     set((s) => ({ loadingDirs: new Set(s.loadingDirs).add(relPath) }));
     try {
       const entries = await fsApi.listDir(worktreeRoot, relPath);
+      if (get().worktreeId !== worktreeId || get().worktreeRoot !== worktreeRoot) return;
       set((s) => ({
         childrenByDir: new Map(s.childrenByDir).set(relPath, entries),
       }));
-    } finally {
-      set((s) => {
-        const loadingDirs = new Set(s.loadingDirs);
-        loadingDirs.delete(relPath);
-        return { loadingDirs };
+      void fsApi.watchWorktreeDirectory(worktreeId, relPath).catch(() => {
+        // Watcher startup is intentionally decoupled from tree rendering;
+        // expanding a folder remains useful even if watching is unavailable.
       });
+    } catch {
+      // A directory can disappear or become unreadable between click and
+      // enumeration. Keep the explorer responsive; the watcher/next expand
+      // can retry it rather than leaking an unhandled rejection.
+    } finally {
+      if (get().worktreeId === worktreeId) {
+        set((s) => {
+          const loadingDirs = new Set(s.loadingDirs);
+          loadingDirs.delete(relPath);
+          return { loadingDirs };
+        });
+      }
     }
   }
 
@@ -77,16 +88,28 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
       });
       set({ unlisten });
 
-      await fsApi.startWorktreeWatcher(worktreeId, worktreeRoot);
+      // Rendering the root directory must not wait for recursive watcher
+      // registration or git status on a large monorepo.
+      void fsApi
+        .startWorktreeWatcher(worktreeId, worktreeRoot)
+        .then(() => {
+          if (get().worktreeId !== worktreeId) return;
+          for (const directory of get().childrenByDir.keys()) {
+            void fsApi.watchWorktreeDirectory(worktreeId, directory).catch(() => {});
+          }
+        })
+        .catch(() => {});
       await loadDir("");
-      try {
-        const statusMap = await fsApi.getStatusMap(worktreeRoot);
-        if (get().worktreeId === worktreeId) {
-          set({ statusMap: statusMap as Record<string, GitGlyph> });
-        }
-      } catch {
-        // Non-fatal — tree still renders without glyphs.
-      }
+      void fsApi
+        .getStatusMap(worktreeRoot)
+        .then((statusMap) => {
+          if (get().worktreeId === worktreeId) {
+            set({ statusMap: statusMap as Record<string, GitGlyph> });
+          }
+        })
+        .catch(() => {
+          // Non-fatal — tree still renders without glyphs.
+        });
     },
 
     closeWorktree: async () => {

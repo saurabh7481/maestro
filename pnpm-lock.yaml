@@ -77,6 +77,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.8(react@19.2.8)
+      vscode-jsonrpc:
+        specifier: 9.0.0
+        version: 9.0.0
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.18)(react@19.2.8)
@@ -2085,6 +2088,10 @@ packages:
       jsdom:
         optional: true
 
+  vscode-jsonrpc@9.0.0:
+    resolution: {integrity: sha512-+VvMmQPJhtvJ+8O+zu2JKIRiLxXF8NW7krWgyMGeOHrp4Cn23T5hc0v2LknNeopDOB70wghHAds7mKtcZ0I4Sg==}
+    engines: {node: '>=14.0.0'}
+
   w3c-xmlserializer@5.0.0:
     resolution: {integrity: sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==}
     engines: {node: '>=18'}
@@ -3927,6 +3934,8 @@ snapshots:
       jsdom: 30.0.1
     transitivePeerDependencies:
       - msw
+
+  vscode-jsonrpc@9.0.0: {}
 
   w3c-xmlserializer@5.0.0:
     dependencies:

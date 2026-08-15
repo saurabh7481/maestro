@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import * as monaco from "monaco-editor";
+import * as monaco from "monaco-editor/editor/editor.api";
 import { ensureMonacoEnvironment } from "../../editor/monacoSetup";
-import { languageForPath } from "../../editor/monacoModelRegistry";
+import { languageForPath } from "../../editor/languages";
 import { useUiStore } from "../../state/uiStore";
 import styles from "./MonacoDiffHost.module.css";
 

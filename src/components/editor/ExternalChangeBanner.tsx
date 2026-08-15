@@ -1,7 +1,7 @@
 import { ArrowClockwise, Warning, X } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
 import { useOpenFilesStore } from "../../state/openFilesStore";
-import { getModel } from "../../editor/monacoModelRegistry";
+import { getEditorModel } from "../../editor/modelBridge";
 import { Button } from "../primitives";
 import styles from "./ExternalChangeBanner.module.css";
 
@@ -21,7 +21,7 @@ export function ExternalChangeBanner({ tabId, worktreeRoot, filePath }: External
   async function reload() {
     const result = await fsApi.readFile(worktreeRoot, filePath);
     if (result.kind !== "text") return;
-    getModel(tabId)?.setValue(result.content);
+    getEditorModel(tabId)?.setValue(result.content);
     registerLoaded(tabId, result.mtimeMs);
   }
 

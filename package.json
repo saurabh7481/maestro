@@ -46,6 +46,7 @@
     "monaco-editor": "^0.56.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "vscode-jsonrpc": "9.0.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

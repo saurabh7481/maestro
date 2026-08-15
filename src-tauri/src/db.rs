@@ -71,6 +71,16 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             value_json TEXT NOT NULL
         );
 
+        -- A nullable tri-state project override for Language Server support:
+        -- NULL inherits the global `lsp.enabled` setting, 0 disables, and 1
+        -- enables. Keeping this separate from the free-form settings table
+        -- gives project deletion proper FK cleanup and makes precedence
+        -- impossible to interpret differently in separate callers.
+        CREATE TABLE IF NOT EXISTS project_lsp_settings (
+            project_id       TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            enabled_override INTEGER CHECK (enabled_override IN (0, 1) OR enabled_override IS NULL)
+        );
+
         -- Index/cache only, never the source of truth: each CLI persists
         -- its own session history on disk (see agents/sessions.rs). This
         -- table exists for pid/start-time bookkeeping (future zombie-reap

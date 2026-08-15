@@ -395,6 +395,7 @@ export function CommandPalette() {
         title: relPath.split("/").pop() ?? relPath,
         filePath: relPath,
         worktreeRoot: activeWorktree.path,
+        worktreeId: activeWorktree.id,
       });
     }
     setOpen(false);

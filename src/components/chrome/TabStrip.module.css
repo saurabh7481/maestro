@@ -68,6 +68,26 @@
   margin-left: 0.125rem;
 }
 
+.problemBadge {
+  min-width: 0.875rem;
+  height: 0.875rem;
+  padding: 0 0.1875rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--bg);
+  background: var(--accent-2);
+  font: var(--text-2xs)/1 var(--font-mono);
+}
+.problemBadge[data-severity="error"] {
+  background: var(--red);
+}
+.problemBadge[data-severity="warning"] {
+  background: var(--yellow);
+}
+
 .tabClose {
   width: 1.125rem;
   height: 1.125rem;

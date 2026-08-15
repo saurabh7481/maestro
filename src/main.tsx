@@ -24,7 +24,22 @@ window.addEventListener("error", (e) => {
   void logError(`window error: ${e.message}\n${e.error?.stack ?? ""}`);
 });
 window.addEventListener("unhandledrejection", (e) => {
-  void logError(`unhandled rejection: ${String(e.reason?.stack ?? e.reason)}`);
+  const reason = e.reason as { name?: string; message?: string; stack?: string } | undefined;
+  const stack = String(reason?.stack ?? reason ?? "");
+  // Monaco's WebKit clipboard workaround deliberately rejects its previous
+  // pending clipboard promise on every new click/key press. That is control
+  // flow, not an application failure; logging it twice per interaction can
+  // become its own performance problem in a desktop WebView.
+  if (
+    reason?.name === "CancellationError" ||
+    reason?.name === "Canceled" ||
+    stack.includes("BrowserClipboardService") ||
+    (/cancel@/.test(stack) && stack.includes("node_modules/.vite/deps/"))
+  ) {
+    e.preventDefault();
+    return;
+  }
+  void logError(`unhandled rejection: ${stack}`);
 });
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

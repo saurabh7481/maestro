@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod fs_ops;
 mod git;
+mod lsp;
 mod models;
 mod search;
 mod state;
@@ -68,6 +69,8 @@ pub fn run() {
                 hook_cancel_senders: Mutex::new(HashMap::new()),
                 watchers: Mutex::new(HashMap::new()),
                 agent_status_cache: Mutex::new(HashMap::new()),
+                lsp_status_cache: Mutex::new(HashMap::new()),
+                lsp_servers: Mutex::new(HashMap::new()),
                 agent_runs: Mutex::new(HashMap::new()),
                 terminals: Mutex::new(HashMap::new()),
                 search_cancel_flags: Mutex::new(HashMap::new()),
@@ -118,12 +121,27 @@ pub fn run() {
             commands::search::cancel_search,
             commands::search::replace_in_files,
             watcher::start_worktree_watcher,
+            watcher::watch_worktree_directory,
             watcher::stop_worktree_watcher,
             commands::agents::detect_agent_cli,
             commands::agents::detect_all_agent_clis,
             commands::agents::set_agent_binary_path,
             commands::agents::generate_commit_message,
             commands::agents::list_agent_models,
+            commands::lsp::get_global_lsp_settings,
+            commands::lsp::set_global_lsp_settings,
+            commands::lsp::get_project_lsp_settings,
+            commands::lsp::set_project_lsp_settings,
+            commands::lsp::is_lsp_enabled_for_worktree,
+            commands::lsp::detect_lsp_server,
+            commands::lsp::detect_all_lsp_servers,
+            commands::lsp::set_lsp_binary_path,
+            commands::lsp::get_typescript_sdk_path,
+            commands::lsp::set_typescript_sdk_path,
+            commands::lsp::start_lsp_server,
+            commands::lsp::send_lsp_message,
+            commands::lsp::stop_lsp_server,
+            commands::lsp::list_running_lsp_servers,
             agents::sessions::list_resumable_sessions,
             agents::sessions::list_all_resumable_sessions,
             agents::sessions::list_resumable_sessions_for_roots,
@@ -156,6 +174,7 @@ pub fn run() {
                 let state = app_handle.state::<AppState>();
                 terminal::kill_all(&state);
                 agents::manager::kill_all(&state);
+                lsp::kill_all(&state);
             }
         });
 }
