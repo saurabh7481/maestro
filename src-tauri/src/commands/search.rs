@@ -15,10 +15,20 @@ fn search_event_channel(search_id: &str) -> String {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum SearchEvent {
+    /// A round of scanned files, not a single file — one event per batch
+    /// keeps a broad query from emitting thousands of individual IPC
+    /// messages the renderer has to deserialize and reduce over
+    /// (docs/PERFORMANCE_AUDIT.md §2.4).
     #[serde(rename_all = "camelCase")]
-    Match { file: search::FileMatches },
+    Match { files: Vec<search::FileMatches> },
     #[serde(rename_all = "camelCase")]
-    Done { files_matched: u32, cancelled: bool },
+    Done {
+        files_matched: u32,
+        cancelled: bool,
+        /// The scan hit `search::MAX_MATCHED_FILES` and stopped with files
+        /// left unscanned.
+        truncated: bool,
+    },
 }
 
 #[tauri::command]
@@ -57,8 +67,8 @@ pub async fn search_in_files(
         &query,
         &options,
         &cancel,
-        |file| {
-            let _ = emit_app.emit(&emit_channel, SearchEvent::Match { file });
+        |files| {
+            let _ = emit_app.emit(&emit_channel, SearchEvent::Match { files });
         },
     )
     .await;
@@ -72,12 +82,13 @@ pub async fn search_in_files(
     }
 
     let cancelled = cancel.load(Ordering::Relaxed);
-    let files_matched = result?;
+    let outcome = result?;
     let _ = app.emit(
         &channel,
         SearchEvent::Done {
-            files_matched,
+            files_matched: outcome.files_matched,
             cancelled,
+            truncated: outcome.truncated,
         },
     );
     Ok(())

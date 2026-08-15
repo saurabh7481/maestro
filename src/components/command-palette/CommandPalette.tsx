@@ -13,11 +13,26 @@ import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
 import { fuzzyMatch, fuzzyScore } from "../../design/fuzzy";
 import { comboMatchesEvent } from "../../design/keymap";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
+import type { SplitEdge } from "../../state/paneLayout";
+import { detachTabToNewWindow } from "../chrome/satelliteWindows";
+import { openProcessesTab } from "../processes/openProcessesTab";
 import { iconForFile } from "../explorer/fileIcons";
 import { ICON_SIZE } from "../../design/iconSize";
 import styles from "./CommandPalette.module.css";
 
 const QUICK_OPEN_MAX_RESULTS = 50;
+
+/** Splits whichever pane currently has focus, moving its active tab into
+ * the new one — the palette's equivalent of dragging that tab to the
+ * pane's edge (docs/V2_ROADMAP.md Phase 13). */
+function splitActivePane(edge: SplitEdge): void {
+  const state = useTabsStore.getState();
+  const activeTabId = state.activeTabId;
+  const pane = Object.values(state.panes).find((candidate) =>
+    candidate.tabIds.includes(activeTabId ?? ""),
+  );
+  if (pane) state.splitPane(pane.id, edge);
+}
 
 function isMarkdownPath(path: string): boolean {
   return /\.mdx?$/i.test(path);
@@ -118,6 +133,33 @@ function useCommands(): Command[] {
       },
       { id: "zoom.reset", label: "Reset Zoom", group: "zoom", run: () => setZoom(ZOOM_DEFAULT) },
       { id: "settings.open", label: "Open Settings", group: "app", run: openSettings },
+      {
+        id: "tab.processes",
+        label: "Open Process Manager",
+        group: "tab",
+        run: openProcessesTab,
+      },
+      {
+        id: "layout.splitRight",
+        label: "Split Editor Right",
+        group: "layout",
+        run: () => splitActivePane("right"),
+      },
+      {
+        id: "layout.splitDown",
+        label: "Split Editor Down",
+        group: "layout",
+        run: () => splitActivePane("bottom"),
+      },
+      {
+        id: "layout.detach",
+        label: "Move Tab to New Window",
+        group: "layout",
+        run: () => {
+          const activeTabId = useTabsStore.getState().activeTabId;
+          if (activeTabId) void detachTabToNewWindow(activeTabId);
+        },
+      },
     ];
 
     // Anything that opens a tab bound to "the active worktree" or acts on

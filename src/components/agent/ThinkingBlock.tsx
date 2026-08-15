@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Brain, CaretDown } from "@phosphor-icons/react";
 import styles from "./ThinkingBlock.module.css";
 
 /** Collapsed-by-default "Thought for …" chip, matching the design file's
  * agent-chat markup. There's no real elapsed-time field on the wire
  * (the `thinking` content block carries text only), so this shows a
- * generic label rather than fabricating a duration. */
-export function ThinkingBlock({ text }: { text: string }) {
+ * generic label rather than fabricating a duration.
+ *
+ * `memo`'d for the same reason as its siblings in the transcript — a
+ * streamed event must not re-render every earlier block, and collapsing
+ * one of these must not disturb the rest (docs/PERFORMANCE_AUDIT.md §1.3). */
+export const ThinkingBlock = memo(function ThinkingBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div>
@@ -24,4 +28,4 @@ export function ThinkingBlock({ text }: { text: string }) {
       {expanded && <div className={styles.text}>{text}</div>}
     </div>
   );
-}
+});

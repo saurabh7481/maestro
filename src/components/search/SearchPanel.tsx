@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
   CaretDown,
@@ -14,6 +15,7 @@ import { iconForFile } from "../explorer/fileIcons";
 import { ICON_SIZE } from "../../design/iconSize";
 import { AlertDialog, Button, IconButton, TextInput, Tooltip } from "../primitives";
 import type { FileMatches, SearchMatch } from "../../types/search";
+import { flattenResults } from "./resultRows";
 import sidebar from "../chrome/Sidebar.module.css";
 import styles from "./SearchPanel.module.css";
 
@@ -48,39 +50,20 @@ function MatchRow({
   );
 }
 
-function FileGroup({
-  file,
-  onOpenMatch,
-}: {
-  file: FileMatches;
-  onOpenMatch: (m: SearchMatch) => void;
-}) {
-  const collapsedFiles = useSearchStore((s) => s.collapsedFiles);
+function FileHeaderRow({ file, collapsed }: { file: FileMatches; collapsed: boolean }) {
   const toggleFileCollapsed = useSearchStore((s) => s.toggleFileCollapsed);
-  const collapsed = collapsedFiles.has(file.path);
   const { name, dir } = splitPath(file.path);
   const { icon: Icon, color } = iconForFile(name);
 
   return (
-    <div>
-      <div className={sidebar.row} onClick={() => toggleFileCollapsed(file.path)}>
-        {collapsed ? <CaretRight size={11} /> : <CaretDown size={11} />}
-        <span className={styles.fileIcon}>
-          <Icon size={ICON_SIZE.sm} color={color} />
-        </span>
-        <span className={styles.fileName}>{name}</span>
-        {dir && <span className={styles.filePath}>{dir}</span>}
-        <span className={styles.matchCount}>{file.matches.length}</span>
-      </div>
-      {!collapsed &&
-        file.matches.map((match, i) => (
-          <MatchRow
-            key={`${file.path}:${match.line}:${i}`}
-            path={file.path}
-            match={match}
-            onClick={() => onOpenMatch(match)}
-          />
-        ))}
+    <div className={sidebar.row} onClick={() => toggleFileCollapsed(file.path)}>
+      {collapsed ? <CaretRight size={11} /> : <CaretDown size={11} />}
+      <span className={styles.fileIcon}>
+        <Icon size={ICON_SIZE.sm} color={color} />
+      </span>
+      <span className={styles.fileName}>{name}</span>
+      {dir && <span className={styles.filePath}>{dir}</span>}
+      <span className={styles.matchCount}>{file.matches.length}</span>
     </div>
   );
 }
@@ -126,6 +109,24 @@ export function SearchPanel() {
   }, [query, caseSensitive, wholeWord, useRegex, worktreeRoot]);
 
   const totalMatches = results.reduce((sum, f) => sum + f.matches.length, 0);
+
+  const collapsedFiles = useSearchStore((s) => s.collapsedFiles);
+  const truncated = useSearchStore((s) => s.truncated);
+  const rows = useMemo(() => flattenResults(results, collapsedFiles), [results, collapsedFiles]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    // Both row types are single-line (`white-space: nowrap` with ellipsis),
+    // but a file header and a match row use different font sizes, and both
+    // scale with the app's rem-based zoom. Measuring sidesteps having to
+    // track either.
+    estimateSize: () => 24,
+    getItemKey: (index) => rows[index].key,
+    overscan: 10,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
 
   return (
     <div className={sidebar.panel} data-side="right">
@@ -207,7 +208,7 @@ export function SearchPanel() {
         )}
       </div>
 
-      <div className={sidebar.body}>
+      <div className={`${sidebar.body} ${styles.resultsBody}`}>
         {status === "searching" && (
           <div className={styles.statusRow}>
             <ArrowsClockwise size={13} className="mo-spin" />
@@ -225,6 +226,7 @@ export function SearchPanel() {
           <div className={styles.statusRow}>
             {totalMatches} {totalMatches === 1 ? "result" : "results"} in {results.length}{" "}
             {results.length === 1 ? "file" : "files"}
+            {truncated && <span className={styles.truncatedNote}>· stopped early, narrow it</span>}
           </div>
         )}
         {status === "idle" && !query.trim() && (
@@ -233,15 +235,37 @@ export function SearchPanel() {
             <span>Search across every file in {activeWorktree?.branch ?? "this worktree"}.</span>
           </div>
         )}
-        {worktreeId &&
-          worktreeRoot &&
-          results.map((file) => (
-            <FileGroup
-              key={file.path}
-              file={file}
-              onOpenMatch={(match) => reveal(worktreeId, worktreeRoot, file.path, match)}
-            />
-          ))}
+        {worktreeId && worktreeRoot && rows.length > 0 && (
+          <div ref={scrollRef} className={styles.resultsScroller}>
+            <div className={styles.resultsSizer} style={{ height: virtualizer.getTotalSize() }}>
+              <div
+                className={styles.resultsWindow}
+                style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+              >
+                {virtualItems.map((virtualItem) => {
+                  const row = rows[virtualItem.index];
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      ref={virtualizer.measureElement}
+                    >
+                      {row.kind === "file" ? (
+                        <FileHeaderRow file={row.file} collapsed={row.collapsed} />
+                      ) : (
+                        <MatchRow
+                          path={row.file.path}
+                          match={row.match}
+                          onClick={() => reveal(worktreeId, worktreeRoot, row.file.path, row.match)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <AlertDialog

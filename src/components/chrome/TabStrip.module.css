@@ -38,6 +38,26 @@
   color: var(--text);
 }
 
+/* The tab being dragged stays in place, dimmed, rather than being removed
+   from the strip — the strip keeps its width, so the drop caret doesn't
+   jump around as a side effect of the tab it's measuring against
+   disappearing. */
+.tab[data-dragging="true"] {
+  opacity: 0.4;
+}
+
+/* Insertion caret between two tabs. Rendered as a flex sibling rather
+   than an absolutely-positioned overlay so it lands exactly on the gap
+   the drop will use, including in a scrolled strip. */
+.dropCaret {
+  flex: none;
+  width: 2px;
+  margin: var(--space-2) 0;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-soft);
+}
+
 .tabIndicator {
   position: absolute;
   left: 0;

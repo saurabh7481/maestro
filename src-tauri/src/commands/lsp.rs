@@ -47,16 +47,14 @@ fn write_json_setting<T: Serialize>(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Language intelligence is opt-in (`enabled: false`), which is exactly
+/// what `bool`'s own `Default` gives — so this derives rather than
+/// hand-writing the impl, and the "off by default" decision is documented
+/// here instead of hidden in a function body.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalLspSettings {
     pub enabled: bool,
-}
-
-impl Default for GlobalLspSettings {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -360,7 +358,29 @@ pub async fn send_lsp_message(
     generation: String,
     message: String,
 ) -> Result<(), String> {
-    lsp::validate_outbound_message(&message).map_err(|error| error.to_string())?;
+    send_lsp_messages(state, worktree_id, kind, generation, vec![message]).await
+}
+
+/// Batched form of `send_lsp_message`. Every LSP notification used to be
+/// its own `invoke`, so a single keystroke's `textDocument/didChange` cost
+/// a full IPC round-trip that the frontend's writer then *awaited* before
+/// sending the next one (docs/PERFORMANCE_AUDIT.md §2.5). The frontend now
+/// coalesces whatever it produces within a microtask into one call here.
+///
+/// Messages are validated up front and forwarded in order; the first
+/// failure aborts the rest, since an LSP stream that drops a message in the
+/// middle is worse than one that stops.
+#[tauri::command]
+pub async fn send_lsp_messages(
+    state: State<'_, AppState>,
+    worktree_id: String,
+    kind: LspServerKind,
+    generation: String,
+    messages: Vec<String>,
+) -> Result<(), String> {
+    for message in &messages {
+        lsp::validate_outbound_message(message).map_err(|error| error.to_string())?;
+    }
     let key = LspProcessKey { worktree_id, kind };
     let sender = {
         let servers = state
@@ -375,13 +395,16 @@ pub async fn send_lsp_message(
         }
         entry.control_tx.clone()
     };
-    tokio::time::timeout(
-        Duration::from_secs(2),
-        sender.send(LspControlMessage::Send(message)),
-    )
-    .await
-    .map_err(|_| "Language server write queue is full.".to_string())?
-    .map_err(|_| "Language server stopped before the message was queued.".to_string())
+    for message in messages {
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            sender.send(LspControlMessage::Send(message)),
+        )
+        .await
+        .map_err(|_| "Language server write queue is full.".to_string())?
+        .map_err(|_| "Language server stopped before the message was queued.".to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

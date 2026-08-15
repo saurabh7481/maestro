@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy } from "@phosphor-icons/react";
-import { renderMarkdownToHtml } from "../../design/renderMarkdown";
+import { plainTextFallbackHtml, useMarkdownHtml } from "../../design/renderMarkdown";
 import { Tooltip } from "../primitives";
 import styles from "./AgentMarkdown.module.css";
 
@@ -12,9 +12,21 @@ import styles from "./AgentMarkdown.module.css";
  * Selectable (drag-to-select copies the visible text) and paired with a
  * hover-revealed copy button that copies the raw markdown `text` prop —
  * not the rendered HTML — so pasting elsewhere keeps `**bold**`/code
- * fences intact rather than pasting formatted-but-unstyled text. */
-export function AgentMarkdown({ text }: { text: string }) {
-  const html = useMemo(() => renderMarkdownToHtml(text), [text]);
+ * fences intact rather than pasting formatted-but-unstyled text.
+ *
+ * `memo`'d because the transcript re-renders on every streamed agent
+ * event: without it, one token event reconciles every message block in
+ * the whole conversation (docs/PERFORMANCE_AUDIT.md §1.3). `text` is the
+ * only prop and transcript items are immutable, so the default shallow
+ * comparison is exactly right. */
+export const AgentMarkdown = memo(function AgentMarkdown({ text }: { text: string }) {
+  const rendered = useMarkdownHtml(text);
+  // `null` only while the markdown chunk loads on the session's first
+  // message — show the same text unformatted rather than an empty block,
+  // so the transcript doesn't collapse and reflow a frame later.
+  const fallback = useMemo(() => plainTextFallbackHtml(text), [text]);
+  const html = rendered ?? fallback;
+
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
 
@@ -37,4 +49,4 @@ export function AgentMarkdown({ text }: { text: string }) {
       </Tooltip>
     </div>
   );
-}
+});

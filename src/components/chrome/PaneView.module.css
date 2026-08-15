@@ -1,0 +1,144 @@
+.pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  position: relative;
+}
+
+/* A quiet accent hairline along the top of the focused pane's strip —
+   with two or three panes open, "which one does the next Cmd+P open in"
+   has to be answerable at a glance, and an inactive pane's tab is
+   otherwise styled identically to an active one's. */
+.pane[data-focused="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.55;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Portal target for process-backed tabs. Transparent to the pointer so an
+   empty slot never swallows clicks meant for the editor underneath; the
+   slots `TabHost` renders into it re-enable pointer events for
+   themselves. */
+.slot {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  text-align: center;
+  animation: mo-fade-in var(--duration-slow) var(--ease-out);
+}
+
+.placeholder > * {
+  max-width: 24rem;
+}
+
+.placeholderIcon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+}
+
+.placeholderTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.placeholderNote {
+  font-size: var(--text-sm);
+  color: var(--text-mute);
+  line-height: var(--leading-relaxed);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--text-mute);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-mute);
+  font-size: var(--text-sm);
+}
+
+.dropPreview {
+  position: absolute;
+  background: var(--accent-soft);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  z-index: 3;
+  animation: mo-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.dropPreview[data-edge="all"] {
+  inset: var(--space-2);
+}
+.dropPreview[data-edge="left"] {
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: var(--space-2);
+  width: calc(50% - var(--space-2));
+}
+.dropPreview[data-edge="right"] {
+  top: var(--space-2);
+  bottom: var(--space-2);
+  right: var(--space-2);
+  width: calc(50% - var(--space-2));
+}
+.dropPreview[data-edge="top"] {
+  left: var(--space-2);
+  right: var(--space-2);
+  top: var(--space-2);
+  height: calc(50% - var(--space-2));
+}
+.dropPreview[data-edge="bottom"] {
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  height: calc(50% - var(--space-2));
+}

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useWorkspaceStore } from "../state/workspaceStore";
 import { useTabsStore } from "../state/tabsStore";
+import { useSatelliteStore } from "../state/satelliteStore";
+import { restoreSatelliteWindows } from "../components/chrome/satelliteWindows";
 import { loadSessionPrefs, saveSessionPrefs } from "./persistence";
 import type { SessionPrefs } from "./persistence";
 
@@ -64,7 +66,37 @@ export function useSessionPersistence(): void {
               ([root, id]) => validWorktreeRoots.has(root) && !!id && restoredIds.has(id),
             ),
           );
-          useTabsStore.setState({ tabs: restorableTabs, activeTabIdByWorktree });
+          // `hydrate` (not `setState`) because the pane layout has to be
+          // reconciled against the tabs that actually survived — see its
+          // doc comment. A session saved before splits existed simply has
+          // no panes/layouts, which it handles as "put everything in one
+          // pane per worktree".
+          useTabsStore.getState().hydrate({
+            tabs: restorableTabs,
+            panes: prefs.panes ?? {},
+            layouts: prefs.layouts ?? {},
+            activePaneByWorktree: prefs.activePaneByWorktree ?? {},
+            activeTabIdByWorktree,
+            activeTabId: null,
+          });
+        }
+
+        // Detached windows are reopened with the tabs they had. The
+        // processes behind those tabs did *not* survive the quit (they're
+        // killed on `ExitRequested`, docs/CHECKLIST.md), so this restores
+        // the layout, exactly as restoring a main-window agent tab does.
+        const restorableSatellites = (prefs.satellites ?? [])
+          .map((record) => ({
+            ...record,
+            tabs: record.tabs.filter(
+              (tab) =>
+                (!tab.worktreeId || validWorktreeIds.has(tab.worktreeId)) &&
+                (!tab.worktreeRoot || validWorktreeRoots.has(tab.worktreeRoot)),
+            ),
+          }))
+          .filter((record) => record.tabs.length > 0);
+        if (restorableSatellites.length > 0) {
+          void restoreSatelliteWindows(restorableSatellites);
         }
 
         // Sync the tab strip to whichever worktree actually ended up
@@ -88,6 +120,10 @@ export function useSessionPersistence(): void {
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabIdByWorktree = useTabsStore((s) => s.activeTabIdByWorktree);
+  const panes = useTabsStore((s) => s.panes);
+  const layouts = useTabsStore((s) => s.layouts);
+  const activePaneByWorktree = useTabsStore((s) => s.activePaneByWorktree);
+  const satellitesByLabel = useSatelliteStore((s) => s.byLabel);
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId);
   const activeWorktreeId = useWorkspaceStore((s) => s.activeWorktreeId);
 
@@ -96,6 +132,25 @@ export function useSessionPersistence(): void {
     // still-empty startup state would race the restore and overwrite the
     // very session this hook is meant to bring back.
     if (!restoreDone) return;
-    void saveSessionPrefs({ activeProjectId, activeWorktreeId, tabs, activeTabIdByWorktree });
-  }, [restoreDone, tabs, activeTabIdByWorktree, activeProjectId, activeWorktreeId]);
+    void saveSessionPrefs({
+      activeProjectId,
+      activeWorktreeId,
+      tabs,
+      activeTabIdByWorktree,
+      panes,
+      layouts,
+      activePaneByWorktree,
+      satellites: Object.values(satellitesByLabel),
+    });
+  }, [
+    restoreDone,
+    tabs,
+    activeTabIdByWorktree,
+    panes,
+    layouts,
+    activePaneByWorktree,
+    satellitesByLabel,
+    activeProjectId,
+    activeWorktreeId,
+  ]);
 }

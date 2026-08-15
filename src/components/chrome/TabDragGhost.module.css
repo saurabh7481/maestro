@@ -1,0 +1,28 @@
+.ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Offset from the pointer rather than centred on it, so the drop
+     indicator under the cursor stays visible while dragging. */
+  margin: 10px 0 0 12px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 13.75rem;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--accent);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-md);
+  opacity: 0.94;
+}
+
+.title {
+  font-size: var(--text-sm);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -8,7 +8,6 @@ import { useUiStore } from "../../state/uiStore";
 import { useSearchStore } from "../../state/searchStore";
 import { useEditorNavigationStore } from "../../state/editorNavigationStore";
 import { fsApi } from "../../api/fs";
-import { listenToFsEvents } from "../../api/fsEvents";
 import { getModel, getOrCreateModel } from "../../editor/monacoModelRegistry";
 import { saveFileTab } from "../../editor/saveFile";
 import styles from "./MonacoHost.module.css";
@@ -20,12 +19,18 @@ const MONACO_FONT_FAMILY =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const BASE_FONT_SIZE = 13;
 
-/** The one Monaco instance for the whole app session — mounted lazily
- * (see MainContent.tsx) on first file/markdown-source tab open, then kept
- * alive as a persistent, CSS-display-toggled sibling so switching tabs
- * calls `setModel()`/`restoreViewState()` against this shared editor
- * instead of re-paying Monaco's init cost on every click. */
-export function MonacoHost() {
+/** One Monaco instance per pane — mounted lazily (see `PaneView.tsx`) the
+ * first time that pane shows a file/markdown-source tab, then kept alive
+ * as a persistent, CSS-display-toggled sibling so switching tabs *within
+ * the pane* calls `setModel()`/`restoreViewState()` against this editor
+ * instead of re-paying Monaco's init cost on every click.
+ *
+ * Was a single app-wide instance driven by the global active tab until
+ * splits landed (docs/V2_ROADMAP.md Phase 13) — two panes can show two
+ * files at once, which one editor cannot do. Text models are still shared
+ * app-wide through `monacoModelRegistry`, so the per-pane cost is the
+ * editor view, not a second copy of any file. */
+export function MonacoHost({ tabId }: { tabId: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
@@ -33,15 +38,13 @@ export function MonacoHost() {
   const autoSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const tabs = useTabsStore((s) => s.tabs);
-  const activeTabId = useTabsStore((s) => s.activeTabId);
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeTab = tabId ? tabs.find((t) => t.id === tabId) : undefined;
 
   const markdownMode = useOpenFilesStore((s) =>
     activeTab ? (s.byTabId[activeTab.id]?.markdownMode ?? "preview") : "preview",
   );
   const registerLoaded = useOpenFilesStore((s) => s.registerLoaded);
   const setDirty = useOpenFilesStore((s) => s.setDirty);
-  const setExternalChangePending = useOpenFilesStore((s) => s.setExternalChangePending);
   const setLoadState = useFileLoadStore((s) => s.setState);
   const worktreeId = useExplorerStore((s) => s.worktreeId);
 
@@ -89,6 +92,12 @@ export function MonacoHost() {
       });
     };
     window.addEventListener("resize", scheduleLayout);
+    // A pane resize (dragging a splitter, collapsing a split) doesn't
+    // fire a window resize, and Monaco's own `automaticLayout` is off
+    // because it polls. Observing the container covers both the window
+    // and the pane, at no idle cost.
+    const observer = new ResizeObserver(scheduleLayout);
+    observer.observe(containerRef.current);
     scheduleLayout();
 
     const changeSub = editor.onDidChangeModelContent(() => {
@@ -118,6 +127,7 @@ export function MonacoHost() {
 
     return () => {
       changeSub.dispose();
+      observer.disconnect();
       window.removeEventListener("resize", scheduleLayout);
       if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
       editor.dispose();
@@ -135,13 +145,7 @@ export function MonacoHost() {
     const editor = editorRef.current;
     editor?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
     editor?.layout();
-  }, [
-    zoom,
-    leftSidebarWidth,
-    rightSidebarWidth,
-    leftSidebarOpen,
-    rightSidebarOpen,
-  ]);
+  }, [zoom, leftSidebarWidth, rightSidebarWidth, leftSidebarOpen, rightSidebarOpen]);
 
   // Attach the right model whenever the visible target tab changes.
   useEffect(() => {
@@ -252,38 +256,6 @@ export function MonacoHost() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.id, isTarget]);
-
-  // External-change detection: only re-stats files that are actually
-  // loaded into a Monaco model (unopened tabs fetch fresh on open anyway,
-  // nothing to go stale) and only flags a real mtime mismatch — this is
-  // what suppresses the false-positive from the watcher echoing our own
-  // save, since `registerLoaded`/`registerSaved` already updated the
-  // recorded mtime by the time that echo arrives.
-  useEffect(() => {
-    if (!worktreeId) return;
-    const unlistenPromise = listenToFsEvents(worktreeId, (event) => {
-      // Defensive: a malformed/partial event should skip this pass, not
-      // crash the whole renderer (see `api/fsEvents.ts`).
-      if (!event?.touchedPaths) return;
-      for (const touched of event.touchedPaths) {
-        const tab = tabs.find(
-          (t) => (t.type === "file" || t.type === "markdown") && t.filePath === touched,
-        );
-        if (!tab || !getModel(tab.id) || !tab.worktreeRoot) continue;
-
-        void fsApi.readFile(tab.worktreeRoot, touched).then((result) => {
-          if (result.kind !== "text") return;
-          const recordedMtime = useOpenFilesStore.getState().byTabId[tab.id]?.diskMtimeMs;
-          if (recordedMtime != null && result.mtimeMs !== recordedMtime) {
-            setExternalChangePending(tab.id, true);
-          }
-        });
-      }
-    });
-    return () => {
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [worktreeId, tabs, setExternalChangePending]);
 
   return (
     <div

@@ -5,6 +5,7 @@ mod fs_ops;
 mod git;
 mod lsp;
 mod models;
+mod processes;
 mod search;
 mod state;
 mod terminal;
@@ -66,7 +67,7 @@ pub fn run() {
             let conn = db::open(&app_data_dir)?;
             app.manage(AppState {
                 db: Mutex::new(conn),
-                hook_cancel_senders: Mutex::new(HashMap::new()),
+                hook_runs: Mutex::new(HashMap::new()),
                 watchers: Mutex::new(HashMap::new()),
                 agent_status_cache: Mutex::new(HashMap::new()),
                 lsp_status_cache: Mutex::new(HashMap::new()),
@@ -140,6 +141,7 @@ pub fn run() {
             commands::lsp::set_typescript_sdk_path,
             commands::lsp::start_lsp_server,
             commands::lsp::send_lsp_message,
+            commands::lsp::send_lsp_messages,
             commands::lsp::stop_lsp_server,
             commands::lsp::list_running_lsp_servers,
             agents::sessions::list_resumable_sessions,
@@ -156,6 +158,8 @@ pub fn run() {
             agents::manager::interrupt_agent,
             agents::manager::kill_agent,
             agents::manager::kill_agent_runs_for_worktree,
+            processes::list_managed_processes,
+            processes::kill_managed_process,
             terminal::spawn_terminal,
             terminal::write_terminal,
             terminal::resize_terminal,

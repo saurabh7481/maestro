@@ -290,11 +290,17 @@ pub async fn run_worktree_hook(
 
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
     {
-        let mut senders = state
-            .hook_cancel_senders
-            .lock()
-            .map_err(|e| e.to_string())?;
-        senders.insert(worktree_id.clone(), cancel_tx);
+        let mut runs = state.hook_runs.lock().map_err(|e| e.to_string())?;
+        runs.insert(
+            worktree_id.clone(),
+            crate::state::HookRunEntry {
+                cancel_tx,
+                pid: child.id(),
+                started_at_ms: crate::processes::now_ms(),
+                worktree_path: worktree_path.clone(),
+                branch: branch.clone(),
+            },
+        );
     }
 
     let timeout = tokio::time::Duration::from_secs(120);
@@ -314,11 +320,8 @@ pub async fn run_worktree_hook(
     };
 
     {
-        let mut senders = state
-            .hook_cancel_senders
-            .lock()
-            .map_err(|e| e.to_string())?;
-        senders.remove(&worktree_id);
+        let mut runs = state.hook_runs.lock().map_err(|e| e.to_string())?;
+        runs.remove(&worktree_id);
     }
 
     let success = exit_code == Some(0) && !cancelled && !timed_out;
@@ -339,15 +342,12 @@ pub async fn cancel_worktree_hook(
     state: State<'_, AppState>,
     worktree_id: String,
 ) -> Result<(), String> {
-    let sender = {
-        let mut senders = state
-            .hook_cancel_senders
-            .lock()
-            .map_err(|e| e.to_string())?;
-        senders.remove(&worktree_id)
+    let entry = {
+        let mut runs = state.hook_runs.lock().map_err(|e| e.to_string())?;
+        runs.remove(&worktree_id)
     };
-    if let Some(tx) = sender {
-        let _ = tx.send(());
+    if let Some(entry) = entry {
+        let _ = entry.cancel_tx.send(());
     }
     Ok(())
 }

@@ -21,6 +21,7 @@ import {
   summarizeProblems,
   useProblemsStore,
 } from "../../state/problemsStore";
+import { ProcessPopover } from "../processes/ProcessPopover";
 import styles from "./StatusBar.module.css";
 
 /** Reflects whatever's actually happening in the active tab — an agent
@@ -132,6 +133,7 @@ export function StatusBar() {
         </span>
       )}
       <span>Theme: {THEME_LABELS[theme]}</span>
+      <ProcessPopover />
       <Bell size={13} />
     </div>
   );

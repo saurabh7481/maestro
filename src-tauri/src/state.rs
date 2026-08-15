@@ -47,14 +47,35 @@ pub struct AgentRunEntry {
     pub permission_mode: PermissionMode,
     /// `Some` only while a turn's child process is actually running.
     pub cancel_tx: Option<Sender<AgentCancelKind>>,
+    /// The current turn's child pid, tracked for the Process Manager
+    /// (`processes.rs`) — `Some` exactly when `cancel_tx` is, since both
+    /// are set and cleared by the same `run_turn` bookkeeping. Kept as a
+    /// separate field rather than derived from `cancel_tx` because a
+    /// `oneshot::Sender` has no idea what process it cancels.
+    pub pid: Option<u32>,
+    /// When this run (the tab, not the current turn) was created.
+    pub started_at_ms: u64,
+}
+
+/// One in-flight worktree hook run — the cancel signal
+/// `cancel_worktree_hook` needs, plus the reporting fields the Process
+/// Manager needs. Keyed by worktree id in `AppState::hook_runs`; only one
+/// hook runs per worktree at a time.
+pub struct HookRunEntry {
+    pub cancel_tx: Sender<()>,
+    pub pid: Option<u32>,
+    pub started_at_ms: u64,
+    pub worktree_path: String,
+    pub branch: String,
 }
 
 pub struct AppState {
     pub db: Mutex<Connection>,
-    /// One-shot cancel signals for in-flight hook runs, keyed by worktree
-    /// id, so `cancel_worktree_hook` can stop one without needing to hand
-    /// the running `Child` itself across the command boundary.
-    pub hook_cancel_senders: Mutex<HashMap<String, Sender<()>>>,
+    /// In-flight hook runs, keyed by worktree id — carrying a one-shot
+    /// cancel signal so `cancel_worktree_hook` can stop one without
+    /// needing to hand the running `Child` itself across the command
+    /// boundary.
+    pub hook_runs: Mutex<HashMap<String, HookRunEntry>>,
     /// Live file watchers, keyed by worktree id — one per *open* worktree,
     /// not all worktrees at once (see docs/ROADMAP.md Phase 3). Dropping a
     /// worktree's entry stops its watcher.

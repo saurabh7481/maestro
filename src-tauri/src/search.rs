@@ -87,75 +87,146 @@ pub fn build_regex(query: &str, options: &SearchOptions) -> Result<Regex, String
         .map_err(|e| e.to_string())
 }
 
-/// Scans every file `list_files` returns, invoking `on_file_match` once
-/// per matching file (so the caller can stream progress rather than
-/// waiting for the whole worktree to finish). Returns the number of files
-/// that matched. `cancel` is polled between files, not lines — matches
-/// `docs/ARCHITECTURE.md §9`'s streaming-command shape used elsewhere
-/// (`run_worktree_hook`) without needing a hard mid-file abort.
+/// How many files are scanned per round. Doubles as the emit batch size:
+/// one `Match` event per round instead of one per matching file, which on
+/// a broad query is the difference between a few hundred IPC messages and
+/// several thousand (docs/PERFORMANCE_AUDIT.md §2.4).
+const SCAN_BATCH_FILES: usize = 32;
+
+/// Ceiling on how many matching files one search reports. A query like `e`
+/// on a large repo otherwise streams the whole worktree into the renderer,
+/// which no one reads and which costs a DOM row per match. The frontend
+/// surfaces this as a "stopped early" note rather than silently pretending
+/// the result set is complete.
+const MAX_MATCHED_FILES: usize = 2_000;
+
+pub struct SearchOutcome {
+    pub files_matched: u32,
+    /// True when the scan stopped at `MAX_MATCHED_FILES` with files left
+    /// unscanned, so the caller can say so instead of implying completeness.
+    pub truncated: bool,
+}
+
+/// Reads and scans one file. Entirely synchronous — this is the body of a
+/// `spawn_blocking` task, so it deliberately uses `std::fs` rather than
+/// tokio's async file API: the work is a bounded read plus a CPU-bound
+/// regex pass, which is exactly what the blocking pool is for and what the
+/// async runtime's workers should not be doing.
+fn scan_file(full_path: &Path, rel_path: String, regex: &Regex) -> Option<FileMatches> {
+    let metadata = std::fs::metadata(full_path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(full_path).ok()?;
+    if fs_ops::looks_binary(&bytes) {
+        return None;
+    }
+    let content = String::from_utf8(bytes).ok()?;
+
+    let mut matches = Vec::new();
+    'lines: for (line_idx, line_text) in content.lines().enumerate() {
+        for m in regex.find_iter(line_text) {
+            matches.push(SearchMatch {
+                line: (line_idx + 1) as u32,
+                match_start: m.start() as u32,
+                match_end: m.end() as u32,
+                line_text: line_text.to_string(),
+            });
+            if matches.len() >= MAX_MATCHES_PER_FILE {
+                break 'lines;
+            }
+        }
+    }
+    if matches.is_empty() {
+        return None;
+    }
+    Some(FileMatches {
+        path: rel_path,
+        matches,
+    })
+}
+
+/// Scans every file `list_files` returns, invoking `on_batch` once per
+/// round of files (so the caller can stream progress rather than waiting
+/// for the whole worktree to finish). `cancel` is polled between rounds,
+/// not lines — matches `docs/ARCHITECTURE.md §9`'s streaming-command shape
+/// used elsewhere (`run_worktree_hook`) without needing a hard mid-file
+/// abort.
+///
+/// Files within a round are scanned in parallel on the blocking pool; the
+/// scan used to be a single sequential `for` loop awaiting one file read at
+/// a time, which left every core but one idle for the duration of a search
+/// (docs/PERFORMANCE_AUDIT.md §2.4). Results are still reported in
+/// `git ls-files` order: a round's handles are awaited in the order they
+/// were spawned, so parallelism never reorders the result list under the
+/// user.
 pub async fn search_in_files<F>(
     worktree_root: &Path,
     query: &str,
     options: &SearchOptions,
     cancel: &Arc<AtomicBool>,
-    mut on_file_match: F,
-) -> Result<u32, String>
+    mut on_batch: F,
+) -> Result<SearchOutcome, String>
 where
-    F: FnMut(FileMatches),
+    F: FnMut(Vec<FileMatches>),
 {
     if query.is_empty() {
-        return Ok(0);
+        return Ok(SearchOutcome {
+            files_matched: 0,
+            truncated: false,
+        });
     }
-    let regex = build_regex(query, options)?;
+    // Shared across the round's blocking tasks — compiled once, not once
+    // per file. `Regex` is `Sync`, so this needs no locking.
+    let regex = Arc::new(build_regex(query, options)?);
     let files = list_files(worktree_root).await?;
     let mut files_matched = 0u32;
+    let mut truncated = false;
 
-    for rel_path in files {
+    for chunk in files.chunks(SCAN_BATCH_FILES) {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        let Ok(full_path) = fs_ops::safe_join(worktree_root, &rel_path) else {
-            continue;
-        };
-        let Ok(metadata) = tokio::fs::metadata(&full_path).await else {
-            continue;
-        };
-        if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
-            continue;
-        }
-        let Ok(bytes) = tokio::fs::read(&full_path).await else {
-            continue;
-        };
-        if fs_ops::looks_binary(&bytes) {
-            continue;
-        }
-        let Ok(content) = String::from_utf8(bytes) else {
-            continue;
-        };
 
-        let mut matches = Vec::new();
-        'lines: for (line_idx, line_text) in content.lines().enumerate() {
-            for m in regex.find_iter(line_text) {
-                matches.push(SearchMatch {
-                    line: (line_idx + 1) as u32,
-                    match_start: m.start() as u32,
-                    match_end: m.end() as u32,
-                    line_text: line_text.to_string(),
-                });
-                if matches.len() >= MAX_MATCHES_PER_FILE {
-                    break 'lines;
-                }
+        let mut handles = Vec::with_capacity(chunk.len());
+        for rel_path in chunk {
+            let Ok(full_path) = fs_ops::safe_join(worktree_root, rel_path) else {
+                continue;
+            };
+            let regex = regex.clone();
+            let rel_path = rel_path.clone();
+            handles.push(tokio::task::spawn_blocking(move || {
+                scan_file(&full_path, rel_path, &regex)
+            }));
+        }
+
+        let mut batch = Vec::new();
+        for handle in handles {
+            // A panicking scan task shouldn't abort the whole search — skip
+            // that file the same way an unreadable one is skipped.
+            if let Ok(Some(file_matches)) = handle.await {
+                batch.push(file_matches);
             }
         }
-        if !matches.is_empty() {
-            files_matched += 1;
-            on_file_match(FileMatches {
-                path: rel_path,
-                matches,
-            });
+
+        if batch.is_empty() {
+            continue;
+        }
+        if files_matched as usize + batch.len() >= MAX_MATCHED_FILES {
+            batch.truncate(MAX_MATCHED_FILES - files_matched as usize);
+            truncated = true;
+        }
+        files_matched += batch.len() as u32;
+        on_batch(batch);
+        if truncated {
+            break;
         }
     }
-    Ok(files_matched)
+
+    Ok(SearchOutcome {
+        files_matched,
+        truncated,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -263,14 +334,14 @@ mod tests {
 
         let cancel = Arc::new(AtomicBool::new(false));
         let mut results = Vec::new();
-        let files_matched =
-            search_in_files(dir.path(), "hello", &default_options(), &cancel, |fm| {
-                results.push(fm)
-            })
-            .await
-            .unwrap();
+        let outcome = search_in_files(dir.path(), "hello", &default_options(), &cancel, |batch| {
+            results.extend(batch)
+        })
+        .await
+        .unwrap();
 
-        assert_eq!(files_matched, 1);
+        assert_eq!(outcome.files_matched, 1);
+        assert!(!outcome.truncated);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].path, "a.txt");
         assert_eq!(results[0].matches.len(), 2);
@@ -283,12 +354,72 @@ mod tests {
 
         let cancel = Arc::new(AtomicBool::new(false));
         let mut results = Vec::new();
-        search_in_files(dir.path(), "hello", &default_options(), &cancel, |fm| {
-            results.push(fm)
+        search_in_files(dir.path(), "hello", &default_options(), &cancel, |batch| {
+            results.extend(batch)
         })
         .await
         .unwrap();
         assert_eq!(results.len(), 1);
+    }
+
+    /// The scan runs a round's files in parallel on the blocking pool, which
+    /// is exactly the change that could silently start reporting results in
+    /// completion order instead of `git ls-files` order — a visibly jumbled
+    /// results panel. Spans several rounds (`SCAN_BATCH_FILES` is 32) so this
+    /// covers ordering *within* a round and *across* rounds.
+    #[tokio::test]
+    async fn parallel_scan_preserves_file_order_across_batches() {
+        let dir = init_repo().await;
+        let file_count = SCAN_BATCH_FILES * 3 + 5;
+        for i in 0..file_count {
+            // Zero-padded so lexical order (what `git ls-files` returns) and
+            // numeric order agree, making the expectation unambiguous.
+            std::fs::write(dir.path().join(format!("f{i:04}.txt")), "needle").unwrap();
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut results = Vec::new();
+        let mut batch_count = 0usize;
+        let outcome = search_in_files(dir.path(), "needle", &default_options(), &cancel, |batch| {
+            batch_count += 1;
+            results.extend(batch);
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.files_matched as usize, file_count);
+        assert!(!outcome.truncated);
+
+        let paths: Vec<&str> = results.iter().map(|f| f.path.as_str()).collect();
+        let expected: Vec<String> = (0..file_count).map(|i| format!("f{i:04}.txt")).collect();
+        assert_eq!(paths, expected);
+
+        // Results arrive batched, not one event per matching file.
+        assert!(
+            batch_count < file_count,
+            "expected batched emission, got {batch_count} callbacks for {file_count} files"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_stops_the_scan_early() {
+        let dir = init_repo().await;
+        for i in 0..(SCAN_BATCH_FILES * 2) {
+            std::fs::write(dir.path().join(format!("f{i:04}.txt")), "needle").unwrap();
+        }
+
+        // Pre-cancelled: the very first round check should bail before any
+        // file is read.
+        let cancel = Arc::new(AtomicBool::new(true));
+        let mut results = Vec::new();
+        let outcome = search_in_files(dir.path(), "needle", &default_options(), &cancel, |batch| {
+            results.extend(batch);
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.files_matched, 0);
+        assert!(results.is_empty());
     }
 
     #[tokio::test]

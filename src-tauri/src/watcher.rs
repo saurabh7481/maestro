@@ -7,7 +7,7 @@ use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, Recom
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
 /// Path segments that never need live-watching — matches the presets
@@ -24,6 +24,32 @@ const IGNORED_DIR_SEGMENTS: &[&str] = &[
     ".next",
     "coverage",
 ];
+
+/// How long the filesystem debouncer waits for a burst to settle. A little
+/// longer than it used to be (250 ms): the cost of a burst is a full-repo
+/// `git status`, so paying a bit more latency to collapse more edits into
+/// one pass is a good trade. See docs/PERFORMANCE_AUDIT.md §2.2.
+const DEBOUNCE_INTERVAL: Duration = Duration::from_millis(400);
+
+/// Floor between two consecutive `git status` passes. Independent of the
+/// debounce above, because the debouncer's window says nothing about how
+/// long the status itself takes — on a large repo one pass can outlast
+/// several windows, and without this floor those queue up back to back and
+/// keep a core busy for as long as the churn lasts.
+const STATUS_MIN_INTERVAL: Duration = Duration::from_millis(750);
+
+/// Folds every burst already queued behind the current one into it, so a
+/// backlog costs one status pass rather than one each.
+fn drain_pending(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<(HashSet<String>, HashSet<String>)>,
+    touched: &mut HashSet<String>,
+    dirs: &mut HashSet<String>,
+) {
+    while let Ok((more_touched, more_dirs)) = rx.try_recv() {
+        touched.extend(more_touched);
+        dirs.extend(more_dirs);
+    }
+}
 
 pub struct WorktreeWatcher {
     debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
@@ -96,19 +122,85 @@ pub async fn start_worktree_watcher(
     }
 
     let root = PathBuf::from(&worktree_path);
-    let app_handle = app.clone();
-    let event_worktree_id = worktree_id.clone();
     let watch_root = root.clone();
 
+    // The debounce callback used to spawn a `git status` per burst. Under
+    // sustained churn — a running build, a test watcher, an agent editing
+    // files — that meant a full
+    // `git status --porcelain=v2 --untracked-files=all` over the whole
+    // worktree every debounce window, which on a large repo is the dominant
+    // background CPU cost of simply having the app open
+    // (docs/PERFORMANCE_AUDIT.md §2.2).
+    //
+    // Bursts are now handed to one long-lived pacing task per watcher,
+    // which coalesces everything queued behind it into a single status pass
+    // and enforces a floor between passes. A trailing pass always runs, so
+    // the last edit of a burst is never the one that gets dropped — this
+    // adds latency under load, never staleness. A single edit on an
+    // otherwise idle worktree still reports as soon as the debouncer fires.
+    let (change_tx, mut change_rx) =
+        tokio::sync::mpsc::unbounded_channel::<(HashSet<String>, HashSet<String>)>();
+
+    let pacer_app = app.clone();
+    let pacer_worktree_id = worktree_id.clone();
+    let pacer_root = root.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut last_run: Option<Instant> = None;
+
+        // Ends when the sender drops, which happens when the debouncer (and
+        // with it this closure's captured `change_tx`) is dropped out of
+        // `AppState.watchers` — no separate shutdown signal needed.
+        while let Some((mut touched, mut dirs)) = change_rx.recv().await {
+            drain_pending(&mut change_rx, &mut touched, &mut dirs);
+
+            if let Some(previous) = last_run {
+                let elapsed = previous.elapsed();
+                if elapsed < STATUS_MIN_INTERVAL {
+                    tokio::time::sleep(STATUS_MIN_INTERVAL - elapsed).await;
+                    // Anything that arrived while waiting folds into this
+                    // same pass rather than earning one of its own.
+                    drain_pending(&mut change_rx, &mut touched, &mut dirs);
+                }
+            }
+
+            // One `git status` call feeds both events — `.git/` is
+            // watcher-ignored (see IGNORED_DIR_SEGMENTS), so this fs
+            // watcher is the *only* thing that keeps the SCM view fresh
+            // off working-tree edits; mutating git commands
+            // (commands/git.rs) push their own `scm://` snapshot
+            // separately, since staging/committing never touches a
+            // watched path.
+            let status = git::working_status(&pacer_root).await.unwrap_or_default();
+            let status_map = git::status_glyphs(&status);
+            last_run = Some(Instant::now());
+
+            let _ = pacer_app.emit(
+                &fs_event_channel(&pacer_worktree_id),
+                FsChangeEvent::Changed {
+                    touched_paths: touched.into_iter().collect(),
+                    changed_dirs: dirs.into_iter().collect(),
+                    status_map,
+                },
+            );
+            let _ = pacer_app.emit(
+                &scm_event_channel(&pacer_worktree_id),
+                ScmEvent::StatusChanged { status },
+            );
+        }
+    });
+
     let debouncer = new_debouncer(
-        Duration::from_millis(250),
+        DEBOUNCE_INTERVAL,
         None,
         move |result: DebounceEventResult| {
             let Ok(events) = result else {
                 return;
             };
 
-            let mut touched_paths = Vec::new();
+            // A set, not a `Vec`: coalesced bursts routinely report the same
+            // file several times, and the frontend re-stats every touched
+            // path (`MonacoHost`'s external-change check).
+            let mut touched_paths: HashSet<String> = HashSet::new();
             let mut changed_dirs: HashSet<String> = HashSet::new();
             for debounced in &events {
                 for path in &debounced.event.paths {
@@ -123,39 +215,14 @@ pub async fn start_worktree_watcher(
                         _ => String::new(),
                     };
                     changed_dirs.insert(dir);
-                    touched_paths.push(rel);
+                    touched_paths.insert(rel);
                 }
             }
             if touched_paths.is_empty() {
                 return;
             }
 
-            let app = app_handle.clone();
-            let worktree_id = event_worktree_id.clone();
-            let root = watch_root.clone();
-            tauri::async_runtime::spawn(async move {
-                // One `git status` call feeds both events — `.git/` is
-                // watcher-ignored (see IGNORED_DIR_SEGMENTS), so this fs
-                // watcher is the *only* thing that keeps the SCM view fresh
-                // off working-tree edits; mutating git commands
-                // (commands/git.rs) push their own `scm://` snapshot
-                // separately, since staging/committing never touches a
-                // watched path.
-                let status = git::working_status(&root).await.unwrap_or_default();
-                let status_map = git::status_glyphs(&status);
-                let _ = app.emit(
-                    &fs_event_channel(&worktree_id),
-                    FsChangeEvent::Changed {
-                        touched_paths,
-                        changed_dirs: changed_dirs.into_iter().collect(),
-                        status_map,
-                    },
-                );
-                let _ = app.emit(
-                    &scm_event_channel(&worktree_id),
-                    ScmEvent::StatusChanged { status },
-                );
-            });
+            let _ = change_tx.send((touched_paths, changed_dirs));
         },
     )
     .map_err(|e| e.to_string())?;

@@ -1,11 +1,24 @@
 import type { ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { ArrowLineRight, Copy, X, XCircle, XSquare } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
 import styles from "./TabContextMenu.module.css";
+
+/** Layout actions (split, move to another window) contributed by the tab
+ * strip — kept as data passed in rather than wired directly here so this
+ * component stays a menu and the pane operations stay in the pane code
+ * that owns them (docs/V2_ROADMAP.md Phase 13). */
+export interface TabContextMenuItem {
+  label: string;
+  icon: Icon;
+  disabled?: boolean;
+  onSelect: () => void;
+}
 
 export interface TabContextMenuProps {
   children: ReactNode;
   filePath?: string;
+  extraItems?: TabContextMenuItem[];
   onClose: () => void;
   onCloseOthers: () => void;
   onCloseToRight: () => void;
@@ -25,6 +38,7 @@ export interface TabContextMenuProps {
 export function TabContextMenu({
   children,
   filePath,
+  extraItems,
   onClose,
   onCloseOthers,
   onCloseToRight,
@@ -63,6 +77,22 @@ export function TabContextMenu({
               <Copy size={15} />
               Copy Path
             </ContextMenu.Item>
+          )}
+          {extraItems && extraItems.length > 0 && (
+            <>
+              <div className={styles.divider} />
+              {extraItems.map((item) => (
+                <ContextMenu.Item
+                  key={item.label}
+                  className={styles.item}
+                  disabled={item.disabled}
+                  onSelect={item.onSelect}
+                >
+                  <item.icon size={15} />
+                  {item.label}
+                </ContextMenu.Item>
+              ))}
+            </>
           )}
           <div className={styles.divider} />
           <ContextMenu.Item className={styles.item} disabled={!hasSaved} onSelect={onCloseSaved}>

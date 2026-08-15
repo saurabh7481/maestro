@@ -210,3 +210,28 @@
   font-family: var(--font-mono);
   color: var(--orange);
 }
+
+/* Holds the SCM list's full virtual height so the scrollbar reflects every
+   change, not just the rows currently in the DOM. `flex: none` because
+   `sidebar.body` is a flex column and would otherwise shrink it. */
+.scmSizer {
+  position: relative;
+  width: 100%;
+  flex: none;
+}
+
+/* One transform for the whole rendered window rather than positioning each
+   row individually. */
+.scmWindow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* Was `gap: 1px` on the flex body; absolutely-positioned virtual rows can't
+   use `gap`, so it becomes per-row padding that `measureElement` folds into
+   the measured height. */
+.scmWindow > * {
+  padding-bottom: 1px;
+}

@@ -179,6 +179,29 @@ dependency on Phases 11/12.
 detach an agent tab to its own window, restart the app, confirm the
 layout (panes + detached window) restores.
 
+**Status: shipped.** `state/paneLayout.ts` holds the layout tree (leaf =
+pane, split = row/column with fractional sizes) as pure, tested
+functions; `state/tabsStore.ts` owns panes per worktree and keeps its
+previous `openTab`/`ensureTab`/`closeTab`/`activeTabId` API so the ~20
+call sites across the app didn't have to change. `chrome/PaneGroup.tsx`
+renders the tree with draggable splitters, `chrome/PaneView.tsx` is one
+pane (its own tab strip, its own Monaco instance), and `chrome/TabHost.tsx`
+keeps process-backed tabs mounted by _moving_ their container between
+panes rather than re-portalling (which would remount them). Dragging a
+tab reorders it, moves it to another pane, or splits on a content edge
+(`chrome/tabDrag.ts`, hit-testing tested directly). Detached windows are
+"satellites" — the same bundle in a reduced shell
+(`chrome/SatelliteShell.tsx`), handed tabs plus their transcript/
+scrollback over Tauri events (`chrome/satelliteWindows.ts`), docking back
+via a titlebar button, a palette action, or simply closing the window.
+
+Two deliberate limits: a tab with unsaved edits refuses to detach (its
+Monaco model lives in the origin window, so the new window would silently
+re-read the file from disk), and dragging a detached _window_ back over
+the main one is not a dock gesture — the explicit dock action is, since
+live window-position tracking is unreliable under Wayland. The vim-mode
+fold-in mentioned above is **not** part of this and stays open.
+
 ## Phase 14 — Task runner
 
 **Goal:** a first-class way to run and re-run project commands (`pnpm
@@ -241,6 +264,28 @@ plumbing rather than opening new architecture.
 tab and confirm the underlying OS process actually dies; open the
 Worktree Dashboard for a project with 3+ worktrees and correctly see
 which ones have a running agent without opening any of them.
+
+**Status: Process Manager shipped**; the Worktree Dashboard, activity
+timeline and web preview remain open.
+
+`processes.rs` reports rather than owns: agent runs, PTY terminals,
+language servers and hook runs each keep the lifecycle they already had,
+and this module reads their `AppState` bookkeeping and routes a kill back
+to whichever of them owns the child. That required only pid/start-time
+fields on the four existing entry types (and turning the hook map's bare
+cancel sender into a `HookRunEntry`). CPU and memory come from `sysinfo`,
+rolled up over each process's whole descendant tree, so an agent CLI that
+forks workers reports what it actually costs. Two surfaces, per the
+feature's two moods: a full tab (`processes/ProcessManagerTab.tsx`) with
+per-kind grouping, filtering, live metrics and a confirm-then-kill
+button, and a status-bar popover (`processes/ProcessPopover.tsx`) for
+"stop that one thing" without opening a tab. Both share one 2-second
+poll, refcounted so nothing polls when neither is open.
+
+An idle agent tab is listed but not killable: the run entry (and its tab)
+exist, but there is no child process — killing an agent here stops the
+current _turn_, exactly like the tab's own stop button, and leaves the
+tab usable.
 
 ## Phase 16 — Cost & activity insights
 

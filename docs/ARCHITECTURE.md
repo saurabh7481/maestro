@@ -72,6 +72,16 @@ tab-multiplexed app, matching the design file's one titlebar/one tab strip.
 Tauri supports multiple windows/webviews natively if this changes later,
 but it's not a v1 need.
 
+> **v2 update (Phase 13).** "Later" arrived: a tab can now be pulled out
+> into a detached window (`chrome/satelliteWindows.ts`), and the editor
+> area splits into panes within a window. The default is unchanged — one
+> window, one tab strip per pane — and the reason multi-window is cheap
+> to add is exactly the property this section already relied on: agent
+> runs and PTYs live in the Rust core and stream over app-wide events,
+> so a second webview receives the same stream without any shared
+> frontend state layer. Moving a tab moves its descriptor, never its
+> process.
+
 **Why agent processes live in the Rust core, not the webview.** Same
 rationale as before: they're long-running, must survive a webview
 reload during development, and must be reachable for cleanup on app

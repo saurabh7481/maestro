@@ -1,0 +1,57 @@
+.split {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.split[data-direction="row"] {
+  flex-direction: row;
+}
+
+.split[data-direction="column"] {
+  flex-direction: column;
+}
+
+/* `flex-basis: 0` so `flex-grow` alone decides the division — with the
+   default `auto` basis, a pane holding a wide terminal would claim space
+   proportional to its content instead of its layout share. */
+.cell {
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.handle {
+  flex: none;
+  position: relative;
+  background: var(--border);
+  transition: background var(--duration-fast) var(--ease-out);
+  touch-action: none;
+}
+
+.handle[data-direction="row"] {
+  width: var(--border-width);
+  cursor: col-resize;
+}
+
+.handle[data-direction="column"] {
+  height: var(--border-width);
+  cursor: row-resize;
+}
+
+/* The hairline is 1px, but the grab area can't be — this widens the hit
+   target to a comfortable 9px without moving anything visually. */
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+.handle:hover,
+.handle:active {
+  background: var(--accent);
+}

@@ -43,6 +43,13 @@ impl LspServerKind {
         }
     }
 
+    /// Inverse of `slug` — the Process Manager encodes a running server's
+    /// identity as `worktreeId:slug` (`processes.rs`), so a kill request
+    /// coming back from the frontend has to decode to the same kind.
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        Self::all().into_iter().find(|kind| kind.slug() == slug)
+    }
+
     pub fn display_name(self) -> &'static str {
         match self {
             Self::TypeScript => "TypeScript / JavaScript",
@@ -167,6 +174,13 @@ pub struct LspServerEntry {
     pub generation: String,
     pub pid: Option<u32>,
     pub control_tx: mpsc::Sender<LspControlMessage>,
+    /// Reporting-only fields, for the Process Manager (`processes.rs`) —
+    /// the transport itself never reads them. Recorded at spawn because
+    /// that is the only moment the root path and resolved binary are in
+    /// scope; re-deriving them later would mean re-reading settings.
+    pub worktree_root: String,
+    pub binary_path: String,
+    pub started_at_ms: u64,
 }
 
 enum ReaderEvent {
@@ -302,6 +316,9 @@ pub async fn spawn_server(
         generation: generation.clone(),
         pid,
         control_tx,
+        worktree_root: worktree_root.to_string_lossy().to_string(),
+        binary_path: binary_path.to_string(),
+        started_at_ms: crate::processes::now_ms(),
     };
     {
         let state = app.state::<crate::state::AppState>();

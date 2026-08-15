@@ -95,7 +95,11 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-10) 0;
+  /* No vertical padding: rows are absolutely positioned inside a
+   * virtualizer-sized box, and padding on the scroll container would shift
+   * every row out of the virtualizer's coordinate space. The equivalent
+   * breathing room lives on the first/last rows instead (see
+   * `.transcriptRow[data-first]` / `[data-last]`). */
   background:
     radial-gradient(
       circle at 50% 0,
@@ -105,20 +109,57 @@
     var(--bg);
 }
 
-.transcriptInner {
+/* Holds the virtualizer's full scroll height so the scrollbar reflects the
+ * whole conversation, not just the handful of rows currently in the DOM. */
+.transcriptSizer {
+  position: relative;
+  width: 100%;
   max-width: 52rem;
   margin: 0 auto;
-  padding: 0 var(--space-8);
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
   min-width: 0;
+}
+
+/* The window of rendered rows, offset in one transform rather than
+ * positioning each row individually. */
+.transcriptWindow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* Was `gap: 2rem` on a flex column; absolutely-positioned virtual rows
+ * can't use `gap`, so the spacing is per-row padding that `measureElement`
+ * accounts for as part of the row's height. */
+.transcriptRow {
+  padding: 0 var(--space-8) 2rem;
+  min-width: 0;
+}
+
+.transcriptRow[data-first] {
+  padding-top: var(--space-10);
+}
+
+.transcriptRow[data-last] {
+  padding-bottom: var(--space-10);
+}
+
+.workingRow {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 var(--space-8) var(--space-10);
 }
 
 .row {
   display: flex;
   gap: var(--space-5);
   align-items: flex-start;
+}
+
+/* Only the newest row animates in. Applied to every row, this replayed on
+ * each scroll-into-view once the transcript was virtualized — visually
+ * wrong (old messages "arriving") and a repaint on every scroll frame. */
+.row[data-newest] {
   animation: mo-rise-in var(--duration-normal, 220ms) ease-out;
 }
 

@@ -1,4 +1,5 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowCounterClockwise,
@@ -29,6 +30,7 @@ import { SearchPanel } from "../search/SearchPanel";
 import { ProblemsPanel } from "../problems/ProblemsPanel";
 import { ScmContextMenu } from "./ScmContextMenu";
 import type { CommitFileEntry, FileStatusEntry, StatusKind } from "../../types/git";
+import { flattenScmRows, splitScmSections, type ScmRow } from "./scmRows";
 import sidebar from "./Sidebar.module.css";
 import styles from "./ExplorerSidebar.module.css";
 
@@ -391,6 +393,9 @@ function SectionHeader({
   );
 }
 
+/** A flattened SCM row: section headers and file rows share one list so a
+ * single virtualizer spans all three sections. */
+
 function ScmView() {
   const ensureTab = useTabsStore((s) => s.ensureTab);
   const activeTabId = useTabsStore((s) => s.activeTabId);
@@ -406,10 +411,128 @@ function ScmView() {
   const [stagedCollapsed, setStagedCollapsed] = useState(false);
   const [changesCollapsed, setChangesCollapsed] = useState(false);
 
-  const entries = status?.entries ?? [];
-  const conflicted = entries.filter((e) => e.staged?.kind === "conflicted");
-  const staged = entries.filter((e) => e.staged && e.staged.kind !== "conflicted");
-  const changes = entries.filter((e) => e.unstaged);
+  const entries = useMemo(() => status?.entries ?? [], [status]);
+  const sections = useMemo(() => splitScmSections(entries), [entries]);
+  const { conflicted, staged, changes } = sections;
+
+  // A large refactor or a fresh clone puts thousands of entries here, and
+  // every one of them used to become a DOM row whether or not it was
+  // scrolled to (docs/PERFORMANCE_AUDIT.md §2.3).
+  const rows = useMemo(
+    () =>
+      flattenScmRows(sections, {
+        conflicted: conflictedCollapsed,
+        staged: stagedCollapsed,
+        changes: changesCollapsed,
+      }),
+    [sections, conflictedCollapsed, stagedCollapsed, changesCollapsed],
+  );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    // Headers and file rows differ slightly in height, and both scale with
+    // the app's rem-based zoom — measured rather than assumed.
+    estimateSize: () => 26,
+    getItemKey: (index) => rows[index].key,
+    overscan: 10,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+
+  function renderRow(row: ScmRow) {
+    if (row.kind === "header") {
+      if (row.section === "conflicted") {
+        return (
+          <SectionHeader
+            icon={<WarningCircle size={12} color="var(--red)" />}
+            label="Conflicted"
+            count={conflicted.length}
+            collapsed={conflictedCollapsed}
+            onToggle={() => setConflictedCollapsed((c) => !c)}
+          />
+        );
+      }
+      if (row.section === "staged") {
+        return (
+          <SectionHeader
+            label="Staged changes"
+            count={staged.length}
+            collapsed={stagedCollapsed}
+            onToggle={() => setStagedCollapsed((c) => !c)}
+            bulkAction={
+              staged.length > 0 && (
+                <IconButton
+                  icon={Minus}
+                  label="Unstage all"
+                  size="sm"
+                  iconSize={13}
+                  className={styles.bulkAction}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void unstageAll();
+                  }}
+                />
+              )
+            }
+          />
+        );
+      }
+      return (
+        <SectionHeader
+          label="Changes"
+          count={changes.length}
+          collapsed={changesCollapsed}
+          onToggle={() => setChangesCollapsed((c) => !c)}
+          bulkAction={
+            changes.length > 0 && (
+              <IconButton
+                icon={Plus}
+                label="Stage all"
+                size="sm"
+                iconSize={13}
+                className={styles.bulkAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void stageAll();
+                }}
+              />
+            )
+          }
+        />
+      );
+    }
+
+    const { entry, section } = row;
+    if (section === "conflicted") {
+      return <FileRow entry={entry} kind={entry.staged!} active={false} />;
+    }
+    if (section === "staged") {
+      return (
+        <FileRow
+          entry={entry}
+          kind={entry.staged!}
+          active={
+            !!activeWorktree && activeTabId === diffTabId(activeWorktree.id, entry.path, "staged")
+          }
+          onOpen={() => openDiff(entry, "staged")}
+          onUnstage={() => void unstagePaths([entry.path])}
+        />
+      );
+    }
+    return (
+      <FileRow
+        entry={entry}
+        kind={entry.unstaged!}
+        active={
+          !!activeWorktree && activeTabId === diffTabId(activeWorktree.id, entry.path, "unstaged")
+        }
+        onOpen={() => openDiff(entry, "unstaged")}
+        onStage={() => void stagePaths([entry.path])}
+        onDiscard={() => setDiscardTarget(entry.path)}
+      />
+    );
+  }
 
   function openDiff(entry: FileStatusEntry, mode: "staged" | "unstaged") {
     if (!activeWorktree) return;
@@ -441,100 +564,26 @@ function ScmView() {
 
       <CommitBox />
 
-      <div className={sidebar.body}>
-        {conflicted.length > 0 && (
-          <>
-            <SectionHeader
-              icon={<WarningCircle size={12} color="var(--red)" />}
-              label="Conflicted"
-              count={conflicted.length}
-              collapsed={conflictedCollapsed}
-              onToggle={() => setConflictedCollapsed((c) => !c)}
-            />
-            {!conflictedCollapsed &&
-              conflicted.map((entry) => (
-                <FileRow
-                  key={`conflict:${entry.path}`}
-                  entry={entry}
-                  kind={entry.staged!}
-                  active={false}
-                />
-              ))}
-          </>
-        )}
-
-        <SectionHeader
-          label="Staged changes"
-          count={staged.length}
-          collapsed={stagedCollapsed}
-          onToggle={() => setStagedCollapsed((c) => !c)}
-          bulkAction={
-            staged.length > 0 && (
-              <IconButton
-                icon={Minus}
-                label="Unstage all"
-                size="sm"
-                iconSize={13}
-                className={styles.bulkAction}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void unstageAll();
-                }}
-              />
-            )
-          }
-        />
-        {!stagedCollapsed &&
-          staged.map((entry) => (
-            <FileRow
-              key={`staged:${entry.path}`}
-              entry={entry}
-              kind={entry.staged!}
-              active={
-                !!activeWorktree &&
-                activeTabId === diffTabId(activeWorktree.id, entry.path, "staged")
-              }
-              onOpen={() => openDiff(entry, "staged")}
-              onUnstage={() => void unstagePaths([entry.path])}
-            />
-          ))}
-
-        <SectionHeader
-          label="Changes"
-          count={changes.length}
-          collapsed={changesCollapsed}
-          onToggle={() => setChangesCollapsed((c) => !c)}
-          bulkAction={
-            changes.length > 0 && (
-              <IconButton
-                icon={Plus}
-                label="Stage all"
-                size="sm"
-                iconSize={13}
-                className={styles.bulkAction}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void stageAll();
-                }}
-              />
-            )
-          }
-        />
-        {!changesCollapsed &&
-          changes.map((entry) => (
-            <FileRow
-              key={`changes:${entry.path}`}
-              entry={entry}
-              kind={entry.unstaged!}
-              active={
-                !!activeWorktree &&
-                activeTabId === diffTabId(activeWorktree.id, entry.path, "unstaged")
-              }
-              onOpen={() => openDiff(entry, "unstaged")}
-              onStage={() => void stagePaths([entry.path])}
-              onDiscard={() => setDiscardTarget(entry.path)}
-            />
-          ))}
+      {/* `sidebar.body` is itself the virtualizer's scroll element: it has no
+          top padding, so its scrollTop maps 1:1 onto the virtualizer's
+          coordinate space with no `scrollMargin` correction needed. */}
+      <div className={sidebar.body} ref={scrollRef}>
+        <div className={styles.scmSizer} style={{ height: virtualizer.getTotalSize() }}>
+          <div
+            className={styles.scmWindow}
+            style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+          >
+            {virtualItems.map((virtualItem) => (
+              <div
+                key={virtualItem.key}
+                data-index={virtualItem.index}
+                ref={virtualizer.measureElement}
+              >
+                {renderRow(rows[virtualItem.index])}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <AlertDialog

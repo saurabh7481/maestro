@@ -19,6 +19,32 @@ export default defineConfig(async () => ({
     exclude: ["**/node_modules/**", "**/src-tauri/**"],
   },
 
+  build: {
+    rollupOptions: {
+      output: {
+        // Splits the long-lived vendor code out of the app chunk. Without
+        // this everything not behind a dynamic `import()` landed in one
+        // ~1.2 MB entry chunk that the webview re-parsed from scratch on
+        // every app update, even though React and Radix hadn't changed.
+        // Monaco, xterm, and the markdown renderer are already separate by
+        // virtue of being lazily imported (see `MainContent`, `TabHost`,
+        // `design/renderMarkdown.ts`) and are deliberately not listed here
+        // — naming them would pull them back into the eager graph.
+        manualChunks: {
+          react: ["react", "react-dom", "react-dom/client"],
+          radix: [
+            "@radix-ui/react-alert-dialog",
+            "@radix-ui/react-context-menu",
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-switch",
+            "@radix-ui/react-tooltip",
+          ],
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

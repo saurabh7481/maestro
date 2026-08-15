@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   CaretDown,
   CaretRight,
@@ -62,7 +62,19 @@ function diffColoredLines(content: string): { sign: "-" | "+" | null; text: stri
   });
 }
 
-export function ToolCallCard({ runId, item }: { runId: string; item: ToolCallItem }) {
+/** `memo`'d because the agent transcript re-renders as a turn streams:
+ * without it, a tool result arriving reconciled every card in the
+ * conversation, each of which re-splits and re-maps its output body
+ * (docs/PERFORMANCE_AUDIT.md §1.3). Transcript items are replaced rather
+ * than mutated in `agentSessionStore`, so a shallow prop comparison
+ * correctly catches a card whose result just landed. */
+export const ToolCallCard = memo(function ToolCallCard({
+  runId,
+  item,
+}: {
+  runId: string;
+  item: ToolCallItem;
+}) {
   const [expanded, setExpanded] = useState(false);
   const visual = TOOL_ICON[item.name] ?? { icon: Wrench, color: "var(--text-dim)" };
   const ToolIcon = visual.icon;
@@ -133,4 +145,4 @@ export function ToolCallCard({ runId, item }: { runId: string; item: ToolCallIte
       )}
     </div>
   );
-}
+});

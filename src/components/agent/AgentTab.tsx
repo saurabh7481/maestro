@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
   CaretDown,
@@ -31,6 +32,15 @@ type Group =
   | { role: "user"; text: string; key: string }
   | { role: "assistant"; items: TranscriptItem[]; key: string };
 
+/** Rough starting height for an unmeasured transcript row. Only affects
+ * the scrollbar before a row has been on screen once; every row that
+ * renders is measured for real via `measureElement`. */
+const ESTIMATED_GROUP_HEIGHT = 180;
+
+/** How close to the bottom counts as "following along", in pixels. Above
+ * this the user is reading scrollback and must not be yanked down. */
+const PIN_THRESHOLD_PX = 80;
+
 function groupItems(items: TranscriptItem[]): Group[] {
   const groups: Group[] = [];
   for (const item of items) {
@@ -48,6 +58,56 @@ function groupItems(items: TranscriptItem[]): Group[] {
   return groups;
 }
 
+/** `groupItems` rebuilds every group object from scratch, so a single
+ * streamed event handed every row in the transcript brand-new props and
+ * defeated `memo` entirely. This re-uses the previous render's object for
+ * any group whose contents are unchanged, which — since a turn appends to
+ * the tail and `toolResult` patches one card — is very nearly all of them.
+ *
+ * Indices are compared independently (not stopping at the first
+ * difference): a group's content doesn't depend on its neighbours, and
+ * `key` equality already guarantees the two indices refer to the same
+ * logical group. See docs/PERFORMANCE_AUDIT.md §1.3. */
+function reuseUnchangedGroups(next: Group[], previous: Group[]): void {
+  for (let i = 0; i < next.length; i++) {
+    const fresh = next[i];
+    const prior = previous[i];
+    if (!prior || prior.key !== fresh.key || prior.role !== fresh.role) continue;
+    if (fresh.role === "user" && prior.role === "user") {
+      if (prior.text === fresh.text) next[i] = prior;
+      continue;
+    }
+    if (fresh.role === "assistant" && prior.role === "assistant") {
+      const unchanged =
+        prior.items.length === fresh.items.length &&
+        fresh.items.every((item, j) => item === prior.items[j]);
+      if (unchanged) next[i] = prior;
+    }
+  }
+}
+
+function useStableGroups(items: TranscriptItem[]): Group[] {
+  // State rather than a ref, and updated during render rather than in an
+  // effect: refs must not be read during render, and an effect would
+  // publish the reconciled groups a commit late — every row would render
+  // once with fresh identities before settling, which is exactly the
+  // re-render this is meant to avoid. This is React's documented
+  // "adjusting state when a prop changes" pattern; the returned value is
+  // correct on the first pass, so nothing renders stale.
+  const [cache, setCache] = useState<{ items: TranscriptItem[]; groups: Group[] }>({
+    items: [],
+    groups: [],
+  });
+
+  if (cache.items !== items) {
+    const next = groupItems(items);
+    reuseUnchangedGroups(next, cache.groups);
+    setCache({ items, groups: next });
+    return next;
+  }
+  return cache.groups;
+}
+
 function folderName(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
@@ -58,7 +118,7 @@ function folderName(path: string): string {
  * from `codex.rs`, whose event shapes are best-effort/unverified until
  * it's live-tested against a real install. Collapsed by default so it
  * doesn't dominate the transcript. */
-function RawEventCard({ json }: { json: unknown }) {
+const RawEventCard = memo(function RawEventCard({ json }: { json: unknown }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className={styles.rawCard}>
@@ -70,31 +130,99 @@ function RawEventCard({ json }: { json: unknown }) {
       {expanded && <pre className={styles.rawBody}>{JSON.stringify(json, null, 2)}</pre>}
     </div>
   );
-}
+});
 
-/** Seconds since `active` last became true, ticking once/sec, reset to 0
- * when it goes false. Used to grow the working-indicator from a bare dot
- * bounce into "Working… 12s" on longer waits — a run that just sits at
- * "..." for 30s with no other signal reads as stuck even though the dots
- * are technically animating the whole time. */
-function useElapsedSeconds(active: boolean): number {
+/** One transcript row. `memo`'d so a streamed event only re-renders the
+ * group it actually touched — paired with `useStableGroups` above, which
+ * is what makes the memo bite. */
+const TranscriptGroup = memo(function TranscriptGroup({
+  group,
+  kind,
+  runId,
+  isNewest,
+}: {
+  group: Group;
+  kind: AgentKind;
+  runId: string;
+  isNewest: boolean;
+}) {
+  if (group.role === "user") {
+    return (
+      <div className={`${styles.row} ${styles.userRow}`} data-newest={isNewest || undefined}>
+        <div className={styles.userMessage}>
+          <div className={`${styles.roleLabel} ${styles.userRoleLabel}`}>You</div>
+          <div className={styles.userText}>{group.text}</div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`${styles.row} ${styles.assistantRow}`} data-newest={isNewest || undefined}>
+      <div className={`${styles.avatar} mo-gradient-mark`}>
+        <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
+      </div>
+      <div className={styles.assistantMessage}>
+        <div className={styles.roleLabel}>{AGENT_DISPLAY_NAME[kind]}</div>
+        <div className={styles.assistantGroup}>
+          {group.items.map((item) => {
+            if (item.kind === "assistantText") {
+              return <AgentMarkdown key={item.id} text={item.text} />;
+            }
+            if (item.kind === "thinking") {
+              return <ThinkingBlock key={item.id} text={item.text} />;
+            }
+            if (item.kind === "toolCall") {
+              return <ToolCallCard key={item.id} runId={runId} item={item} />;
+            }
+            if (item.kind === "error") {
+              return (
+                <div className={styles.inlineError} key={item.id}>
+                  {item.message}
+                </div>
+              );
+            }
+            if (item.kind === "raw") {
+              return <RawEventCard key={item.id} json={item.json} />;
+            }
+            return null;
+          })}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/** The working indicator's elapsed-seconds counter, isolated in its own
+ * leaf component *specifically* so its 1 Hz `setState` can't reach the
+ * transcript. Living inside `AgentTab`, this ticker re-rendered the entire
+ * conversation once per second for the whole duration of every turn, even
+ * with no events arriving at all (docs/PERFORMANCE_AUDIT.md §1.3). */
+function WorkingIndicator({ kind }: { kind: AgentKind }) {
   const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!active) {
-      startRef.current = null;
-      return;
-    }
-    startRef.current = Date.now();
+    const start = Date.now();
     const id = window.setInterval(() => {
-      const start = startRef.current;
-      if (start != null) setElapsed(Math.floor((Date.now() - start) / 1000));
+      setElapsed(Math.floor((Date.now() - start) / 1000));
     }, 1000);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, []);
 
-  return active ? elapsed : 0;
+  return (
+    <div className={`${styles.row} ${styles.assistantRow}`}>
+      <div className={`${styles.avatar} mo-gradient-mark`}>
+        <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
+      </div>
+      <div className={styles.typing}>
+        <span className={styles.typingDot} style={{ animationDelay: "0s" }} />
+        <span className={styles.typingDot} style={{ animationDelay: "0.2s" }} />
+        <span className={styles.typingDot} style={{ animationDelay: "0.4s" }} />
+        <span className={styles.typingLabel}>
+          {elapsed > 2 ? `Working… ${elapsed}s` : "Working…"}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function NotReadyCard({ title, detail }: { title: string; detail: string | null | undefined }) {
@@ -253,7 +381,132 @@ function ResumeSessionPicker({
   );
 }
 
-export function AgentTab({ tab }: { tab: Tab }) {
+/** The virtualized conversation. Split out of `AgentTab` so the header,
+ * settings panel, and composer don't re-render with it, and so the
+ * virtualizer's hooks aren't behind `AgentTab`'s early returns for the
+ * not-installed / not-authenticated states. */
+function Transcript({
+  groups,
+  kind,
+  runId,
+  working,
+  active,
+}: {
+  groups: Group[];
+  kind: AgentKind;
+  runId: string;
+  working: boolean;
+  active: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /** Whether the user is following the bottom of the conversation. Held in
+   * a ref, not state — it's read by effects and never rendered, so making
+   * it state would re-render the transcript on every scroll event. */
+  const pinnedRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+
+  const virtualizer = useVirtualizer({
+    count: groups.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ESTIMATED_GROUP_HEIGHT,
+    getItemKey: (index) => groups[index].key,
+    overscan: 5,
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
+
+  const onScroll = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    lastScrollTopRef.current = element.scrollTop;
+    pinnedRef.current =
+      element.scrollHeight - element.scrollTop - element.clientHeight < PIN_THRESHOLD_PX;
+  }, []);
+
+  // Follow the bottom only while the user is actually there. `behavior:
+  // "smooth"` used to run here on every appended item, so a streaming turn
+  // queued overlapping scroll animations — jank, and it fought anyone
+  // trying to read back through the conversation. `totalSize` is a
+  // dependency because rows are measured after they render, so the real
+  // bottom moves for a frame or two after each append.
+  useLayoutEffect(() => {
+    if (!active || !pinnedRef.current) return;
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    lastScrollTopRef.current = element.scrollTop;
+  }, [groups.length, totalSize, working, active]);
+
+  // A hidden tab is `display: none` (see `TabHost`), which zeroes the
+  // scroll container's own scrollTop. Restore the position — or the
+  // bottom, if that's where they were — before the browser paints the
+  // newly-visible tab, so switching back never lands somewhere arbitrary.
+  useLayoutEffect(() => {
+    if (!active) return;
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = pinnedRef.current ? element.scrollHeight : lastScrollTopRef.current;
+  }, [active]);
+
+  if (groups.length === 0) {
+    return (
+      <div className={styles.transcript} ref={scrollRef}>
+        <div className={styles.empty}>
+          <AgentBrandIcon kind={kind} size={26} color="var(--accent)" />
+          <span>Send a message to start working with {AGENT_DISPLAY_NAME[kind]}.</span>
+        </div>
+      </div>
+    );
+  }
+
+  const lastIndex = groups.length - 1;
+
+  return (
+    <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
+      <div className={styles.transcriptSizer} style={{ height: totalSize }}>
+        <div
+          className={styles.transcriptWindow}
+          style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+        >
+          {virtualItems.map((virtualItem) => {
+            const group = groups[virtualItem.index];
+            return (
+              <div
+                key={virtualItem.key}
+                data-index={virtualItem.index}
+                ref={virtualizer.measureElement}
+                className={styles.transcriptRow}
+                // The transcript's vertical breathing room lives on the
+                // first and last rows rather than as padding on the scroll
+                // container: padding there would offset every item from the
+                // virtualizer's coordinate space, which is what
+                // `scrollMargin` exists to correct. Folding it into the
+                // measured rows keeps one source of truth for offsets.
+                data-first={virtualItem.index === 0 || undefined}
+                data-last={virtualItem.index === lastIndex || undefined}
+              >
+                <TranscriptGroup
+                  group={group}
+                  kind={kind}
+                  runId={runId}
+                  isNewest={virtualItem.index === lastIndex}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {working && (
+        <div className={styles.workingRow}>
+          <WorkingIndicator kind={kind} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const runId = tab.id;
   const kind = tab.agentKind ?? "claudeCode";
   const status = useAgentAvailabilityStore((s) => s.statusByKind[kind]);
@@ -266,20 +519,14 @@ export function AgentTab({ tab }: { tab: Tab }) {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("manual");
-  const transcriptRef = useRef<HTMLDivElement>(null);
   const working = tabState?.status === "working";
-  const elapsedSeconds = useElapsedSeconds(working);
 
   useEffect(() => {
     openRun(runId);
   }, [runId, openRun]);
 
-  useEffect(() => {
-    transcriptRef.current?.scrollTo({
-      top: transcriptRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [tabState?.items.length, tabState?.status]);
+  const items = useMemo(() => tabState?.items ?? [], [tabState?.items]);
+  const groups = useStableGroups(items);
 
   async function handleSend(
     text: string,
@@ -343,8 +590,6 @@ export function AgentTab({ tab }: { tab: Tab }) {
     );
   }
 
-  const items = tabState?.items ?? [];
-  const groups = groupItems(items);
   const errored = tabState?.status === "error";
 
   return (
@@ -405,79 +650,7 @@ export function AgentTab({ tab }: { tab: Tab }) {
         <div className={styles.errorBanner}>{tabState.errorMessage}</div>
       )}
 
-      <div className={styles.transcript} ref={transcriptRef}>
-        {groups.length === 0 ? (
-          <div className={styles.empty}>
-            <AgentBrandIcon kind={kind} size={26} color="var(--accent)" />
-            <span>Send a message to start working with {AGENT_DISPLAY_NAME[kind]}.</span>
-          </div>
-        ) : (
-          <div className={styles.transcriptInner}>
-            {groups.map((group) =>
-              group.role === "user" ? (
-                <div className={`${styles.row} ${styles.userRow}`} key={group.key}>
-                  <div className={styles.userMessage}>
-                    <div className={`${styles.roleLabel} ${styles.userRoleLabel}`}>You</div>
-                    <div className={styles.userText}>{group.text}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className={`${styles.row} ${styles.assistantRow}`} key={group.key}>
-                  <div className={`${styles.avatar} mo-gradient-mark`}>
-                    <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
-                  </div>
-                  <div className={styles.assistantMessage}>
-                    <div className={styles.roleLabel}>{AGENT_DISPLAY_NAME[kind]}</div>
-                    <div className={styles.assistantGroup}>
-                      {group.items.map((item) => {
-                        if (item.kind === "assistantText") {
-                          return <AgentMarkdown key={item.id} text={item.text} />;
-                        }
-                        if (item.kind === "thinking") {
-                          return <ThinkingBlock key={item.id} text={item.text} />;
-                        }
-                        if (item.kind === "toolCall") {
-                          return <ToolCallCard key={item.id} runId={runId} item={item} />;
-                        }
-                        if (item.kind === "error") {
-                          return (
-                            <div className={styles.inlineError} key={item.id}>
-                              {item.message}
-                            </div>
-                          );
-                        }
-                        if (item.kind === "raw") {
-                          return <RawEventCard key={item.id} json={item.json} />;
-                        }
-                        return null;
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ),
-            )}
-            {working && (
-              <div className={`${styles.row} ${styles.assistantRow}`}>
-                <div className={`${styles.avatar} mo-gradient-mark`}>
-                  <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
-                </div>
-                <div className={styles.typing}>
-                  <span className={styles.typingDot} style={{ animationDelay: "0s" }} />
-                  <span className={styles.typingDot} style={{ animationDelay: "0.2s" }} />
-                  <span className={styles.typingDot} style={{ animationDelay: "0.4s" }} />
-                  <span className={styles.typingLabel}>
-                    {items.length === 0
-                      ? "Starting…"
-                      : elapsedSeconds > 2
-                        ? `Working… ${elapsedSeconds}s`
-                        : "Working…"}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <Transcript groups={groups} kind={kind} runId={runId} working={working} active={active} />
 
       <AgentComposer
         runId={runId}

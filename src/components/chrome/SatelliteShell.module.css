@@ -1,0 +1,94 @@
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.titlebar {
+  height: 2.25rem;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-3) 0 var(--space-6);
+  background: var(--titlebar);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.label {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-mute);
+}
+
+.spacer {
+  flex: 1;
+  height: 100%;
+}
+
+.dock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-full);
+  border: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.dock:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.windowControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--space-3);
+}
+
+.control {
+  width: 1.75rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+}
+
+.control:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.close:hover {
+  background: var(--red);
+  color: #fff;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.waiting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--text-mute);
+}

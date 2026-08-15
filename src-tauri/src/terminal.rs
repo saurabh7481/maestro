@@ -16,7 +16,29 @@ use crate::state::AppState;
 pub struct TerminalHandle {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
-    child: Box<dyn Child + Send + Sync>,
+    pub child: Box<dyn Child + Send + Sync>,
+    /// Reporting fields for the Process Manager (`processes.rs`). The pid
+    /// is snapshotted at spawn rather than read from `child` on demand:
+    /// `portable_pty::Child::process_id` returns `None` once the child has
+    /// been reaped, and a just-exited terminal is exactly the case the
+    /// Process Manager most needs to describe.
+    pub pid: Option<u32>,
+    pub started_at_ms: u64,
+    pub worktree_path: String,
+    pub shell: String,
+}
+
+impl TerminalHandle {
+    /// The shell's basename (`fish`, `zsh`) — what the Process Manager
+    /// shows as the process name, with the full path kept as its detail
+    /// line.
+    pub fn shell_name(&self) -> &str {
+        self.shell
+            .rsplit('/')
+            .next()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(self.shell.as_str())
+    }
 }
 
 fn pty_event_channel(terminal_id: &str) -> String {
@@ -81,6 +103,20 @@ pub async fn spawn_terminal(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
+    // A terminal id is a tab id, and a tab can now be handed to a second
+    // window (docs/V2_ROADMAP.md Phase 13), whose `TerminalTab` mounts
+    // without knowing the PTY is already running and asks for it again.
+    // Inserting a second handle under the same key would drop the first
+    // one *without killing it*, orphaning a live shell — so an existing
+    // id is a no-op here and the new window simply joins the same
+    // `pty://{id}/data` stream, which every window receives.
+    {
+        let terminals = state.terminals.lock().map_err(|e| e.to_string())?;
+        if terminals.contains_key(&terminal_id) {
+            return Ok(());
+        }
+    }
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -91,7 +127,8 @@ pub async fn spawn_terminal(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(default_shell());
+    let shell = default_shell();
+    let mut cmd = CommandBuilder::new(&shell);
     // `-l`: run as a login shell, same as every standalone terminal
     // emulator (Alacritty, GNOME Terminal, iTerm2, …) does — without it,
     // `.zprofile`/`.bash_profile`/fish's login block never run, which is
@@ -121,6 +158,7 @@ pub async fn spawn_terminal(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     {
+        let pid = child.process_id();
         let mut terminals = state.terminals.lock().map_err(|e| e.to_string())?;
         terminals.insert(
             terminal_id.clone(),
@@ -128,6 +166,10 @@ pub async fn spawn_terminal(
                 writer,
                 master: pair.master,
                 child,
+                pid,
+                started_at_ms: crate::processes::now_ms(),
+                worktree_path: worktree_path.clone(),
+                shell,
             },
         );
     }

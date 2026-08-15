@@ -20,7 +20,18 @@ export interface FileMatches {
 }
 
 export type SearchEvent =
-  { type: "match"; file: FileMatches } | { type: "done"; filesMatched: number; cancelled: boolean };
+  /** A batch of scanned files, in `git ls-files` order — the backend emits
+   * one event per scan round rather than one per matching file
+   * (docs/PERFORMANCE_AUDIT.md §2.4). */
+  | { type: "match"; files: FileMatches[] }
+  | {
+      type: "done";
+      filesMatched: number;
+      cancelled: boolean;
+      /** The scan stopped at the backend's matched-file ceiling with files
+       * left unscanned; results are a prefix, not the whole set. */
+      truncated: boolean;
+    };
 
 export interface ReplaceSummary {
   filesChanged: number;

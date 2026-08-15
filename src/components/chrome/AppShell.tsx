@@ -26,6 +26,7 @@ import { ActivityRail } from "./ActivityRail";
 import { MainContent } from "./MainContent";
 import { StatusBar } from "./StatusBar";
 import { ResizeHandle } from "./ResizeHandle";
+import { detachTabToNewWindow, listenForSatellites } from "./satelliteWindows";
 import styles from "./AppShell.module.css";
 
 const SIDEBAR_MIN_PX = 180;
@@ -160,6 +161,47 @@ function useTerminalShortcut() {
   }, [activeWorktree]);
 }
 
+/** Split/detach shortcuts (docs/V2_ROADMAP.md Phase 13). Registered here
+ * next to the other global shortcuts rather than inside a pane, since
+ * they act on whichever pane has focus and must work regardless of where
+ * the keyboard focus actually sits. */
+function useLayoutShortcuts() {
+  useEffect(() => {
+    function splitFocusedPane(edge: "right" | "bottom") {
+      const state = useTabsStore.getState();
+      const pane = Object.values(state.panes).find((candidate) =>
+        candidate.tabIds.includes(state.activeTabId ?? ""),
+      );
+      if (pane) state.splitPane(pane.id, edge);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      const comboFor = useKeybindingsStore.getState().comboFor;
+      if (comboMatchesEvent(comboFor("layout.splitRight"), event)) {
+        event.preventDefault();
+        splitFocusedPane("right");
+      } else if (comboMatchesEvent(comboFor("layout.splitDown"), event)) {
+        event.preventDefault();
+        splitFocusedPane("bottom");
+      } else if (comboMatchesEvent(comboFor("layout.detach"), event)) {
+        event.preventDefault();
+        const activeTabId = useTabsStore.getState().activeTabId;
+        if (activeTabId) void detachTabToNewWindow(activeTabId);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
+
+/** The main window is the one that owns detached windows: it hands tabs
+ * over when one opens and takes them back when one docks or closes
+ * (`chrome/satelliteWindows.ts`). Registered once, here, since the
+ * protocol has to be listening before any satellite can announce itself. */
+function useSatelliteHost() {
+  useEffect(() => listenForSatellites(), []);
+}
+
 /** Centralized CLI availability is detected once at startup — every
  * consumer (new-tab menu, Agents & CLI settings, commit-message
  * generation) reads the shared `agentAvailabilityStore` cache rather than
@@ -181,6 +223,8 @@ export function AppShell() {
   useSaveShortcut();
   useTerminalShortcut();
   useAgentAvailabilitySync();
+  useLayoutShortcuts();
+  useSatelliteHost();
 
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);

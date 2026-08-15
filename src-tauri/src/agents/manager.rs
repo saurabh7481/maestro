@@ -165,6 +165,10 @@ async fn run_turn(
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
         if let Some(entry) = runs.get_mut(&run_id) {
             entry.cancel_tx = Some(cancel_tx);
+            // Paired with `cancel_tx` for the Process Manager's benefit
+            // (`processes.rs`): both describe "a turn is in flight", and
+            // both are cleared together once the child exits below.
+            entry.pid = child.id();
         }
     }
 
@@ -201,6 +205,7 @@ async fn run_turn(
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
         if let Some(entry) = runs.get_mut(&run_id) {
             entry.cancel_tx = None;
+            entry.pid = None;
             if learned_session_id.is_some() {
                 entry.session_id = learned_session_id;
             }
@@ -264,6 +269,8 @@ pub async fn start_agent_session(
                     .collect(),
                 permission_mode: PermissionMode::default(),
                 cancel_tx: None,
+                pid: None,
+                started_at_ms: crate::processes::now_ms(),
             },
         );
     }
@@ -307,6 +314,8 @@ pub async fn resume_agent_session(
                 .collect(),
             permission_mode: PermissionMode::default(),
             cancel_tx: None,
+            pid: None,
+            started_at_ms: crate::processes::now_ms(),
         },
     );
     Ok(())

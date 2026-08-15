@@ -1,0 +1,34 @@
+/* One slot per mounted process-backed tab. Positioned (not `display:
+ * contents`) so `AgentTab`/`TerminalTab`'s own `position: absolute; inset:
+ * 0` roots resolve against the slot rather than reaching past it to
+ * `MainContent`'s `.content` — that keeps a hidden slot's children from
+ * having any effect on the visible tab's layout. */
+.slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The container this slot is portalled into is `pointer-events: none`
+     so an empty or hidden tab never swallows clicks meant for the pane
+     underneath; a visible slot takes them back. */
+  pointer-events: auto;
+}
+
+/* Off-screen home for mounted tabs that currently have no pane — a
+   background worktree's terminals, say. `display: none` on the parent
+   keeps them costing nothing to lay out while their React components
+   (and xterm buffers) stay alive. */
+.parking {
+  display: none;
+}
+
+/* `display: none` rather than `visibility: hidden` or an off-screen
+ * transform: a hidden tab must cost nothing to lay out or paint, and
+ * xterm.js in particular will keep measuring and repainting a merely
+ * transparent canvas. Both tab components are written to tolerate having
+ * zero layout size (see `TerminalTab`'s refit handling and `AgentTab`'s
+ * scroll restore). */
+.slotHidden {
+  display: none;
+}

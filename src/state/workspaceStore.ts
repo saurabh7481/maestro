@@ -237,11 +237,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   clearError: () => set({ error: null }),
 }));
 
+/** The hook-free half of `useActiveWorktree`, for the growing number of
+ * callers that need the active worktree from an event handler or a plain
+ * function rather than during render (opening a tab from the command
+ * palette, from the status bar, from a keyboard shortcut). */
+export function activeWorktreeOf(state: WorkspaceState): Worktree | undefined {
+  if (!state.activeProjectId || !state.activeWorktreeId) return undefined;
+  return state.worktreesByProject[state.activeProjectId]?.find(
+    (w) => w.id === state.activeWorktreeId,
+  );
+}
+
 export function useActiveWorktree(): Worktree | undefined {
-  return useWorkspaceStore((s) => {
-    if (!s.activeProjectId || !s.activeWorktreeId) return undefined;
-    return s.worktreesByProject[s.activeProjectId]?.find((w) => w.id === s.activeWorktreeId);
-  });
+  return useWorkspaceStore(activeWorktreeOf);
 }
 
 export function useActiveProject(): Project | undefined {

@@ -25,7 +25,11 @@ interface UiState {
    * `CommandPalette.tsx`. Reset to false whenever the palette opens via
    * the normal ⌘K/Titlebar-search path. */
   quickOpenMode: boolean;
-  newTabMenuOpen: boolean;
+  /** Which pane's `+` menu is open, if any. A pane id rather than a
+   * boolean because every pane has its own tab strip (and its own `+`)
+   * once the editor can be split — one shared flag opened all of them at
+   * once. */
+  newTabMenuPaneId: string | null;
   /** VS Code-style "save as you type" — when on, `MonacoHost` debounces a
    * write-to-disk after each edit instead of waiting for Cmd/Ctrl+S. See
    * Settings → General. */
@@ -42,7 +46,7 @@ interface UiState {
   closeSettings: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   openQuickOpen: () => void;
-  setNewTabMenuOpen: (open: boolean) => void;
+  setNewTabMenuOpen: (paneId: string | null) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   hydrate: (
     partial: Partial<
@@ -62,7 +66,7 @@ export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   commandPaletteOpen: false,
   quickOpenMode: false,
-  newTabMenuOpen: false,
+  newTabMenuPaneId: null,
   autoSaveEnabled: false,
 
   setTheme: (theme) => set({ theme }),
@@ -72,13 +76,14 @@ export const useUiStore = create<UiState>((set) => ({
   setLeftSidebarWidth: (leftSidebarWidth) => set({ leftSidebarWidth }),
   setRightSidebarWidth: (rightSidebarWidth) => set({ rightSidebarWidth }),
   setSidebarView: (sidebarView) => set({ sidebarView, settingsOpen: false }),
-  openSettings: () => set({ settingsOpen: true, newTabMenuOpen: false, commandPaletteOpen: false }),
+  openSettings: () =>
+    set({ settingsOpen: true, newTabMenuPaneId: null, commandPaletteOpen: false }),
   closeSettings: () => set({ settingsOpen: false }),
   setCommandPaletteOpen: (open) =>
-    set({ commandPaletteOpen: open, newTabMenuOpen: false, quickOpenMode: false }),
+    set({ commandPaletteOpen: open, newTabMenuPaneId: null, quickOpenMode: false }),
   openQuickOpen: () =>
-    set({ commandPaletteOpen: true, newTabMenuOpen: false, quickOpenMode: true }),
-  setNewTabMenuOpen: (open) => set({ newTabMenuOpen: open }),
+    set({ commandPaletteOpen: true, newTabMenuPaneId: null, quickOpenMode: true }),
+  setNewTabMenuOpen: (newTabMenuPaneId) => set({ newTabMenuPaneId }),
   setAutoSaveEnabled: (autoSaveEnabled) => set({ autoSaveEnabled }),
   hydrate: (partial) => set(partial),
 }));

@@ -29,6 +29,10 @@ interface SearchState {
   replaceOpen: boolean;
   results: FileMatches[];
   status: SearchStatus;
+  /** The backend stopped at its matched-file ceiling — `results` is a
+   * prefix of what matched, not all of it. Surfaced in the panel so a
+   * partial result set never reads as a complete one. */
+  truncated: boolean;
   searchId: string | null;
   collapsedFiles: Set<string>;
   pendingReveal: PendingReveal | null;
@@ -71,6 +75,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   replaceOpen: false,
   results: [],
   status: "idle",
+  truncated: false,
   searchId: null,
   collapsedFiles: new Set(),
   pendingReveal: null,
@@ -93,11 +98,11 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   runSearch: (worktreeRoot) => {
     const { query } = get();
     if (!query.trim()) {
-      set({ results: [], status: "idle", searchId: null });
+      set({ results: [], status: "idle", searchId: null, truncated: false });
       return;
     }
     const searchId = crypto.randomUUID();
-    set({ results: [], status: "searching", searchId });
+    set({ results: [], status: "searching", searchId, truncated: false });
 
     void listenToSearchEvents(searchId, (event) => {
       // A stale event from a search this store has since moved on from
@@ -105,9 +110,11 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       // result sets from two different queries.
       if (get().searchId !== searchId) return;
       if (event.type === "match") {
-        set((s) => ({ results: [...s.results, event.file] }));
+        // One concat per batch of files rather than per file — the backend
+        // already coalesces a scan round into a single event.
+        set((s) => ({ results: [...s.results, ...event.files] }));
       } else {
-        set({ status: "done" });
+        set({ status: "done", truncated: event.truncated });
       }
     }).then((unlisten) => {
       // A newer search already won by the time the listener attached —

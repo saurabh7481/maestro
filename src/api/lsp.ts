@@ -43,6 +43,8 @@ export const lspApi = {
   },
   sendMessage: (worktreeId: string, kind: LspServerKind, generation: string, message: string) =>
     invoke<void>("send_lsp_message", { worktreeId, kind, generation, message }),
+  sendMessages: (worktreeId: string, kind: LspServerKind, generation: string, messages: string[]) =>
+    invoke<void>("send_lsp_messages", { worktreeId, kind, generation, messages }),
   stopServer: (worktreeId: string, kind: LspServerKind, generation?: string) =>
     invoke<void>("stop_lsp_server", { worktreeId, kind, generation: generation ?? null }),
   listRunningServers: () => invoke<RunningLspServer[]>("list_running_lsp_servers"),

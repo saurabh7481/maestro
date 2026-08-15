@@ -143,3 +143,48 @@
   color: var(--text);
   border-radius: 2px;
 }
+
+/* The panel body stops scrolling itself so the virtualized result list can
+   own a scroll container whose scrollTop maps 1:1 onto the virtualizer's
+   coordinate space. With the status row sharing a scroller, every virtual
+   row would sit offset from where the virtualizer thinks it is (the problem
+   `scrollMargin` exists to patch); a dedicated scroller avoids needing it. */
+/* Doubled selector purely for specificity: this sits alongside
+   `Sidebar.module.css`'s `.body { overflow: auto }` on the same element, and
+   with equal specificity the winner would depend on which stylesheet the
+   bundler happened to emit last. */
+.resultsBody.resultsBody {
+  overflow: hidden;
+}
+
+.resultsScroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.resultsSizer {
+  position: relative;
+  width: 100%;
+}
+
+/* One transform for the whole rendered window rather than positioning each
+   row individually. */
+.resultsWindow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* Was `gap: 1px` on the flex body; absolutely-positioned virtual rows can't
+   use `gap`, so it becomes per-row padding that `measureElement` folds into
+   the row's measured height. */
+.resultsWindow > * {
+  padding-bottom: 1px;
+}
+
+.truncatedNote {
+  color: var(--yellow);
+}

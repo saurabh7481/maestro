@@ -1,6 +1,8 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { ThemeId } from "./themes";
-import type { Tab } from "../state/tabsStore";
+import type { Pane, Tab } from "../state/tabsStore";
+import type { LayoutNode } from "../state/paneLayout";
+import type { SatelliteRecord } from "../state/satelliteStore";
 
 export interface UiPrefs {
   theme: ThemeId;
@@ -62,6 +64,17 @@ export interface SessionPrefs {
   /** Per-worktree "which tab was active" — see `state/tabsStore.ts`.
    * Keyed by worktree root path, same as the in-memory store. */
   activeTabIdByWorktree: Record<string, string | null>;
+  /** Pane layout (docs/V2_ROADMAP.md Phase 13). Optional throughout:
+   * a session file written before splits existed restores fine, with
+   * every tab landing in one pane per worktree — `tabsStore.hydrate`
+   * treats a missing layout the same as an unusable one. */
+  panes?: Record<string, Pane>;
+  layouts?: Record<string, LayoutNode>;
+  activePaneByWorktree?: Record<string, string>;
+  /** Detached windows and the tabs they held. Their tabs are *not* in
+   * `tabs` — a satellite's tabs live in that window's own store — so
+   * without this they'd be missing from the restored session entirely. */
+  satellites?: SatelliteRecord[];
 }
 
 const SESSION_STORE_FILE = "session.json";

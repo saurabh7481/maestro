@@ -1,5 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Plus, Sparkle, TerminalWindow, WarningCircle } from "@phosphor-icons/react";
+import { Plus, Pulse, Sparkle, TerminalWindow, WarningCircle } from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
 import { useTabsStore } from "../../state/tabsStore";
 import type { Tab } from "../../state/tabsStore";
@@ -8,6 +8,7 @@ import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind } from "../../types/agent";
 import { AgentBrandIcon } from "../agent/AgentBrandIcon";
+import { openProcessesTab } from "../processes/openProcessesTab";
 import { Kbd, Tooltip } from "../primitives";
 import styles from "./TabStrip.module.css";
 
@@ -43,10 +44,15 @@ const AGENT_OPTIONS: AgentOption[] = [
   },
 ];
 
-export function NewTabMenu() {
-  const open = useUiStore((s) => s.newTabMenuOpen);
-  const setOpen = useUiStore((s) => s.setNewTabMenuOpen);
-  const openTab = useTabsStore((s) => s.openTab);
+/** The `+` at the end of a pane's tab strip. Takes the pane it belongs to
+ * so a new tab opens *there* rather than in whichever pane happened to
+ * have focus, and so two panes' menus can't be open at once. */
+export function NewTabMenu({ paneId }: { paneId: string }) {
+  const openPaneId = useUiStore((s) => s.newTabMenuPaneId);
+  const setOpenPaneId = useUiStore((s) => s.setNewTabMenuOpen);
+  const open = openPaneId === paneId;
+  const setOpen = (next: boolean) => setOpenPaneId(next ? paneId : null);
+  const openTabInPane = useTabsStore((s) => s.openTabInPane);
   const activeWorktree = useActiveWorktree();
   const statusByKind = useAgentAvailabilityStore((s) => s.statusByKind);
   const openSettings = useUiStore((s) => s.openSettings);
@@ -61,7 +67,7 @@ export function NewTabMenu() {
       worktreeId: activeWorktree.id,
       worktreeRoot: activeWorktree.path,
     };
-    openTab(tab);
+    openTabInPane(tab, paneId);
     setOpen(false);
   }
 
@@ -73,7 +79,7 @@ export function NewTabMenu() {
       title: `Terminal — ${activeWorktree.branch}`,
       worktreeRoot: activeWorktree.path,
     };
-    openTab(tab);
+    openTabInPane(tab, paneId);
     setOpen(false);
   }
 
@@ -157,6 +163,17 @@ export function NewTabMenu() {
             <div style={{ marginLeft: "auto" }}>
               <Kbd>⌃`</Kbd>
             </div>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={styles.terminalItem}
+            onSelect={() => {
+              openProcessesTab();
+              setOpen(false);
+            }}
+          >
+            <Pulse size={17} color="var(--purple)" />
+            <span style={{ fontSize: "var(--text-sm)" }}>Process Manager</span>
           </DropdownMenu.Item>
 
           <div className={styles.menuDivider} />

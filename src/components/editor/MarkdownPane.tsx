@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { FileText } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { getEditorModel } from "../../editor/modelBridge";
-import { renderMarkdownToHtml } from "../../design/renderMarkdown";
+import { useMarkdownHtml } from "../../design/renderMarkdown";
 import type { Tab } from "../../state/tabsStore";
 import styles from "./MarkdownPane.module.css";
 
@@ -51,7 +51,12 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
 
   const content = liveModel ? liveModel.getValue() : fetchedContent;
 
-  const html = useMemo(() => (content == null ? "" : renderMarkdownToHtml(content)), [content]);
+  // `null` only for the one chunk-load on the session's first markdown
+  // render (see `renderMarkdown.ts`); an empty preview body for that
+  // moment is preferable to a flash of unformatted source here, since a
+  // whole file's worth of raw markdown would be a much bigger reflow than
+  // a single chat message.
+  const html = useMarkdownHtml(content) ?? "";
 
   return (
     <>

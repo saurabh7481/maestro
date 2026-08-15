@@ -104,6 +104,7 @@ interface AgentSessionState {
   /** Idempotent — sets up the `agent://{runId}/event` listener once per
    * run id. Safe to call from a component's mount effect every render. */
   openRun: (runId: string) => void;
+  adoptRun: (runId: string, state: AgentTabState) => void;
   closeRun: (runId: string) => void;
   markStarted: (runId: string) => void;
   /** Replaces a tab's transcript with a resumed session's history (see
@@ -157,6 +158,14 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
       set((s) => ({ unlistenByRunId: { ...s.unlistenByRunId, [runId]: unlisten } }));
     });
   },
+
+  /** Seeds a run's transcript from another window's copy of it — a tab
+   * moved into a detached window (`chrome/satelliteWindows.ts`) would
+   * otherwise show an empty transcript for a conversation that plainly
+   * has history. The run's `openRun` listener still does the rest: the
+   * CLI process is in Rust and keeps streaming to every window, so from
+   * this point on both windows stay in step on their own. */
+  adoptRun: (runId, state) => set((s) => ({ byRunId: { ...s.byRunId, [runId]: state } })),
 
   closeRun: (runId) => {
     get().unlistenByRunId[runId]?.();

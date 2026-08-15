@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { terminalApi } from "../../api/terminal";
-import { useTerminalSessionStore } from "../../state/terminalSessionStore";
+import { replayTerminalBuffer, useTerminalSessionStore } from "../../state/terminalSessionStore";
 import type { Tab } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import styles from "./TerminalTab.module.css";
@@ -49,17 +49,32 @@ const THEME = {
 const TERMINAL_FONT_FAMILY =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
+/** xterm.js's own scrollback, in lines. Each retained line costs roughly
+ * `columns × 4` bytes in its cell buffer, so the old 8000 was on the order
+ * of 6 MB per open terminal at a typical width — and terminals now stay
+ * mounted for as long as they're open (`TabHost.tsx`), so that is resident
+ * RAM per tab, not per visible tab. 2000 lines is still well past what
+ * anyone scrolls back through by hand and cuts that by ~75%.
+ * See docs/PERFORMANCE_AUDIT.md §1.1. */
+const SCROLLBACK_LINES = 2000;
+
 /** Real PTY terminal tab (docs/ROADMAP.md Phase 7) — the backend process
  * lives in `AppState.terminals`, independent of this component's mount
- * state, so switching tabs away and back (`MainContent` only mounts the
- * active tab) reconnects to the same running shell rather than spawning
- * a new one; `terminalSessionStore` replays buffered output into the
- * freshly created xterm.js instance so scrollback isn't lost either. */
-export function TerminalTab({ tab }: { tab: Tab }) {
+ * state, so a rebuilt tab reconnects to the same running shell rather than
+ * spawning a new one; `terminalSessionStore` replays buffered output into
+ * the freshly created xterm.js instance so recent scrollback isn't lost
+ * either.
+ *
+ * `active` is false while the tab is open but not focused — `TabHost`
+ * keeps it mounted and hides it with `display: none` rather than
+ * unmounting (docs/PERFORMANCE_AUDIT.md §1.2), which means this component
+ * has to cope with having zero layout size for stretches at a time. */
+export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeWorktree = useActiveWorktree();
   const worktreeRoot = tab.worktreeRoot;
   const [spawnError, setSpawnError] = useState<string | null>(null);
+  const refitRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -75,7 +90,7 @@ export function TerminalTab({ tab }: { tab: Tab }) {
       theme: THEME,
       cursorBlink: true,
       cursorStyle: "block",
-      scrollback: 8000,
+      scrollback: SCROLLBACK_LINES,
       allowProposedApi: true,
     });
     const fitAddon = new FitAddon();
@@ -83,11 +98,8 @@ export function TerminalTab({ tab }: { tab: Tab }) {
     term.open(container);
     fitAddon.fit();
 
-    const store = useTerminalSessionStore.getState();
-    const existing = store.byTerminalId[tab.id];
-    for (const chunk of existing?.chunks ?? []) {
-      term.write(chunk);
-    }
+    const existing = useTerminalSessionStore.getState().byTerminalId[tab.id];
+    replayTerminalBuffer(tab.id, (bytes) => term.write(bytes));
 
     useTerminalSessionStore.getState().openTerminal(
       tab.id,
@@ -110,18 +122,50 @@ export function TerminalTab({ tab }: { tab: Tab }) {
       void terminalApi.write(tab.id, data);
     });
 
-    const resizeObserver = new ResizeObserver(() => {
+    // `fit()` forces a reflow and re-measures glyphs, and the PTY resize is
+    // an IPC round-trip — so both are coalesced to one per animation frame
+    // and the IPC call is skipped when the geometry didn't actually change.
+    // Without this, dragging a sidebar resize handle fires both on every
+    // single observer callback. A zero-size container means the tab is
+    // hidden (`display: none`); fitting against that would compute
+    // nonsense dimensions and resize the real shell to them.
+    let frame: number | null = null;
+    let lastRows = term.rows;
+    let lastCols = term.cols;
+    const refit = () => {
+      frame = null;
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
       fitAddon.fit();
+      if (term.rows === lastRows && term.cols === lastCols) return;
+      lastRows = term.rows;
+      lastCols = term.cols;
       void terminalApi.resize(tab.id, term.rows, term.cols);
-    });
+    };
+    const scheduleRefit = () => {
+      if (frame == null) frame = requestAnimationFrame(refit);
+    };
+    refitRef.current = scheduleRefit;
+
+    const resizeObserver = new ResizeObserver(scheduleRefit);
     resizeObserver.observe(container);
 
     return () => {
+      refitRef.current = null;
+      if (frame != null) cancelAnimationFrame(frame);
       onData.dispose();
       resizeObserver.disconnect();
       term.dispose();
     };
   }, [tab.id, worktreeRoot]);
+
+  // Coming back from `display: none` restores a non-zero size, which the
+  // ResizeObserver above does report — but the window may also have been
+  // resized while this tab was hidden, in which case the observer already
+  // fired (and was correctly ignored) at zero size. Refit explicitly so the
+  // shell's geometry is right the moment the tab is visible again.
+  useEffect(() => {
+    if (active) refitRef.current?.();
+  }, [active]);
 
   return (
     <div className={styles.tab}>
