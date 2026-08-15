@@ -4,8 +4,9 @@ import {
   CaretDown,
   CaretRight,
   ClockCounterClockwise,
+  FolderSimple,
   GearSix,
-  Sparkle,
+  MagnifyingGlass,
   Stop,
   WarningCircle,
   Wrench,
@@ -22,6 +23,7 @@ import { Switch } from "../primitives";
 import { ToolCallCard } from "./ToolCallCard";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { AgentComposer } from "./AgentComposer";
+import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
 import styles from "./AgentTab.module.css";
 
@@ -44,6 +46,11 @@ function groupItems(items: TranscriptItem[]): Group[] {
     }
   }
   return groups;
+}
+
+function folderName(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 /** An event the adapter didn't recognize, forwarded verbatim rather than
@@ -112,14 +119,18 @@ function ResumeSessionPicker({
   worktreeId,
   worktreeRoot,
   onResumed,
+  disabled,
 }: {
   runId: string;
   kind: AgentKind;
   worktreeId: string;
   worktreeRoot: string;
   onResumed: () => void;
+  disabled: boolean;
 }) {
   const [sessions, setSessions] = useState<ResumableSession[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const resumeSession = useAgentSessionStore((s) => s.resumeSession);
 
@@ -129,19 +140,35 @@ function ResumeSessionPicker({
     // per mount — the `null` initial state already covers the loading
     // case, no need to reset it here too.
     let cancelled = false;
-    void agentsApi.listResumableSessions(kind, worktreeRoot).then((list) => {
-      if (!cancelled) setSessions(list);
-    });
+    void agentsApi
+      .listAllResumableSessions(kind)
+      .then((list) => {
+        if (!cancelled) setSessions(list);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(String(error));
+      });
     return () => {
       cancelled = true;
     };
-  }, [kind, worktreeRoot]);
+  }, [kind]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleSessions = (sessions ?? []).filter((session) =>
+    `${session.title} ${session.worktreeRoot} ${session.sessionId}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
 
   async function resume(session: ResumableSession) {
     setResumingId(session.sessionId);
     try {
       await agentsApi.resumeAgentSession(runId, worktreeId, worktreeRoot, kind, session.sessionId);
-      const turns = await agentsApi.getSessionTranscript(kind, worktreeRoot, session.sessionId);
+      const turns = await agentsApi.getSessionTranscript(
+        kind,
+        session.worktreeRoot,
+        session.sessionId,
+      );
       resumeSession(runId, session.sessionId, turns);
       onResumed();
     } finally {
@@ -151,39 +178,77 @@ function ResumeSessionPicker({
 
   return (
     <div className={styles.resumeSection}>
-      <div className={styles.resumeLabel}>Resume a session</div>
+      <div className={styles.resumeHeading}>
+        <div>
+          <div className={styles.resumeLabel}>Sessions</div>
+          <div className={styles.resumeHint}>Continue any {AGENT_DISPLAY_NAME[kind]} session</div>
+        </div>
+        {sessions && <span className={styles.sessionCount}>{sessions.length}</span>}
+      </div>
       {sessions === null && (
         <div className={styles.resumeStatus}>
           <ArrowsClockwise size={12} className="mo-spin" />
           Loading sessions…
         </div>
       )}
-      {sessions?.length === 0 &&
-        (kind === "codex" ? (
-          <div className={styles.resumeStatus}>
-            Codex CLI doesn't expose a session list Maestro can read yet.
+      {loadError && <div className={styles.resumeError}>Couldn’t load sessions: {loadError}</div>}
+      {sessions && sessions.length > 0 && (
+        <>
+          <label className={styles.sessionSearch}>
+            <MagnifyingGlass size={14} />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search title, folder, or session ID"
+              aria-label="Search sessions"
+            />
+          </label>
+          {disabled && (
+            <div className={styles.resumeNotice}>Stop the current response before switching.</div>
+          )}
+          <div className={styles.sessionList}>
+            {visibleSessions.length === 0 ? (
+              <div className={styles.resumeStatus}>No sessions match “{query}”.</div>
+            ) : (
+              visibleSessions.map((session) => (
+                <button
+                  key={session.sessionId}
+                  type="button"
+                  className={styles.resumeRow}
+                  disabled={disabled || resumingId !== null}
+                  onClick={() => void resume(session)}
+                >
+                  <ClockCounterClockwise size={15} className={styles.resumeIcon} />
+                  <div className={styles.resumeRowText}>
+                    <div className={styles.resumeRowTitle}>{session.title}</div>
+                    <div className={styles.resumeRowMeta}>
+                      <span>{relativeTime(session.lastActiveAt)}</span>
+                      <span>{session.turnCount} turns</span>
+                      {session.worktreeRoot && (
+                        <span className={styles.sessionPath} title={session.worktreeRoot}>
+                          <FolderSimple size={11} />
+                          {folderName(session.worktreeRoot)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {resumingId === session.sessionId ? (
+                    <ArrowsClockwise size={13} className="mo-spin" />
+                  ) : (
+                    <span className={styles.resumeAction}>Resume</span>
+                  )}
+                </button>
+              ))
+            )}
           </div>
-        ) : (
-          <div className={styles.resumeStatus}>No resumable sessions found in this worktree.</div>
-        ))}
-      {sessions?.map((session) => (
-        <button
-          key={session.sessionId}
-          type="button"
-          className={styles.resumeRow}
-          disabled={resumingId !== null}
-          onClick={() => void resume(session)}
-        >
-          <ClockCounterClockwise size={13} color="var(--text-dim)" />
-          <div className={styles.resumeRowText}>
-            <div className={styles.resumeRowTitle}>{session.title}</div>
-            <div className={styles.resumeRowMeta}>
-              {relativeTime(session.lastActiveAt)} · {session.turnCount} turns
-            </div>
-          </div>
-          {resumingId === session.sessionId && <ArrowsClockwise size={12} className="mo-spin" />}
-        </button>
-      ))}
+        </>
+      )}
+      {sessions?.length === 0 && (
+        <div className={styles.resumeStatus}>
+          No saved {AGENT_DISPLAY_NAME[kind]} sessions found.
+        </div>
+      )}
     </div>
   );
 }
@@ -216,7 +281,12 @@ export function AgentTab({ tab }: { tab: Tab }) {
     });
   }, [tabState?.items.length, tabState?.status]);
 
-  async function handleSend(text: string, model: string | null) {
+  async function handleSend(
+    text: string,
+    model: string | null,
+    effort: string | null,
+    fast: boolean,
+  ) {
     appendUserMessage(runId, text);
     if (!tabState?.started) {
       markStarted(runId);
@@ -229,6 +299,8 @@ export function AgentTab({ tab }: { tab: Tab }) {
         forkSession: tab.forkSession ?? false,
         firstMessage: text,
         model,
+        effort,
+        fast,
       });
     } else {
       await agentsApi.sendAgentMessage(runId, text);
@@ -279,7 +351,7 @@ export function AgentTab({ tab }: { tab: Tab }) {
     <div className={styles.tab}>
       <div className={styles.header}>
         <div className={`${styles.avatar} mo-gradient-mark`}>
-          <Sparkle size={14} color="#0a0c11" />
+          <AgentBrandIcon kind={kind} size={14} color="#0a0c11" />
         </div>
         <div>
           <div className={styles.title}>{AGENT_DISPLAY_NAME[kind]}</div>
@@ -323,6 +395,7 @@ export function AgentTab({ tab }: { tab: Tab }) {
               worktreeId={tab.worktreeId}
               worktreeRoot={tab.worktreeRoot}
               onResumed={() => setSettingsOpen(false)}
+              disabled={working}
             />
           )}
         </div>
@@ -335,53 +408,58 @@ export function AgentTab({ tab }: { tab: Tab }) {
       <div className={styles.transcript} ref={transcriptRef}>
         {groups.length === 0 ? (
           <div className={styles.empty}>
-            <Sparkle size={26} color="var(--accent)" />
+            <AgentBrandIcon kind={kind} size={26} color="var(--accent)" />
             <span>Send a message to start working with {AGENT_DISPLAY_NAME[kind]}.</span>
           </div>
         ) : (
           <div className={styles.transcriptInner}>
             {groups.map((group) =>
               group.role === "user" ? (
-                <div className={styles.row} key={group.key}>
-                  <div className={styles.userAvatar}>YOU</div>
-                  <div className={styles.userText}>{group.text}</div>
+                <div className={`${styles.row} ${styles.userRow}`} key={group.key}>
+                  <div className={styles.userMessage}>
+                    <div className={`${styles.roleLabel} ${styles.userRoleLabel}`}>You</div>
+                    <div className={styles.userText}>{group.text}</div>
+                  </div>
                 </div>
               ) : (
-                <div className={styles.row} key={group.key}>
+                <div className={`${styles.row} ${styles.assistantRow}`} key={group.key}>
                   <div className={`${styles.avatar} mo-gradient-mark`}>
-                    <Sparkle size={13} color="#0a0c11" />
+                    <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
                   </div>
-                  <div className={styles.assistantGroup}>
-                    {group.items.map((item) => {
-                      if (item.kind === "assistantText") {
-                        return <AgentMarkdown key={item.id} text={item.text} />;
-                      }
-                      if (item.kind === "thinking") {
-                        return <ThinkingBlock key={item.id} text={item.text} />;
-                      }
-                      if (item.kind === "toolCall") {
-                        return <ToolCallCard key={item.id} runId={runId} item={item} />;
-                      }
-                      if (item.kind === "error") {
-                        return (
-                          <div className={styles.inlineError} key={item.id}>
-                            {item.message}
-                          </div>
-                        );
-                      }
-                      if (item.kind === "raw") {
-                        return <RawEventCard key={item.id} json={item.json} />;
-                      }
-                      return null;
-                    })}
+                  <div className={styles.assistantMessage}>
+                    <div className={styles.roleLabel}>{AGENT_DISPLAY_NAME[kind]}</div>
+                    <div className={styles.assistantGroup}>
+                      {group.items.map((item) => {
+                        if (item.kind === "assistantText") {
+                          return <AgentMarkdown key={item.id} text={item.text} />;
+                        }
+                        if (item.kind === "thinking") {
+                          return <ThinkingBlock key={item.id} text={item.text} />;
+                        }
+                        if (item.kind === "toolCall") {
+                          return <ToolCallCard key={item.id} runId={runId} item={item} />;
+                        }
+                        if (item.kind === "error") {
+                          return (
+                            <div className={styles.inlineError} key={item.id}>
+                              {item.message}
+                            </div>
+                          );
+                        }
+                        if (item.kind === "raw") {
+                          return <RawEventCard key={item.id} json={item.json} />;
+                        }
+                        return null;
+                      })}
+                    </div>
                   </div>
                 </div>
               ),
             )}
             {working && (
-              <div className={styles.row}>
+              <div className={`${styles.row} ${styles.assistantRow}`}>
                 <div className={`${styles.avatar} mo-gradient-mark`}>
-                  <Sparkle size={13} color="#0a0c11" />
+                  <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
                 </div>
                 <div className={styles.typing}>
                   <span className={styles.typingDot} style={{ animationDelay: "0s" }} />

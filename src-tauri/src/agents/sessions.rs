@@ -1,13 +1,11 @@
-//! Session discovery for the CLIs that persist resumable sessions on
-//! disk (Claude Code, Cursor Agent) — reads their transcript files
+//! Session discovery for the agent CLIs Maestro supports — reads their transcript files
 //! directly rather than relying on a non-interactive "list sessions" CLI
 //! flag, since neither CLI has one (Claude: see `claude.rs`'s module
 //! doc; Cursor: `cursor-agent ls` is an interactive TUI that errors out
 //! without a TTY — confirmed live). This is the same "CLI's own on-disk
 //! state is the source of truth" approach docs/ARCHITECTURE.md §4
-//! prescribes. Codex isn't covered (see `list_for_worktree` below) —
-//! isn't installed anywhere this project could find its session
-//! directory to confirm a layout.
+//! prescribes. Discovery is global per agent: the UI should match each
+//! CLI's own resume picker, not only sessions from worktrees Maestro has open.
 
 use crate::agents::registry::AgentKind;
 use serde::Serialize;
@@ -49,6 +47,18 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
+/// Claude persists UI-only slash commands (`/doctor`, `/usage`, `/model`,
+/// `/clear`, etc.) as ordinary top-level JSONL sessions. They are valid
+/// resumable CLI records, but not conversations the user started with an
+/// agent. Ignore their generated wrapper messages; a session is listed only
+/// when at least one real user prompt remains.
+fn is_claude_conversation_prompt(text: &str) -> bool {
+    let text = text.trim_start();
+    !text.starts_with("<local-command-")
+        && !text.starts_with("<command-name>")
+        && !text.starts_with("<command-message>")
+}
+
 async fn mtime_fallback(path: &Path) -> String {
     tokio::fs::metadata(path)
         .await
@@ -56,6 +66,33 @@ async fn mtime_fallback(path: &Path) -> String {
         .and_then(|m| m.modified().ok())
         .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
         .unwrap_or_default()
+}
+
+async fn child_dirs(path: &Path) -> Vec<PathBuf> {
+    let Ok(mut entries) = tokio::fs::read_dir(path).await else {
+        return Vec::new();
+    };
+    let mut dirs = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry.file_type().await.is_ok_and(|kind| kind.is_dir()) {
+            dirs.push(entry.path());
+        }
+    }
+    dirs
+}
+
+async fn jsonl_files(path: &Path) -> Vec<PathBuf> {
+    let Ok(mut entries) = tokio::fs::read_dir(path).await else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+            files.push(path);
+        }
+    }
+    files
 }
 
 // ---------------------------------------------------------------------
@@ -95,6 +132,9 @@ async fn summarize_claude_session_file(
                     .and_then(|m| m.get("content"))
                     .and_then(|c| c.as_str())
                 {
+                    if !is_claude_conversation_prompt(text) {
+                        continue;
+                    }
                     turn_count += 1;
                     if first_user_text.is_none() {
                         first_user_text = Some(text.to_string());
@@ -160,6 +200,47 @@ async fn list_claude_sessions(worktree_root: &str) -> Vec<ResumableSession> {
         }
     }
     sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    sessions
+}
+
+async fn claude_cwd(path: &Path) -> Option<String> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut lines = BufReader::new(file).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(cwd) = value.get("cwd").and_then(Value::as_str) {
+            return Some(cwd.to_string());
+        }
+    }
+    None
+}
+
+async fn list_all_claude_sessions(home: &Path) -> Vec<ResumableSession> {
+    let base = home.join(".claude/projects");
+    let mut sessions = Vec::new();
+    for project_dir in child_dirs(&base).await {
+        for path in jsonl_files(&project_dir).await {
+            let Some(session_id) = path
+                .file_stem()
+                .and_then(|v| v.to_str())
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            let cwd = claude_cwd(&path).await.unwrap_or_else(|| {
+                project_dir
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .unwrap_or_default()
+                    .to_string()
+            });
+            if let Some(session) = summarize_claude_session_file(&path, session_id, &cwd).await {
+                sessions.push(session);
+            }
+        }
+    }
     sessions
 }
 
@@ -293,6 +374,143 @@ async fn list_cursor_sessions(worktree_root: &str) -> Vec<ResumableSession> {
     sessions
 }
 
+async fn cursor_root_from_dir(path: &Path) -> String {
+    let encoded = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or_default();
+    // Cursor flattens `/` to `-`, which is ambiguous when a real path
+    // component itself contains a hyphen. Resolve against the live
+    // filesystem instead of displaying a plausible-but-wrong path.
+    let mut candidates = vec![(PathBuf::from("/"), encoded.to_string())];
+    while let Some((parent, remaining)) = candidates.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&parent).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if !entry.file_type().await.is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if remaining == name {
+                return entry.path().to_string_lossy().to_string();
+            }
+            let Some(next) = remaining.strip_prefix(&format!("{name}-")) else {
+                continue;
+            };
+            candidates.push((entry.path(), next.to_string()));
+        }
+    }
+    encoded.to_string()
+}
+
+async fn list_all_cursor_sessions(home: &Path) -> Vec<ResumableSession> {
+    let base = home.join(".cursor/projects");
+    let mut sessions = Vec::new();
+    for project_dir in child_dirs(&base).await {
+        let root = cursor_root_from_dir(&project_dir).await;
+        let transcripts = project_dir.join("agent-transcripts");
+        for session_dir in child_dirs(&transcripts).await {
+            let Some(session_id) = session_dir
+                .file_name()
+                .and_then(|v| v.to_str())
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            if let Some(path) = jsonl_files(&session_dir).await.into_iter().next() {
+                if let Some(session) = summarize_cursor_session_file(&path, session_id, &root).await
+                {
+                    sessions.push(session);
+                }
+            }
+        }
+    }
+    sessions
+}
+
+// ---------------------------------------------------------------------
+// Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl
+// ---------------------------------------------------------------------
+
+async fn summarize_codex_session_file(path: &Path) -> Option<ResumableSession> {
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut lines = BufReader::new(file).lines();
+    let mut session_id = None;
+    let mut cwd = None;
+    let mut first_user_text = None;
+    let mut last_timestamp = None;
+    let mut turn_count = 0;
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(timestamp) = value.get("timestamp").and_then(Value::as_str) {
+            last_timestamp = Some(timestamp.to_string());
+        }
+        let event_type = value.get("type").and_then(Value::as_str);
+        let payload = value.get("payload").unwrap_or(&Value::Null);
+        if event_type == Some("session_meta") {
+            session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            cwd = payload
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        } else if event_type == Some("event_msg")
+            && payload.get("type").and_then(Value::as_str) == Some("user_message")
+        {
+            if let Some(message) = payload.get("message").and_then(Value::as_str) {
+                turn_count += 1;
+                if first_user_text.is_none() {
+                    first_user_text = Some(message.to_string());
+                }
+            }
+        }
+    }
+    let session_id = session_id?;
+    if turn_count == 0 {
+        return None;
+    }
+    Some(ResumableSession {
+        session_id,
+        title: first_user_text
+            .map(|text| truncate(text.trim(), 60))
+            .unwrap_or_else(|| "Untitled session".to_string()),
+        last_active_at: match last_timestamp {
+            Some(timestamp) => timestamp,
+            None => mtime_fallback(path).await,
+        },
+        turn_count,
+        worktree_root: cwd.unwrap_or_default(),
+    })
+}
+
+async fn codex_session_files(home: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for year in child_dirs(&home.join(".codex/sessions")).await {
+        for month in child_dirs(&year).await {
+            for day in child_dirs(&month).await {
+                files.extend(jsonl_files(&day).await);
+            }
+        }
+    }
+    files
+}
+
+async fn list_all_codex_sessions(home: &Path) -> Vec<ResumableSession> {
+    let mut sessions = Vec::new();
+    for path in codex_session_files(home).await {
+        if let Some(session) = summarize_codex_session_file(&path).await {
+            sessions.push(session);
+        }
+    }
+    sessions
+}
+
 // ---------------------------------------------------------------------
 // Full transcript hydration — for resuming a session *into the UI*, not
 // just handing `--resume <id>` to the CLI (which continues the session's
@@ -349,6 +567,9 @@ async fn read_claude_transcript(path: &Path) -> Vec<TranscriptTurn> {
                     .and_then(|m| m.get("content"))
                     .and_then(|c| c.as_str())
                 {
+                    if !is_claude_conversation_prompt(text) {
+                        continue;
+                    }
                     turns.push(TranscriptTurn {
                         role: "user",
                         text: text.to_string(),
@@ -400,6 +621,80 @@ async fn read_cursor_transcript(path: &Path) -> Vec<TranscriptTurn> {
     turns
 }
 
+async fn read_codex_transcript(path: &Path) -> Vec<TranscriptTurn> {
+    let Ok(file) = tokio::fs::File::open(path).await else {
+        return Vec::new();
+    };
+    let mut lines = BufReader::new(file).lines();
+    let mut turns = Vec::new();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) != Some("event_msg") {
+            continue;
+        }
+        let payload = value.get("payload").unwrap_or(&Value::Null);
+        match payload.get("type").and_then(Value::as_str) {
+            Some("user_message") => {
+                if let Some(text) = payload.get("message").and_then(Value::as_str) {
+                    turns.push(TranscriptTurn {
+                        role: "user",
+                        text: text.to_string(),
+                    });
+                }
+            }
+            Some("agent_message") => {
+                if let Some(text) = payload.get("message").and_then(Value::as_str) {
+                    turns.push(TranscriptTurn {
+                        role: "assistant",
+                        text: text.to_string(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    turns
+}
+
+async fn find_global_session_file(
+    home: &Path,
+    kind: AgentKind,
+    session_id: &str,
+) -> Option<PathBuf> {
+    match kind {
+        AgentKind::ClaudeCode => {
+            for project in child_dirs(&home.join(".claude/projects")).await {
+                let candidate = project.join(format!("{session_id}.jsonl"));
+                if tokio::fs::try_exists(&candidate).await.unwrap_or(false) {
+                    return Some(candidate);
+                }
+            }
+        }
+        AgentKind::CursorAgent => {
+            for project in child_dirs(&home.join(".cursor/projects")).await {
+                let dir = project.join("agent-transcripts").join(session_id);
+                if let Some(path) = jsonl_files(&dir).await.into_iter().next() {
+                    return Some(path);
+                }
+            }
+        }
+        AgentKind::Codex => {
+            for path in codex_session_files(home).await {
+                if path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|name| name.ends_with(session_id))
+                {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Locates the on-disk transcript file for `session_id` and parses it
 /// into ordered user/assistant turns. Empty (not an error) if the
 /// session/file can't be found — mirrors `list_for_worktree`'s "unknown
@@ -413,13 +708,16 @@ pub async fn read_transcript(
     let Ok(home) = std::env::var("HOME") else {
         return Vec::new();
     };
-    match kind {
+    let direct = match kind {
         AgentKind::ClaudeCode => {
             let path = PathBuf::from(&home)
                 .join(".claude/projects")
                 .join(sanitize_cwd(worktree_root))
                 .join(format!("{session_id}.jsonl"));
-            read_claude_transcript(&path).await
+            tokio::fs::try_exists(&path)
+                .await
+                .unwrap_or(false)
+                .then_some(path)
         }
         AgentKind::CursorAgent => {
             let base = PathBuf::from(&home)
@@ -427,23 +725,19 @@ pub async fn read_transcript(
                 .join(sanitize_cwd(worktree_root))
                 .join("agent-transcripts")
                 .join(session_id);
-            let Ok(mut inner) = tokio::fs::read_dir(&base).await else {
-                return Vec::new();
-            };
-            let mut jsonl_path = None;
-            while let Ok(Some(entry)) = inner.next_entry().await {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    jsonl_path = Some(path);
-                    break;
-                }
-            }
-            match jsonl_path {
-                Some(path) => read_cursor_transcript(&path).await,
-                None => Vec::new(),
-            }
+            jsonl_files(&base).await.into_iter().next()
         }
-        AgentKind::Codex => Vec::new(),
+        AgentKind::Codex => None,
+    };
+    let path = match direct {
+        Some(path) => Some(path),
+        None => find_global_session_file(Path::new(&home), kind, session_id).await,
+    };
+    match (kind, path) {
+        (AgentKind::ClaudeCode, Some(path)) => read_claude_transcript(&path).await,
+        (AgentKind::CursorAgent, Some(path)) => read_cursor_transcript(&path).await,
+        (AgentKind::Codex, Some(path)) => read_codex_transcript(&path).await,
+        (_, None) => Vec::new(),
     }
 }
 
@@ -460,11 +754,28 @@ async fn list_for_worktree(kind: AgentKind, worktree_root: &str) -> Vec<Resumabl
     match kind {
         AgentKind::ClaudeCode => list_claude_sessions(worktree_root).await,
         AgentKind::CursorAgent => list_cursor_sessions(worktree_root).await,
-        // Codex isn't installed anywhere this project could find its
-        // real session-storage layout to confirm — returning an empty
-        // list (not an error) is honest about "unknown", not a guess.
-        AgentKind::Codex => Vec::new(),
+        AgentKind::Codex => match std::env::var("HOME") {
+            Ok(home) => list_all_codex_sessions(Path::new(&home))
+                .await
+                .into_iter()
+                .filter(|session| session.worktree_root == worktree_root)
+                .collect(),
+            Err(_) => Vec::new(),
+        },
     }
+}
+
+#[tauri::command]
+pub async fn list_all_resumable_sessions(kind: AgentKind) -> Result<Vec<ResumableSession>, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    let home = Path::new(&home);
+    let mut sessions = match kind {
+        AgentKind::ClaudeCode => list_all_claude_sessions(home).await,
+        AgentKind::CursorAgent => list_all_cursor_sessions(home).await,
+        AgentKind::Codex => list_all_codex_sessions(home).await,
+    };
+    sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    Ok(sessions)
 }
 
 #[tauri::command]
@@ -493,4 +804,22 @@ pub async fn list_resumable_sessions_for_roots(
     }
     all.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
     Ok(all)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_claude_conversation_prompt;
+
+    #[test]
+    fn excludes_claude_local_command_wrappers() {
+        assert!(!is_claude_conversation_prompt(
+            "<local-command-caveat>Caveat: generated locally</local-command-caveat>"
+        ));
+        assert!(!is_claude_conversation_prompt(
+            "<command-name>/doctor</command-name>"
+        ));
+        assert!(is_claude_conversation_prompt(
+            "Diagnose why the build is failing"
+        ));
+    }
 }

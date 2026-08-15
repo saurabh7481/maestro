@@ -82,6 +82,19 @@ export type PermissionMode = "manual" | "auto" | "plan";
 export interface ModelOption {
   id: string;
   label: string;
+  supportedEfforts: AgentEffort[];
+  supportsThinking: boolean;
+  supportsFast: boolean;
+  variants: ModelVariant[];
+}
+
+export type AgentEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+export interface ModelVariant {
+  id: string;
+  effort: AgentEffort | null;
+  thinking: boolean;
+  fast: boolean;
 }
 
 /** Mirrors `agents/slash_commands.rs`'s `SlashCommandOption`. */

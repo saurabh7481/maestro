@@ -55,9 +55,8 @@ impl AgentKind {
 #[serde(rename_all = "camelCase")]
 pub enum AuthState {
     /// Installed, but auth couldn't be positively confirmed or denied
-    /// (e.g. the CLI's status subcommand isn't verified for this build —
-    /// currently only true for Codex, which isn't installed anywhere we
-    /// could test against). Never used to imply "assume it works".
+    /// (e.g. a CLI's status subcommand returns an unfamiliar shape).
+    /// Never used to imply "assume it works".
     Unknown,
     Authenticated,
     NotAuthenticated,
@@ -198,10 +197,7 @@ async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<St
             .await
         }
         AgentKind::Codex => {
-            // Codex isn't installed on any machine we could verify against
-            // (see the plan's Step 0 findings) — this is a best-effort
-            // probe, not a confirmed protocol. Never reports Authenticated
-            // on a guess; unexpected shapes fall back to Unknown.
+            // Live-verified with standalone Codex CLI 0.147.0.
             let mut cmd = Command::new(binary_path);
             cmd.args(["login", "status"]);
             match run_with_timeout(cmd).await {

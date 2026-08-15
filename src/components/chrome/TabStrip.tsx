@@ -11,6 +11,7 @@ import { terminalApi } from "../../api/terminal";
 import { TAB_VISUALS } from "../../design/tabVisuals";
 import { ICON_SIZE } from "../../design/iconSize";
 import { NewTabMenu } from "./NewTabMenu";
+import { AgentBrandIcon } from "../agent/AgentBrandIcon";
 import { TabContextMenu } from "./TabContextMenu";
 import styles from "./TabStrip.module.css";
 
@@ -105,7 +106,15 @@ export function TabStrip() {
                 tabIndex={0}
               >
                 <span className={styles.tabIndicator} />
-                <TabIcon size={ICON_SIZE.md} color={visual.color} />
+                {tab.type === "agent" ? (
+                  <AgentBrandIcon
+                    kind={tab.agentKind ?? "claudeCode"}
+                    size={ICON_SIZE.md}
+                    color={visual.color}
+                  />
+                ) : (
+                  <TabIcon size={ICON_SIZE.md} color={visual.color} />
+                )}
                 <span className={styles.tabTitle}>{tab.title}</span>
                 {isDirty && <span className={styles.dirtyDot} aria-label="Unsaved changes" />}
                 <button

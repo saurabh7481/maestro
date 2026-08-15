@@ -74,6 +74,9 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     if let Some(model) = ctx.model {
         cmd.arg("--model").arg(model);
     }
+    if let Some(effort) = ctx.effort {
+        cmd.arg("--effort").arg(effort);
+    }
     cmd.current_dir(ctx.worktree_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

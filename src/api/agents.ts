@@ -27,6 +27,8 @@ export const agentsApi = {
 
   listResumableSessions: (kind: AgentKind, worktreeRoot: string) =>
     invoke<ResumableSession[]>("list_resumable_sessions", { kind, worktreeRoot }),
+  listAllResumableSessions: (kind: AgentKind) =>
+    invoke<ResumableSession[]>("list_all_resumable_sessions", { kind }),
   listResumableSessionsForRoots: (kind: AgentKind, worktreeRoots: string[]) =>
     invoke<ResumableSession[]>("list_resumable_sessions_for_roots", { kind, worktreeRoots }),
   getSessionTranscript: (kind: AgentKind, worktreeRoot: string, sessionId: string) =>
@@ -48,6 +50,8 @@ export const agentsApi = {
     forkSession: boolean;
     firstMessage: string;
     model: string | null;
+    effort: string | null;
+    fast: boolean;
   }) => invoke<void>("start_agent_session", { request }),
   sendAgentMessage: (runId: string, text: string) =>
     invoke<void>("send_agent_message", { runId, text }),
@@ -55,6 +59,12 @@ export const agentsApi = {
     invoke<void>("respond_to_permission", { runId, decision }),
   setPermissionMode: (runId: string, mode: PermissionMode) =>
     invoke<void>("set_permission_mode", { runId, mode }),
+  setAgentConfiguration: (
+    runId: string,
+    model: string | null,
+    effort: string | null,
+    fast: boolean,
+  ) => invoke<void>("set_agent_configuration", { runId, model, effort, fast }),
   interruptAgent: (runId: string) => invoke<void>("interrupt_agent", { runId }),
   killAgent: (runId: string) => invoke<void>("kill_agent", { runId }),
   killAgentRunsForWorktree: (worktreeId: string) =>

@@ -4,6 +4,7 @@ use crate::git;
 use crate::state::AppState;
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::State;
@@ -114,6 +115,81 @@ pub async fn set_agent_binary_path(
 pub struct ModelOption {
     pub id: String,
     pub label: String,
+    pub supported_efforts: Vec<String>,
+    pub supports_thinking: bool,
+    pub supports_fast: bool,
+    pub variants: Vec<ModelVariant>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelVariant {
+    pub id: String,
+    pub effort: Option<String>,
+    pub thinking: bool,
+    pub fast: bool,
+}
+
+fn simple_model(id: &str, label: &str, efforts: &[&str]) -> ModelOption {
+    ModelOption {
+        id: id.to_string(),
+        label: label.to_string(),
+        supported_efforts: efforts.iter().map(|value| (*value).to_string()).collect(),
+        supports_thinking: false,
+        supports_fast: false,
+        variants: Vec::new(),
+    }
+}
+
+fn cursor_variant(id: &str) -> (String, Option<String>, bool, bool) {
+    let mut base = id.to_string();
+    let fast = base.strip_suffix("-fast").is_some();
+    if fast {
+        base.truncate(base.len() - "-fast".len());
+    }
+    let thinking = base.contains("-thinking");
+    base = base.replace("-thinking", "");
+    let mut effort = None;
+    for value in [
+        "extra-high",
+        "xhigh",
+        "medium",
+        "high",
+        "low",
+        "none",
+        "max",
+    ] {
+        if let Some(stripped) = base.strip_suffix(&format!("-{value}")) {
+            base = stripped.to_string();
+            effort = Some(
+                if value == "extra-high" {
+                    "xhigh"
+                } else {
+                    value
+                }
+                .to_string(),
+            );
+            break;
+        }
+    }
+    (base, effort, thinking, fast)
+}
+
+fn cursor_family_label(label: &str) -> String {
+    let mut clean = label.replace(" 1M", "");
+    for suffix in [
+        " Extra High",
+        " Medium",
+        " High",
+        " Low",
+        " None",
+        " Max",
+        " Thinking",
+        " Fast",
+    ] {
+        clean = clean.replace(suffix, "");
+    }
+    clean
 }
 
 /// "Model/mode pickers shown only if the installed CLI version exposes
@@ -130,18 +206,51 @@ pub async fn list_agent_models(
 ) -> Result<Vec<ModelOption>, String> {
     match kind {
         AgentKind::ClaudeCode => Ok(vec![
-            ModelOption {
-                id: "sonnet".to_string(),
-                label: "Sonnet".to_string(),
-            },
-            ModelOption {
-                id: "opus".to_string(),
-                label: "Opus".to_string(),
-            },
-            ModelOption {
-                id: "fable".to_string(),
-                label: "Fable".to_string(),
-            },
+            simple_model(
+                "sonnet",
+                "Sonnet (latest)",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-sonnet-5",
+                "Sonnet 5",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-sonnet-4-6",
+                "Sonnet 4.6",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "opus",
+                "Opus (latest)",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-opus-5",
+                "Opus 5",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-opus-4-8",
+                "Opus 4.8",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-opus-4-7",
+                "Opus 4.7",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "fable",
+                "Fable (latest)",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            simple_model(
+                "claude-fable-5",
+                "Fable 5",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
         ]),
         AgentKind::CursorAgent => {
             let binary_path = {
@@ -159,23 +268,92 @@ pub async fn list_agent_models(
                 return Ok(Vec::new());
             }
             let text = String::from_utf8_lossy(&output.stdout);
-            let models = text
-                .lines()
-                .filter_map(|line| {
-                    let line = line.trim();
-                    let (id, label) = line.split_once(" - ")?;
-                    if id.is_empty() {
-                        return None;
+            let mut families: BTreeMap<String, ModelOption> = BTreeMap::new();
+            for line in text.lines() {
+                let line = line.trim();
+                let Some((id, label)) = line.split_once(" - ") else {
+                    continue;
+                };
+                if id.is_empty() {
+                    continue;
+                }
+                let (base, effort, thinking, fast) = cursor_variant(id.trim());
+                let family = families.entry(base.clone()).or_insert_with(|| ModelOption {
+                    id: base,
+                    label: cursor_family_label(label.trim()),
+                    supported_efforts: Vec::new(),
+                    supports_thinking: false,
+                    supports_fast: false,
+                    variants: Vec::new(),
+                });
+                if let Some(value) = &effort {
+                    if !family.supported_efforts.contains(value) {
+                        family.supported_efforts.push(value.clone());
                     }
+                }
+                family.supports_thinking |= thinking;
+                family.supports_fast |= fast;
+                family.variants.push(ModelVariant {
+                    id: id.trim().to_string(),
+                    effort,
+                    thinking,
+                    fast,
+                });
+            }
+            Ok(families.into_values().collect())
+        }
+        AgentKind::Codex => {
+            let output = tokio::process::Command::new(AgentKind::Codex.default_binary())
+                .args(["debug", "models"])
+                .stdin(Stdio::null())
+                .output()
+                .await
+                .map_err(|e| e.to_string())?;
+            let value: serde_json::Value =
+                serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+            let models = value
+                .get("models")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+                .filter(|model| model.get("visibility").and_then(|v| v.as_str()) == Some("list"))
+                .filter_map(|model| {
+                    let id = model.get("slug")?.as_str()?.to_string();
+                    let label = model
+                        .get("display_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&id)
+                        .to_string();
+                    let supported_efforts = model
+                        .get("supported_reasoning_levels")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|level| {
+                            level
+                                .get("effort")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string)
+                        })
+                        .collect();
+                    let supports_fast = model
+                        .get("additional_speed_tiers")
+                        .and_then(|v| v.as_array())
+                        .is_some_and(|tiers| {
+                            tiers.iter().any(|tier| tier.as_str() == Some("fast"))
+                        });
                     Some(ModelOption {
-                        id: id.trim().to_string(),
-                        label: label.trim().to_string(),
+                        id,
+                        label,
+                        supported_efforts,
+                        supports_thinking: false,
+                        supports_fast,
+                        variants: Vec::new(),
                     })
                 })
                 .collect();
             Ok(models)
         }
-        AgentKind::Codex => Ok(Vec::new()),
     }
 }
 

@@ -51,6 +51,8 @@ pub struct TurnCtx<'a> {
     /// don't have an equivalent per-invocation allow-list.
     pub allowed_tools: &'a [String],
     pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub fast: bool,
     pub permission_mode: PermissionMode,
 }
 

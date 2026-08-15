@@ -22,7 +22,13 @@ import { searchApi } from "../../api/search";
 import { fuzzyScore } from "../../design/fuzzy";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
-import type { AgentKind, ModelOption, PermissionMode, SlashCommandOption } from "../../types/agent";
+import type {
+  AgentEffort,
+  AgentKind,
+  ModelOption,
+  PermissionMode,
+  SlashCommandOption,
+} from "../../types/agent";
 import styles from "./AgentComposer.module.css";
 
 const PERMISSION_MODE_META: Record<
@@ -231,25 +237,14 @@ function ModelPicker({
   modelOptions,
   model,
   setModel,
-  locked,
 }: {
   modelOptions: ModelOption[];
   model: string | null;
   setModel: (id: string) => void;
-  locked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selectedLabel = modelOptions.find((m) => m.id === model)?.label ?? "Default";
-
-  if (locked) {
-    return (
-      <div className={styles.picker} data-locked>
-        <Sparkle size={13} color="var(--accent)" />
-        {selectedLabel}
-      </div>
-    );
-  }
 
   const filtered = query
     ? modelOptions
@@ -286,6 +281,78 @@ function ModelPicker({
       placeholder="Search models… (e.g. grok 4.6 high fast)"
       emptyLabel="No matching models"
     />
+  );
+}
+
+const EFFORT_LABEL: Record<AgentEffort, string> = {
+  none: "None",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+function EffortPicker({
+  values,
+  value,
+  onChange,
+  thinkingLabel,
+}: {
+  values: AgentEffort[];
+  value: AgentEffort;
+  onChange: (value: AgentEffort) => void;
+  thinkingLabel: boolean;
+}) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <div className={styles.picker}>
+          <Lightning size={13} color="var(--accent)" />
+          {thinkingLabel ? "Thinking" : "Effort"}: {EFFORT_LABEL[value]}
+          <CaretDown size={10} color="var(--text-mute)" />
+        </div>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className={`${styles.modeMenu} mo-glass`} side="top" sideOffset={8}>
+          {values.map((effort) => (
+            <DropdownMenu.Item
+              key={effort}
+              className={styles.modeItem}
+              data-active={effort === value}
+              onSelect={() => onChange(effort)}
+            >
+              <span className={styles.modeItemLabel}>{EFFORT_LABEL[effort]}</span>
+              {effort === value && <Check size={13} color="var(--accent)" />}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function OptionToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.picker}
+      data-active={checked}
+      aria-pressed={checked}
+      onClick={() => onChange(!checked)}
+    >
+      <Lightning size={13} color="var(--accent)" />
+      {label}
+    </button>
   );
 }
 
@@ -400,11 +467,11 @@ export function AgentComposer({
   worktreeRoot: string;
   /** Working — can't send right now. */
   disabled: boolean;
-  /** Session already started — model can't change mid-session. */
+  /** Session already started — configuration changes update the next turn. */
   locked: boolean;
   permissionMode: PermissionMode;
   onPermissionModeChange: (mode: PermissionMode) => void;
-  onSend: (text: string, model: string | null) => void;
+  onSend: (text: string, model: string | null, effort: string | null, fast: boolean) => void;
 }) {
   const draft = useAgentSessionStore((s) => s.draftByRunId[runId] ?? "");
   const setDraft = useAgentSessionStore((s) => s.setDraft);
@@ -415,6 +482,9 @@ export function AgentComposer({
   const modelOptions = useAgentModels(kind);
   const slashOptions = useSlashCommands(kind, worktreeRoot);
   const [model, setModel] = useState<string | null>(null);
+  const [effort, setEffort] = useState<AgentEffort>("high");
+  const [thinking, setThinking] = useState(false);
+  const [fast, setFast] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -424,6 +494,53 @@ export function AgentComposer({
   const [cursorPos, setCursorPos] = useState(0);
 
   const worktreeFiles = useWorktreeFileList(worktreeRoot);
+  const selectedModel = modelOptions.find((option) => option.id === model) ?? null;
+  const effortValues = selectedModel?.supportedEfforts ?? [];
+  const resolvedVariant = selectedModel?.variants.find(
+    (variant) =>
+      variant.effort === (effortValues.length > 0 ? effort : null) &&
+      variant.thinking === thinking &&
+      variant.fast === fast,
+  );
+  const resolvedModel = selectedModel?.variants.length
+    ? (resolvedVariant?.id ?? selectedModel.variants[0]?.id ?? null)
+    : model;
+  const cliEffort = kind === "cursorAgent" || effortValues.length === 0 ? null : effort;
+  const cliFast = kind === "cursorAgent" ? false : fast;
+
+  function updateConfiguration(next: {
+    model?: string | null;
+    effort?: AgentEffort;
+    thinking?: boolean;
+    fast?: boolean;
+  }) {
+    const nextModel = next.model === undefined ? model : next.model;
+    const nextEffort = next.effort ?? effort;
+    const nextThinking = next.thinking ?? thinking;
+    const nextFast = next.fast ?? fast;
+    setModel(nextModel);
+    setEffort(nextEffort);
+    setThinking(nextThinking);
+    setFast(nextFast);
+    if (locked) {
+      const option = modelOptions.find((candidate) => candidate.id === nextModel) ?? null;
+      const variant = option?.variants.find(
+        (candidate) =>
+          candidate.effort === (option.supportedEfforts.length ? nextEffort : null) &&
+          candidate.thinking === nextThinking &&
+          candidate.fast === nextFast,
+      );
+      const nextResolved = option?.variants.length
+        ? (variant?.id ?? option.variants[0]?.id ?? null)
+        : nextModel;
+      void agentsApi.setAgentConfiguration(
+        runId,
+        nextResolved,
+        kind === "cursorAgent" || !option?.supportedEfforts.length ? null : nextEffort,
+        kind === "cursorAgent" ? false : nextFast,
+      );
+    }
+  }
 
   // A "/word" only means anything as the very first token of the whole
   // message (matching how every one of these CLIs' own interactive
@@ -642,7 +759,7 @@ export function AgentComposer({
     const fullText = attachmentPrefix ? `${attachmentPrefix}\n${text}` : text;
     setDraft(runId, "");
     clearAttachments(runId);
-    onSend(fullText, model);
+    onSend(fullText, resolvedModel, cliEffort, cliFast);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -792,8 +909,40 @@ export function AgentComposer({
               <ModelPicker
                 modelOptions={modelOptions}
                 model={model}
-                setModel={setModel}
-                locked={locked}
+                setModel={(id) => {
+                  const option = modelOptions.find((candidate) => candidate.id === id);
+                  const defaultEffort = option?.supportedEfforts.includes(effort)
+                    ? effort
+                    : (option?.supportedEfforts[0] ?? effort);
+                  updateConfiguration({
+                    model: id,
+                    effort: defaultEffort,
+                    thinking: false,
+                    fast: false,
+                  });
+                }}
+              />
+            )}
+            {selectedModel && effortValues.length > 0 && (
+              <EffortPicker
+                values={effortValues}
+                value={effortValues.includes(effort) ? effort : effortValues[0]}
+                onChange={(value) => updateConfiguration({ effort: value })}
+                thinkingLabel={kind === "claudeCode"}
+              />
+            )}
+            {selectedModel?.supportsThinking && (
+              <OptionToggle
+                label="Thinking"
+                checked={thinking}
+                onChange={(value) => updateConfiguration({ thinking: value })}
+              />
+            )}
+            {selectedModel?.supportsFast && (
+              <OptionToggle
+                label="Fast"
+                checked={fast}
+                onChange={(value) => updateConfiguration({ fast: value })}
               />
             )}
             <PermissionModePicker mode={permissionMode} onChange={onPermissionModeChange} />

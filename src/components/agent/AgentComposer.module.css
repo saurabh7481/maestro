@@ -91,6 +91,7 @@
   align-items: center;
   gap: var(--space-5);
   margin-top: var(--space-6);
+  flex-wrap: wrap;
 }
 
 .picker {
@@ -116,6 +117,11 @@
 }
 .picker[data-state="open"] {
   border-color: var(--border-2);
+  color: var(--text);
+}
+.picker[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
   color: var(--text);
 }
 

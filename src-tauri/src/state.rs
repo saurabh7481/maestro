@@ -33,6 +33,8 @@ pub struct AgentRunEntry {
     /// picker (see docs/V1_SCOPE.md §6 "no fake dropdowns"). `None` lets
     /// the CLI use its own default.
     pub model: Option<String>,
+    pub effort: Option<String>,
+    pub fast: bool,
     /// Consumed by the first `run_turn` call after `start_agent_session`
     /// when resuming — `--fork-session` only makes sense on the turn that
     /// actually resumes, not on every subsequent turn (which by then is

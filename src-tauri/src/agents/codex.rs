@@ -1,27 +1,10 @@
-//! Codex CLI adapter (docs/ROADMAP.md Phase 6) — **best-effort and
-//! UNVERIFIED**. Unlike `claude.rs`/`cursor_agent.rs`, this was not
-//! checked against a live install: Codex isn't available on any machine
-//! this project has been developed on (`which codex` → not found).
+//! Codex CLI adapter (docs/ROADMAP.md Phase 6), live-verified against
+//! standalone Codex CLI 0.147.0 using ChatGPT authentication. Current
+//! JSONL emits `thread.started`, `item.completed`, and `turn.completed`;
+//! legacy event names remain accepted for compatibility with older builds.
 //!
-//! Everything below is built from `docs/ARCHITECTURE.md`'s §3.2 research
-//! (`codex exec --json`, `resume --last`/`resume <id>`) plus general
-//! knowledge of Codex's event-stream shape, which real Codex releases
-//! have been known to change. Treat this the same way `ARCHITECTURE.md`'s
-//! stale `--permission-prompt-tool` assumption for Claude turned out to
-//! need correcting once actually run: **before relying on this in
-//! production, repeat the live-spike methodology from
-//! `claude.rs`/`cursor_agent.rs`'s module docs against a real `codex`
-//! binary** and fix whatever's wrong. Until then:
-//! - `detect()` (`registry.rs`) never reports Codex as installed/
-//!   authenticated unless it actually finds and can query the binary —
-//!   this adapter's incorrectness (if any) only matters once someone has
-//!   Codex installed, at which point failures surface as loud
-//!   `AgentEvent::Error`s (real stderr / JSON parse failures), never a
-//!   silent hang.
-//! - `parse_line` is deliberately conservative: it recognizes a small set
-//!   of plausible event shapes and forwards everything else as `Raw`
-//!   rather than guessing further, so no information is silently
-//!   dropped even where it can't be normalized into a rich tool card.
+//! Unknown item types still forward as `Raw` rather than disappearing,
+//! so future CLI protocol changes remain visible and diagnosable.
 
 use crate::agents::adapter::{PermissionMode, ToolUseCache, TurnCtx, TurnSpawn};
 use crate::agents::events::AgentEvent;
@@ -47,6 +30,13 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     // guessing at a flag.
     if let Some(model) = ctx.model {
         cmd.arg("--model").arg(model);
+    }
+    if let Some(effort) = ctx.effort {
+        cmd.arg("-c")
+            .arg(format!("model_reasoning_effort=\"{effort}\""));
+    }
+    if ctx.fast {
+        cmd.arg("-c").arg("service_tier=\"priority\"");
     }
     cmd.arg(text);
     cmd.current_dir(ctx.worktree_root)
@@ -92,6 +82,64 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
 
     let msg = msg_field(&value);
     match event_type(&value) {
+        "thread.started" => {
+            let session_id = value
+                .get("thread_id")
+                .and_then(|s| s.as_str())
+                .map(str::to_string);
+            (Vec::new(), session_id)
+        }
+        "turn.started" => (Vec::new(), None),
+        "item.completed" => {
+            let item = value.get("item").unwrap_or(&Value::Null);
+            match item.get("type").and_then(|kind| kind.as_str()) {
+                Some("agent_message") => {
+                    let text = item
+                        .get("text")
+                        .and_then(|text| text.as_str())
+                        .unwrap_or("");
+                    if text.is_empty() {
+                        (Vec::new(), None)
+                    } else {
+                        (
+                            vec![AgentEvent::Message {
+                                role: "assistant".to_string(),
+                                text: text.to_string(),
+                            }],
+                            None,
+                        )
+                    }
+                }
+                Some("reasoning") => {
+                    let text = item
+                        .get("text")
+                        .and_then(|text| text.as_str())
+                        .unwrap_or("");
+                    if text.is_empty() {
+                        (Vec::new(), None)
+                    } else {
+                        (
+                            vec![AgentEvent::Thinking {
+                                text: text.to_string(),
+                            }],
+                            None,
+                        )
+                    }
+                }
+                _ => (vec![AgentEvent::Raw { json: value }], None),
+            }
+        }
+        "turn.completed" => (
+            vec![AgentEvent::TurnResult {
+                session_id: String::new(),
+                is_error: false,
+                total_cost_usd: None,
+                duration_ms: 0,
+                num_turns: 1,
+                result_text: None,
+            }],
+            None,
+        ),
         "session_configured" | "task_started" => {
             let session_id = value
                 .get("session_id")
@@ -259,5 +307,40 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
             None,
         ),
         _ => (vec![AgentEvent::Raw { json: value }], None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_current_thread_and_message_events() {
+        let mut cache = ToolUseCache::new();
+        let (events, session_id) = parse_line(
+            r#"{"type":"thread.started","thread_id":"thread-123"}"#,
+            &mut cache,
+        );
+        assert!(events.is_empty());
+        assert_eq!(session_id.as_deref(), Some("thread-123"));
+
+        let (events, _) = parse_line(
+            r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}"#,
+            &mut cache,
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::Message { role, text }] if role == "assistant" && text == "hello"
+        ));
+    }
+
+    #[test]
+    fn current_turn_completed_becomes_a_result() {
+        let mut cache = ToolUseCache::new();
+        let (events, _) = parse_line(
+            r#"{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":3}}"#,
+            &mut cache,
+        );
+        assert!(matches!(events.as_slice(), [AgentEvent::TurnResult { .. }]));
     }
 }

@@ -36,6 +36,8 @@ async fn run_turn(
         allowed_tools,
         fork_session,
         model,
+        effort,
+        fast,
         permission_mode,
     ) = {
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
@@ -50,6 +52,8 @@ async fn run_turn(
             entry.allowed_tools.clone(),
             fork_session,
             entry.model.clone(),
+            entry.effort.clone(),
+            entry.fast,
             entry.permission_mode,
         )
     };
@@ -61,6 +65,8 @@ async fn run_turn(
         fork_session,
         allowed_tools: &allowed_tools,
         model: model.as_deref(),
+        effort: effort.as_deref(),
+        fast,
         permission_mode,
     };
     let spawn = adapter::build_turn(kind, &ctx, &text);
@@ -128,7 +134,14 @@ async fn run_turn(
             if session_id.is_some() {
                 learned_session_id = session_id;
             }
-            for event in events {
+            for mut event in events {
+                if let AgentEvent::TurnResult { session_id, .. } = &mut event {
+                    if session_id.is_empty() {
+                        if let Some(learned) = &learned_session_id {
+                            *session_id = learned.clone();
+                        }
+                    }
+                }
                 let _ = stdout_app.emit(&stdout_channel, &event);
             }
         }
@@ -210,6 +223,8 @@ pub struct StartAgentSessionRequest {
     /// `--model` id/alias, or `None` for the CLI's own default. Only
     /// Claude and Cursor Agent expose a real one; ignored for Codex.
     pub model: Option<String>,
+    pub effort: Option<String>,
+    pub fast: bool,
 }
 
 #[tauri::command]
@@ -227,6 +242,8 @@ pub async fn start_agent_session(
         fork_session,
         first_message,
         model,
+        effort,
+        fast,
     } = request;
     {
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
@@ -238,6 +255,8 @@ pub async fn start_agent_session(
                 worktree_root,
                 session_id: resume_session_id,
                 model,
+                effort,
+                fast,
                 pending_fork: fork_session,
                 allowed_tools: crate::agents::claude::DEFAULT_ALLOWED_TOOLS
                     .iter()
@@ -279,6 +298,8 @@ pub async fn resume_agent_session(
             worktree_root,
             session_id: Some(session_id),
             model: None,
+            effort: None,
+            fast: false,
             pending_fork: false,
             allowed_tools: crate::agents::claude::DEFAULT_ALLOWED_TOOLS
                 .iter()
@@ -366,6 +387,23 @@ pub async fn set_permission_mode(
     let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
     if let Some(entry) = runs.get_mut(&run_id) {
         entry.permission_mode = mode;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_agent_configuration(
+    state: State<'_, AppState>,
+    run_id: String,
+    model: Option<String>,
+    effort: Option<String>,
+    fast: bool,
+) -> Result<(), String> {
+    let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
+    if let Some(entry) = runs.get_mut(&run_id) {
+        entry.model = model;
+        entry.effort = effort;
+        entry.fast = fast;
     }
     Ok(())
 }
