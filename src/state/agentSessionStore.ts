@@ -50,6 +50,7 @@ export type TranscriptItem =
       permission?: PermissionState;
     }
   | { id: string; kind: "error"; message: string }
+  | { id: string; kind: "turnComplete"; baselineHead: string | null; baselinePaths: string[] }
   /** An event Maestro's adapter for this CLI didn't recognize and
    * forwarded verbatim rather than dropping (docs/CHECKLIST.md's "no
    * silent failure") — rendered as a small collapsed raw-JSON card
@@ -68,10 +69,18 @@ export interface AgentTabState {
    * whether the next composer submit calls `startAgentSession` or
    * `sendAgentMessage`. */
   started: boolean;
+  turnBaseline: { head: string | null; paths: string[] } | null;
 }
 
 function emptyTabState(): AgentTabState {
-  return { items: [], status: "idle", errorMessage: null, lastResult: null, started: false };
+  return {
+    items: [],
+    status: "idle",
+    errorMessage: null,
+    lastResult: null,
+    started: false,
+    turnBaseline: null,
+  };
 }
 
 let itemSeq = 0;
@@ -114,6 +123,7 @@ interface AgentSessionState {
   resumeSession: (runId: string, sessionId: string, turns: TranscriptTurn[]) => void;
   appendUserMessage: (runId: string, text: string) => void;
   setWorking: (runId: string) => void;
+  setTurnBaseline: (runId: string, head: string | null, paths: string[]) => void;
   setToolCallPermissionStatus: (
     runId: string,
     toolCallId: string,
@@ -206,6 +216,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
           errorMessage: null,
           lastResult: { sessionId, totalCostUsd: null, durationMs: 0 },
           started: true,
+          turnBaseline: null,
         },
       },
     }));
@@ -232,6 +243,15 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
     set((s) => {
       const tab = s.byRunId[runId] ?? emptyTabState();
       return { byRunId: { ...s.byRunId, [runId]: { ...tab, status: "working" } } };
+    });
+  },
+
+  setTurnBaseline: (runId, head, paths) => {
+    set((s) => {
+      const tab = s.byRunId[runId] ?? emptyTabState();
+      return {
+        byRunId: { ...s.byRunId, [runId]: { ...tab, turnBaseline: { head, paths } } },
+      };
     });
   },
 
@@ -341,6 +361,16 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
               [runId]: {
                 ...tab,
                 status: "idle",
+                items: [
+                  ...items,
+                  {
+                    id: nextId(),
+                    kind: "turnComplete",
+                    baselineHead: tab.turnBaseline?.head ?? null,
+                    baselinePaths: tab.turnBaseline?.paths ?? [],
+                  },
+                ],
+                turnBaseline: null,
                 lastResult: {
                   sessionId: event.sessionId,
                   totalCostUsd: event.totalCostUsd,

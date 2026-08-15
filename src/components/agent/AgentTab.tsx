@@ -13,6 +13,7 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 import { agentsApi } from "../../api/agents";
+import { gitApi } from "../../api/git";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { useAgentSessionStore } from "../../state/agentSessionStore";
 import type { TranscriptItem } from "../../state/agentSessionStore";
@@ -26,6 +27,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { AgentComposer } from "./AgentComposer";
 import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { FileChangeReceipt } from "./FileChangeReceipt";
 import styles from "./AgentTab.module.css";
 
 type Group =
@@ -140,11 +142,15 @@ const TranscriptGroup = memo(function TranscriptGroup({
   kind,
   runId,
   isNewest,
+  worktreeId,
+  worktreeRoot,
 }: {
   group: Group;
   kind: AgentKind;
   runId: string;
   isNewest: boolean;
+  worktreeId?: string;
+  worktreeRoot?: string;
 }) {
   if (group.role === "user") {
     return (
@@ -186,6 +192,16 @@ const TranscriptGroup = memo(function TranscriptGroup({
             }
             return null;
           })}
+          {group.items.some((item) => item.kind === "turnComplete") &&
+            worktreeId &&
+            worktreeRoot && (
+              <FileChangeReceipt
+                receiptId={group.key}
+                items={group.items}
+                worktreeId={worktreeId}
+                worktreeRoot={worktreeRoot}
+              />
+            )}
         </div>
       </div>
     </div>
@@ -391,12 +407,16 @@ function Transcript({
   runId,
   working,
   active,
+  worktreeId,
+  worktreeRoot,
 }: {
   groups: Group[];
   kind: AgentKind;
   runId: string;
   working: boolean;
   active: boolean;
+  worktreeId?: string;
+  worktreeRoot?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Whether the user is following the bottom of the conversation. Held in
@@ -491,6 +511,8 @@ function Transcript({
                   kind={kind}
                   runId={runId}
                   isNewest={virtualItem.index === lastIndex}
+                  worktreeId={worktreeId}
+                  worktreeRoot={worktreeRoot}
                 />
               </div>
             );
@@ -516,6 +538,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const tabState = useAgentSessionStore((s) => s.byRunId[runId]);
   const appendUserMessage = useAgentSessionStore((s) => s.appendUserMessage);
   const markStarted = useAgentSessionStore((s) => s.markStarted);
+  const setTurnBaseline = useAgentSessionStore((s) => s.setTurnBaseline);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("manual");
@@ -534,6 +557,21 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
     effort: string | null,
     fast: boolean,
   ) {
+    if (tab.worktreeRoot) {
+      try {
+        const [gitStatus, commits] = await Promise.all([
+          gitApi.getWorkingStatus(tab.worktreeRoot),
+          gitApi.getCommitLog(tab.worktreeRoot, 1, 0),
+        ]);
+        setTurnBaseline(
+          runId,
+          commits[0]?.hash ?? null,
+          gitStatus.entries.map((entry) => entry.path),
+        );
+      } catch {
+        setTurnBaseline(runId, null, []);
+      }
+    }
     appendUserMessage(runId, text);
     if (!tabState?.started) {
       markStarted(runId);
@@ -650,7 +688,15 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         <div className={styles.errorBanner}>{tabState.errorMessage}</div>
       )}
 
-      <Transcript groups={groups} kind={kind} runId={runId} working={working} active={active} />
+      <Transcript
+        groups={groups}
+        kind={kind}
+        runId={runId}
+        working={working}
+        active={active}
+        worktreeId={tab.worktreeId}
+        worktreeRoot={tab.worktreeRoot}
+      />
 
       <AgentComposer
         runId={runId}

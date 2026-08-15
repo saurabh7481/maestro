@@ -19,6 +19,7 @@ import { useActiveWorktree } from "../../state/workspaceStore";
 import { useScmStore } from "../../state/scmStore";
 import { useReadyAgentKinds } from "../../state/agentAvailabilityStore";
 import { agentsApi } from "../../api/agents";
+import { gitApi } from "../../api/git";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type { AgentKind } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
@@ -29,7 +30,13 @@ import { FileTree } from "../explorer/FileTree";
 import { SearchPanel } from "../search/SearchPanel";
 import { ProblemsPanel } from "../problems/ProblemsPanel";
 import { ScmContextMenu } from "./ScmContextMenu";
-import type { CommitFileEntry, FileStatusEntry, StatusKind } from "../../types/git";
+import type {
+  CommitFileEntry,
+  FileStatusEntry,
+  ReviewFile,
+  StashEntry,
+  StatusKind,
+} from "../../types/git";
 import { flattenScmRows, splitScmSections, type ScmRow } from "./scmRows";
 import sidebar from "./Sidebar.module.css";
 import styles from "./ExplorerSidebar.module.css";
@@ -505,7 +512,15 @@ function ScmView() {
 
     const { entry, section } = row;
     if (section === "conflicted") {
-      return <FileRow entry={entry} kind={entry.staged!} active={false} />;
+      const mergeId = activeWorktree ? `merge:${activeWorktree.id}:${entry.path}` : "";
+      return (
+        <FileRow
+          entry={entry}
+          kind={entry.staged!}
+          active={activeTabId === mergeId}
+          onOpen={() => openMerge(entry)}
+        />
+      );
     }
     if (section === "staged") {
       return (
@@ -547,6 +562,18 @@ function ScmView() {
     });
   }
 
+  function openMerge(entry: FileStatusEntry) {
+    if (!activeWorktree) return;
+    ensureTab({
+      id: `merge:${activeWorktree.id}:${entry.path}`,
+      type: "merge",
+      title: `Resolve ${splitPath(entry.path).name}`,
+      filePath: entry.path,
+      worktreeId: activeWorktree.id,
+      worktreeRoot: activeWorktree.path,
+    });
+  }
+
   return (
     <div className={sidebar.panel} data-side="right">
       <div className={sidebar.header}>
@@ -563,6 +590,7 @@ function ScmView() {
       </div>
 
       <CommitBox />
+      <StashPanel />
 
       {/* `sidebar.body` is itself the virtualizer's scroll element: it has no
           top padding, so its scrollTop maps 1:1 onto the virtualizer's
@@ -657,6 +685,168 @@ function CommitFileRow({
   );
 }
 
+function StashPanel() {
+  const activeWorktree = useActiveWorktree();
+  const ensureTab = useTabsStore((state) => state.ensureTab);
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [stashes, setStashes] = useState<StashEntry[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<StashEntry | null>(null);
+
+  async function refresh() {
+    if (!activeWorktree) return;
+    setStashes(await gitApi.listStashes(activeWorktree.path));
+  }
+
+  useEffect(() => {
+    if (!activeWorktree) return;
+    let live = true;
+    gitApi.listStashes(activeWorktree.path).then((entries) => {
+      if (live) setStashes(entries);
+    });
+    return () => {
+      live = false;
+    };
+  }, [activeWorktree]);
+
+  async function run(key: string, action: () => Promise<void>) {
+    setBusy(key);
+    try {
+      await action();
+      await refresh();
+      await useScmStore.getState().refreshStatus();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function review(stash: StashEntry) {
+    if (!activeWorktree) return;
+    const entries = await gitApi.getStashFiles(activeWorktree.path, stash.reference);
+    const reviewFiles: ReviewFile[] = entries.map(([path, kind]) => ({
+      path,
+      kind,
+      mode: "commit",
+      commitHash: stash.hash,
+    }));
+    ensureTab({
+      id: `review:stash:${activeWorktree.id}:${stash.hash}`,
+      type: "review",
+      title: stash.message,
+      reviewSubtitle: `${stash.reference} · ${relativeTime(stash.timestamp)}`,
+      worktreeId: activeWorktree.id,
+      worktreeRoot: activeWorktree.path,
+      reviewFiles,
+    });
+  }
+
+  return (
+    <div className={styles.stashPanel}>
+      <button
+        type="button"
+        className={styles.stashHeading}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
+        <span>Stashes</span>
+        <span className={styles.sectionCount}>{stashes.length}</span>
+      </button>
+      {open && (
+        <div className={styles.stashBody}>
+          <div className={styles.stashCreate}>
+            <input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Optional stash message"
+            />
+            <button
+              type="button"
+              disabled={!activeWorktree || busy !== null}
+              onClick={() =>
+                activeWorktree &&
+                void run("create", async () => {
+                  await gitApi.createStash(activeWorktree.id, activeWorktree.path, message, true);
+                  setMessage("");
+                })
+              }
+            >
+              {busy === "create" ? "Saving…" : "Stash all"}
+            </button>
+          </div>
+          {stashes.map((stash) => (
+            <div className={styles.stashRow} key={stash.hash}>
+              <button type="button" className={styles.stashName} onClick={() => void review(stash)}>
+                <strong>{stash.message}</strong>
+                <span>
+                  {stash.reference} · {relativeTime(stash.timestamp)}
+                </span>
+              </button>
+              <button
+                type="button"
+                title="Apply and keep stash"
+                disabled={busy !== null}
+                onClick={() =>
+                  activeWorktree &&
+                  void run(stash.hash, () =>
+                    gitApi.applyStash(
+                      activeWorktree.id,
+                      activeWorktree.path,
+                      stash.reference,
+                      false,
+                    ),
+                  )
+                }
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                title="Apply and remove stash"
+                disabled={busy !== null}
+                onClick={() =>
+                  activeWorktree &&
+                  void run(stash.hash, () =>
+                    gitApi.applyStash(
+                      activeWorktree.id,
+                      activeWorktree.path,
+                      stash.reference,
+                      true,
+                    ),
+                  )
+                }
+              >
+                Pop
+              </button>
+              <button
+                type="button"
+                title="Delete stash"
+                disabled={busy !== null}
+                onClick={() => setDropTarget(stash)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {stashes.length === 0 && <div className={styles.stashEmpty}>No saved stashes.</div>}
+        </div>
+      )}
+      <AlertDialog
+        open={dropTarget !== null}
+        onOpenChange={(next) => !next && setDropTarget(null)}
+        title="Delete stash?"
+        description={`This permanently deletes ${dropTarget?.reference ?? "this stash"}.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (activeWorktree && dropTarget)
+            void run("drop", () => gitApi.dropStash(activeWorktree.path, dropTarget.reference));
+          setDropTarget(null);
+        }}
+      />
+    </div>
+  );
+}
+
 function HistoryView() {
   const activeWorktree = useActiveWorktree();
   const commits = useScmStore((s) => s.commits);
@@ -674,15 +864,30 @@ function HistoryView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function toggleCommit(hash: string) {
+  async function toggleCommit(hash: string) {
     if (expandedHash === hash) {
       setExpandedHash(null);
       return;
     }
     setExpandedHash(hash);
-    if (!filesByHash[hash]) {
-      void getCommitFiles(hash).then((files) => {
-        setFilesByHash((prev) => ({ ...prev, [hash]: files }));
+    const files = filesByHash[hash] ?? (await getCommitFiles(hash));
+    if (!filesByHash[hash]) setFilesByHash((prev) => ({ ...prev, [hash]: files }));
+    const worktree = activeWorktree;
+    const commit = commits.find((entry) => entry.hash === hash);
+    if (worktree && commit) {
+      useTabsStore.getState().ensureTab({
+        id: `review:commit:${worktree.id}:${hash}`,
+        type: "review",
+        title: commit.message,
+        reviewSubtitle: `${commit.shortHash} · ${commit.author} · ${relativeTime(commit.timestamp)}`,
+        worktreeId: worktree.id,
+        worktreeRoot: worktree.path,
+        reviewFiles: files.map(([path, kind]) => ({
+          path,
+          kind,
+          mode: "commit",
+          commitHash: hash,
+        })),
       });
     }
   }
@@ -706,7 +911,7 @@ function HistoryView() {
           const expanded = expandedHash === commit.hash;
           return (
             <div key={commit.hash}>
-              <div className={styles.commitRow} onClick={() => toggleCommit(commit.hash)}>
+              <div className={styles.commitRow} onClick={() => void toggleCommit(commit.hash)}>
                 <div className={styles.commitGraph}>
                   <span
                     className={styles.commitDot}

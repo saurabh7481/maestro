@@ -5,6 +5,8 @@ import type {
   DiffContent,
   DiffMode,
   WorkingStatus,
+  ConflictContent,
+  StashEntry,
 } from "../types/git";
 
 /** Thin, typed wrapper around the SCM-related Tauri command surface — same
@@ -50,4 +52,23 @@ export const gitApi = {
     invoke<CommitSummary[]>("get_commit_log", { worktreeRoot, limit, skip }),
   getCommitFiles: (worktreeRoot: string, hash: string) =>
     invoke<CommitFileEntry[]>("get_commit_files", { worktreeRoot, hash }),
+
+  getConflictContent: (worktreeRoot: string, relPath: string) =>
+    invoke<ConflictContent>("get_conflict_content", { worktreeRoot, relPath }),
+  resolveConflict: (worktreeId: string, worktreeRoot: string, relPath: string, result: string) =>
+    invoke<void>("resolve_conflict", { worktreeId, worktreeRoot, relPath, result }),
+
+  listStashes: (worktreeRoot: string) => invoke<StashEntry[]>("list_stashes", { worktreeRoot }),
+  createStash: (
+    worktreeId: string,
+    worktreeRoot: string,
+    message: string,
+    includeUntracked = true,
+  ) => invoke<void>("create_stash", { worktreeId, worktreeRoot, message, includeUntracked }),
+  applyStash: (worktreeId: string, worktreeRoot: string, reference: string, pop: boolean) =>
+    invoke<void>("apply_stash", { worktreeId, worktreeRoot, reference, pop }),
+  dropStash: (worktreeRoot: string, reference: string) =>
+    invoke<void>("drop_stash", { worktreeRoot, reference }),
+  getStashFiles: (worktreeRoot: string, reference: string) =>
+    invoke<CommitFileEntry[]>("get_stash_files", { worktreeRoot, reference }),
 };

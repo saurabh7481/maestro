@@ -1,0 +1,134 @@
+.wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.headerIcon {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+}
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.heading strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+.heading span {
+  font: var(--text-xs) var(--font-mono);
+  color: var(--text-mute);
+}
+.summary {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-5);
+  align-items: center;
+  font: var(--text-xs) var(--font-mono);
+  color: var(--text-dim);
+}
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6);
+}
+.file {
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.fileHeader {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: 0;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.fileHeader:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--text-sm) var(--font-mono);
+  color: var(--text);
+}
+.kind {
+  padding: 1px var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  color: var(--text-mute);
+}
+.added {
+  color: var(--green);
+  font-family: var(--font-mono);
+}
+.removed {
+  color: var(--red);
+  font-family: var(--font-mono);
+}
+.diffHost {
+  height: min(34rem, 58vh);
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.labels {
+  height: 1.75rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-3);
+  font: var(--text-2xs) var(--font-mono);
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.labels span {
+  padding: var(--space-3) var(--space-6);
+}
+.labels span + span {
+  border-left: 1px solid var(--border);
+}
+.message,
+.empty {
+  min-height: 8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--text-mute);
+  font-size: var(--text-sm);
+}

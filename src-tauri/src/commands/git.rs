@@ -1,5 +1,8 @@
 use crate::fs_ops;
-use crate::git::{self, CommitSummary, DiffContent, DiffMode, StatusKind, WorkingStatus};
+use crate::git::{
+    self, CommitSummary, ConflictContent, DiffContent, DiffMode, StashEntry, StatusKind,
+    WorkingStatus,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
@@ -203,4 +206,74 @@ pub async fn get_commit_files(
     hash: String,
 ) -> Result<Vec<(String, StatusKind)>, String> {
     git::commit_files(&PathBuf::from(worktree_root), &hash).await
+}
+
+#[tauri::command]
+pub async fn get_conflict_content(
+    worktree_root: String,
+    rel_path: String,
+) -> Result<ConflictContent, String> {
+    git::conflict_content(&PathBuf::from(worktree_root), &rel_path).await
+}
+
+#[tauri::command]
+pub async fn resolve_conflict(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    rel_path: String,
+    result: String,
+) -> Result<(), String> {
+    let root = PathBuf::from(worktree_root);
+    git::resolve_conflict(&root, &rel_path, &result).await?;
+    emit_scm_status(&app, &worktree_id, &root).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_stashes(worktree_root: String) -> Result<Vec<StashEntry>, String> {
+    git::list_stashes(&PathBuf::from(worktree_root)).await
+}
+
+#[tauri::command]
+pub async fn create_stash(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    message: String,
+    include_untracked: bool,
+) -> Result<(), String> {
+    let root = PathBuf::from(worktree_root);
+    git::create_stash(&root, &message, include_untracked).await?;
+    emit_scm_status(&app, &worktree_id, &root).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn apply_stash(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    reference: String,
+    pop: bool,
+) -> Result<(), String> {
+    let root = PathBuf::from(worktree_root);
+    let result = git::apply_stash(&root, &reference, pop).await;
+    // Applying can legitimately stop on conflicts. Emit even on failure so
+    // the conflict section and merge editor become available immediately.
+    emit_scm_status(&app, &worktree_id, &root).await;
+    result
+}
+
+#[tauri::command]
+pub async fn drop_stash(worktree_root: String, reference: String) -> Result<(), String> {
+    git::drop_stash(&PathBuf::from(worktree_root), &reference).await
+}
+
+#[tauri::command]
+pub async fn get_stash_files(
+    worktree_root: String,
+    reference: String,
+) -> Result<Vec<(String, StatusKind)>, String> {
+    git::stash_files(&PathBuf::from(worktree_root), &reference).await
 }

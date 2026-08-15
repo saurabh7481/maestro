@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { DiffMode } from "../types/git";
+import type { ReviewFile } from "../types/git";
 import type { AgentKind } from "../types/agent";
 import {
   collectPaneIds,
@@ -13,7 +14,8 @@ import {
   type SplitEdge,
 } from "./paneLayout";
 
-export type TabType = "agent" | "file" | "markdown" | "diff" | "terminal" | "processes";
+export type TabType =
+  "agent" | "file" | "markdown" | "diff" | "review" | "merge" | "terminal" | "processes";
 
 export interface Tab {
   id: string;
@@ -30,6 +32,11 @@ export interface Tab {
   diffMode?: DiffMode;
   /** Diff tabs in `commit` mode only. */
   commitHash?: string;
+  /** Multi-file review tabs (commits, stashes, and agent change receipts). */
+  reviewFiles?: ReviewFile[];
+  reviewSubtitle?: string;
+  /** Review tabs opened from a single file receipt start filtered to it. */
+  selectedReviewPath?: string;
   /** Worktree id for process-backed/editor tabs. Agent tab `id` doubles
    * as the run id the Rust side keys
    * `AgentRunEntry`/events on (`agents/manager.rs`), and `worktreeId` is

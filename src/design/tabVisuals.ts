@@ -7,6 +7,8 @@ export const TAB_VISUALS: Record<TabType, { icon: Icon; color: string }> = {
   file: { icon: FileTs, color: "var(--blue)" },
   markdown: { icon: FileText, color: "var(--accent-2)" },
   diff: { icon: GitDiff, color: "var(--orange)" },
+  review: { icon: GitDiff, color: "var(--orange)" },
+  merge: { icon: GitDiff, color: "var(--red)" },
   terminal: { icon: TerminalWindow, color: "var(--green)" },
   processes: { icon: Pulse, color: "var(--purple)" },
 };

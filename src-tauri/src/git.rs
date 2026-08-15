@@ -595,6 +595,26 @@ pub enum DiffContent {
     Directory,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictContent {
+    pub path: String,
+    pub base_text: String,
+    pub current_text: String,
+    pub incoming_text: String,
+    pub result_text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashEntry {
+    pub index: u32,
+    pub reference: String,
+    pub hash: String,
+    pub message: String,
+    pub timestamp: String,
+}
+
 /// The well-known empty-tree object — diffing a root commit (no parent)
 /// against this instead of `<hash>^` avoids erroring on the very first
 /// commit in a repo's history.
@@ -812,6 +832,104 @@ pub async fn diff_content(
     }
 }
 
+pub async fn conflict_content(dir: &Path, rel_path: &str) -> Result<ConflictContent, String> {
+    let status = working_status(dir).await?;
+    let conflicted = status.entries.iter().any(|entry| {
+        entry.path == rel_path && matches!(entry.staged, Some(StatusKind::Conflicted { .. }))
+    });
+    if !conflicted {
+        return Err(format!("{rel_path} is not an unresolved merge conflict"));
+    }
+
+    let result_text = tokio::fs::read_to_string(dir.join(rel_path))
+        .await
+        .unwrap_or_default();
+    Ok(ConflictContent {
+        path: rel_path.to_string(),
+        base_text: show_blob(dir, &format!(":1:{rel_path}")).await,
+        current_text: show_blob(dir, &format!(":2:{rel_path}")).await,
+        incoming_text: show_blob(dir, &format!(":3:{rel_path}")).await,
+        result_text,
+    })
+}
+
+pub async fn resolve_conflict(dir: &Path, rel_path: &str, result: &str) -> Result<(), String> {
+    let path = fs_ops::safe_join(dir, rel_path)?;
+    tokio::fs::write(path, result)
+        .await
+        .map_err(|e| e.to_string())?;
+    stage_paths(dir, &[rel_path.to_string()]).await
+}
+
+pub async fn list_stashes(dir: &Path) -> Result<Vec<StashEntry>, String> {
+    let out = run_git(
+        dir,
+        &["stash", "list", "--format=%gd%x1f%H%x1f%gs%x1f%aI%x1e"],
+    )
+    .await?;
+    let mut entries = Vec::new();
+    for record in out.split('\u{1e}') {
+        let fields: Vec<&str> = record.trim_matches('\n').split('\u{1f}').collect();
+        if fields.len() != 4 || fields[0].is_empty() {
+            continue;
+        }
+        let index = fields[0]
+            .trim_start_matches("stash@{")
+            .trim_end_matches('}')
+            .parse()
+            .unwrap_or(0);
+        entries.push(StashEntry {
+            index,
+            reference: fields[0].to_string(),
+            hash: fields[1].to_string(),
+            message: fields[2].to_string(),
+            timestamp: fields[3].to_string(),
+        });
+    }
+    Ok(entries)
+}
+
+pub async fn create_stash(
+    dir: &Path,
+    message: &str,
+    include_untracked: bool,
+) -> Result<(), String> {
+    let mut args = vec!["stash", "push"];
+    if include_untracked {
+        args.push("--include-untracked");
+    }
+    if !message.trim().is_empty() {
+        args.extend(["-m", message.trim()]);
+    }
+    run_git(dir, &args).await?;
+    Ok(())
+}
+
+pub async fn apply_stash(dir: &Path, reference: &str, pop: bool) -> Result<(), String> {
+    run_git(
+        dir,
+        &[
+            "stash",
+            if pop { "pop" } else { "apply" },
+            "--index",
+            reference,
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn drop_stash(dir: &Path, reference: &str) -> Result<(), String> {
+    run_git(dir, &["stash", "drop", reference]).await?;
+    Ok(())
+}
+
+pub async fn stash_files(dir: &Path, reference: &str) -> Result<Vec<(String, StatusKind)>, String> {
+    let parent = format!("{reference}^");
+    let out = run_git(dir, &["diff", "--name-status", &parent, reference]).await?;
+    parse_name_status(&out)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitSummary {
@@ -876,6 +994,10 @@ pub async fn log(dir: &Path, limit: u32, skip: u32) -> Result<Vec<CommitSummary>
 /// doesn't).
 pub async fn commit_files(dir: &Path, hash: &str) -> Result<Vec<(String, StatusKind)>, String> {
     let out = run_git(dir, &["show", "--name-status", "--format=", hash]).await?;
+    parse_name_status(&out)
+}
+
+fn parse_name_status(out: &str) -> Result<Vec<(String, StatusKind)>, String> {
     let mut files = Vec::new();
     for line in out.lines() {
         let line = line.trim();
@@ -1098,6 +1220,55 @@ mod tests {
 
         let map = status_map(dir.path()).await.unwrap();
         assert_eq!(map.get("README.md"), Some(&'C'));
+
+        let content = conflict_content(dir.path(), "README.md").await.unwrap();
+        assert_eq!(content.current_text, "main version");
+        assert_eq!(content.incoming_text, "feature version");
+        assert!(content.result_text.contains("<<<<<<<"));
+
+        resolve_conflict(dir.path(), "README.md", "combined version")
+            .await
+            .unwrap();
+        let status = working_status(dir.path()).await.unwrap();
+        assert!(!status
+            .entries
+            .iter()
+            .any(|entry| matches!(entry.staged, Some(StatusKind::Conflicted { .. }))));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("README.md")).unwrap(),
+            "combined version"
+        );
+    }
+
+    #[tokio::test]
+    async fn stash_create_list_review_apply_and_drop_round_trip() {
+        let dir = init_repo().await;
+        std::fs::write(dir.path().join("README.md"), "stashed edit").unwrap();
+        create_stash(dir.path(), "work in progress", true)
+            .await
+            .unwrap();
+        assert!(!is_dirty(dir.path()).await);
+
+        let entries = list_stashes(dir.path()).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].message.contains("work in progress"));
+        let files = stash_files(dir.path(), &entries[0].reference)
+            .await
+            .unwrap();
+        assert!(files.iter().any(|(path, _)| path == "README.md"));
+
+        apply_stash(dir.path(), &entries[0].reference, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("README.md")).unwrap(),
+            "stashed edit"
+        );
+        run_git(dir.path(), &["restore", "README.md"])
+            .await
+            .unwrap();
+        drop_stash(dir.path(), &entries[0].reference).await.unwrap();
+        assert!(list_stashes(dir.path()).await.unwrap().is_empty());
     }
 
     #[tokio::test]

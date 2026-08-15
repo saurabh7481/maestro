@@ -29,6 +29,12 @@ const ProcessManagerTab = lazy(() =>
     default: module.ProcessManagerTab,
   })),
 );
+const ReviewView = lazy(() =>
+  import("../diff/ReviewView").then((module) => ({ default: module.ReviewView })),
+);
+const MergeView = lazy(() =>
+  import("../diff/MergeView").then((module) => ({ default: module.MergeView })),
+);
 
 /** One editor pane: a tab strip, and under it whatever its active tab
  * shows. Everything here used to live in `MainContent` as the single
@@ -124,6 +130,18 @@ export function PaneView({ paneId }: { paneId: string }) {
           </Suspense>
         )}
 
+        {activeTab?.type === "review" && (
+          <Suspense fallback={<div className={styles.loading}>Loading review…</div>}>
+            <ReviewView key={activeTab.id} tab={activeTab} />
+          </Suspense>
+        )}
+
+        {activeTab?.type === "merge" && activeTab.filePath && (
+          <Suspense fallback={<div className={styles.loading}>Loading merge editor…</div>}>
+            <MergeView key={activeTab.id} tab={activeTab} />
+          </Suspense>
+        )}
+
         {/* Agent and terminal tabs are portalled in here by `TabHost`,
             which stays mounted at the shell level so they survive moving
             between panes (see `state/paneSlotStore.ts`). */}
@@ -134,6 +152,8 @@ export function PaneView({ paneId }: { paneId: string }) {
           !isRealDiffTab &&
           activeTab.type !== "agent" &&
           activeTab.type !== "terminal" &&
+          activeTab.type !== "review" &&
+          activeTab.type !== "merge" &&
           activeTab.type !== "processes" && (
             <div className={styles.placeholder}>
               <div className={styles.placeholderIcon}>

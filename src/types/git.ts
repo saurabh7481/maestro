@@ -53,6 +53,31 @@ export interface CommitSummary {
   message: string;
 }
 
+export interface ConflictContent {
+  path: string;
+  baseText: string;
+  currentText: string;
+  incomingText: string;
+  resultText: string;
+}
+
+export interface StashEntry {
+  index: number;
+  reference: string;
+  hash: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface ReviewFile {
+  path: string;
+  kind: StatusKind;
+  mode: DiffMode;
+  commitHash?: string;
+  added?: number;
+  removed?: number;
+}
+
 /** `(path, kind)` tuples, matching the Rust command's `Vec<(String,
  * StatusKind)>` return shape (serde serializes tuples as 2-element
  * arrays) — one file's status entry within a single commit's change set. */

@@ -1,0 +1,117 @@
+.receipt {
+  margin-top: var(--space-6);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-2) 94%, var(--accent) 6%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+.heading {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.icon {
+  width: 1.65rem;
+  height: 1.65rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-3);
+  color: var(--orange);
+}
+.heading strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+.heading button {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+.heading button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+}
+.row:hover {
+  background: var(--hover);
+}
+.row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--text-xs) var(--font-mono);
+}
+.receipt i,
+.receipt em {
+  font: normal var(--text-xs) var(--font-mono);
+}
+.receipt i {
+  color: var(--green);
+}
+.receipt em {
+  color: var(--red);
+}
+.more {
+  width: 100%;
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-6);
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+.more:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.total {
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  background: var(--bg-3);
+  color: var(--text-mute);
+  font-size: var(--text-2xs);
+}
+.total span {
+  margin-right: auto;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
