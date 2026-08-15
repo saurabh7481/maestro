@@ -8,6 +8,11 @@ function detectPlatform(): UiPlatform {
   return "unknown";
 }
 
+/** Used for the "mod" key in keybindings: ⌘ on macOS, Ctrl elsewhere. */
+export function isMac(): boolean {
+  return detectPlatform() === "macos";
+}
+
 /** Stamps `data-platform` on the root element once, at startup, so CSS can
  * apply platform-specific corrections (e.g. the WebKitGTK bold-text fix in
  * src/styles/tokens.css). */

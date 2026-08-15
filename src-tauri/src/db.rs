@@ -43,8 +43,62 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             install_command       TEXT,
             symlink_node_modules  INTEGER NOT NULL DEFAULT 0,
             custom_script_enabled INTEGER NOT NULL DEFAULT 0,
+            custom_script         TEXT NOT NULL DEFAULT '',
+            override_enabled      INTEGER NOT NULL DEFAULT 0
+        );
+
+        -- Single-row (id is always 1) default hook config applied to every
+        -- project that doesn't have `worktree_hooks.override_enabled` set —
+        -- see `commands/hooks.rs::run_worktree_hook`. A separate table
+        -- rather than a `project_id`-nullable row in `worktree_hooks`,
+        -- since that column has an `ON DELETE CASCADE` FK to `projects`
+        -- that a sentinel/global row has no project to reference.
+        CREATE TABLE IF NOT EXISTS global_worktree_hooks (
+            id                    INTEGER PRIMARY KEY CHECK (id = 1),
+            copy_env_files        INTEGER NOT NULL DEFAULT 1,
+            run_install_command   INTEGER NOT NULL DEFAULT 1,
+            install_command       TEXT,
+            symlink_node_modules  INTEGER NOT NULL DEFAULT 0,
+            custom_script_enabled INTEGER NOT NULL DEFAULT 0,
             custom_script         TEXT NOT NULL DEFAULT ''
         );
+
+        -- Free-form key/value settings — currently just per-CLI binary
+        -- path overrides (`agent.<slug>.binary_path`), see
+        -- docs/ARCHITECTURE.md §4.
+        CREATE TABLE IF NOT EXISTS settings (
+            key        TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL
+        );
+
+        -- Index/cache only, never the source of truth: each CLI persists
+        -- its own session history on disk (see agents/sessions.rs). This
+        -- table exists for pid/start-time bookkeeping (future zombie-reap
+        -- work, see docs/CHECKLIST.md's edge-case sweep) and a fast
+        -- per-worktree 'last used agent' lookup. Reconciled against the
+        -- CLI's own session directory at list-time, not trusted alone.
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+            id             TEXT PRIMARY KEY,
+            worktree_id    TEXT NOT NULL,
+            agent          TEXT NOT NULL,
+            cli_session_id TEXT,
+            pid            INTEGER,
+            started_at     TEXT NOT NULL,
+            last_active_at TEXT NOT NULL,
+            title          TEXT
+        );
         ",
-    )
+    )?;
+
+    // Additive migration: `worktree_hooks` predates the global/project-level
+    // hooks split (`commands/hooks.rs`) — existing installs' rows won't have
+    // this column yet. SQLite has no `ADD COLUMN IF NOT EXISTS`, so this
+    // just swallows the "duplicate column name" error every boot after the
+    // first one runs it.
+    let _ = conn.execute(
+        "ALTER TABLE worktree_hooks ADD COLUMN override_enabled INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
+    Ok(())
 }

@@ -9,6 +9,27 @@
   top: 0;
   left: 0;
   right: 0;
+  /* Same WebKitGTK repaint/hit-test quirk noted on `.row:hover` in
+     Sidebar.module.css, but here it can affect scroll itself: every
+     scroll tick rewrites this element's `transform: translateY()`
+     (virtualization), and without its own compositor layer WebKit can
+     fail to keep the wheel/touchpad scroll hit-test region in sync with
+     what's actually painted. */
+  will-change: transform;
+}
+
+/* The virtualizer (FileTree.tsx) reserves an exact `ROW_HEIGHT * zoom`
+   slot per row via `.rowWrap`'s inline height. The shared `sidebar.row`
+   class carries vertical padding sized for its other, auto-height
+   contexts (workspace sidebar, search results) — applied here as-is it
+   makes the row taller than its reserved slot, so the hover/selection
+   background bleeds into the next row. Filling the slot and swapping
+   the padding for flex centering keeps the same horizontal padding
+   while making the row's actual height match the space reserved for it. */
+.row {
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .caret {
@@ -30,7 +51,11 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   width: 0.875rem;
-  text-align: center;
+  height: 0.9375rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
 }
 

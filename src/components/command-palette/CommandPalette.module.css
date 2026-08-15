@@ -1,4 +1,5 @@
 .overlay {
+  composes: fadeIn from "../../styles/motion.module.css";
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
@@ -6,10 +7,10 @@
   display: flex;
   justify-content: center;
   padding-top: 14vh;
-  animation: mo-fade-in var(--duration-fast) var(--ease-out);
 }
 
 .content {
+  composes: scaleIn from "../../styles/motion.module.css";
   width: min(36rem, 92vw);
   max-height: 60vh;
   background: var(--bg-2);
@@ -19,7 +20,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: mo-scale-in var(--duration-fast) var(--ease-out);
   height: fit-content;
 }
 .content:focus-visible {
@@ -72,6 +72,16 @@
 .item[data-active="true"] {
   background: var(--active);
   color: var(--text);
+}
+
+/* A bare `<Icon>` as a direct flex child renders invisible in this app's
+   WebKitGTK build (flex-shrink/min-width:auto collapsing an SVG to zero
+   width) — see `ExplorerSidebar.module.css`'s `.fileIcon` comment for
+   the full explanation; this is that same fix. */
+.itemIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
 }
 
 .itemLabel {

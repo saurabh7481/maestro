@@ -6,6 +6,19 @@
   --zoom: 1;
   font-size: calc(16px * var(--zoom));
 
+  /* Static fallback for the theme background tokens, matching the
+     "maestro" theme's defaults (see design/themes.ts). `applyTheme()`
+     overwrites these once `useDesignSystem`'s theme effect runs, but a
+     render exception that fires before that effect (or from within it)
+     would otherwise leave `body`'s `background: var(--bg)` resolving to
+     nothing — the browser engine's own default background — instead of a
+     themed one. Having a real value here from the very first paint means
+     an early crash still shows on a themed background under the
+     ErrorBoundary fallback, not a flash of unstyled grey. */
+  --bg: #0d1016;
+  --bg-2: #12151c;
+  --bg-3: #1a1f28;
+
   /* Typography */
   --font-ui: "Inter Variable", -apple-system, "Segoe UI", system-ui, Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -66,7 +79,20 @@
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --duration-fast: 100ms;
   --duration-base: 160ms;
+  --duration-normal: 200ms;
   --duration-slow: 240ms;
+
+  /* Sidebar widths — live-updated in px during a drag (see
+     design/useResizablePanel.ts) and persisted as rem once the drag
+     commits, so the committed value stays correctly proportioned if the
+     user later changes --zoom. */
+  --left-sidebar-width: 16.625rem;
+  --right-sidebar-width: 19rem;
+
+  /* Note: Phosphor icon sizing (the `size={...}` prop) is *not* driven by
+     a CSS custom property — see `src/design/iconSize.ts`'s comment for
+     why it has to stay in plain px numbers passed directly to each
+     `<Icon>`, not rem here. */
 
   /* Stacking */
   --z-rail: 10;
@@ -75,14 +101,14 @@
   --z-toast: 80;
 }
 
-/* WebKitGTK on Linux synthesizes fonts ~100 weight units bolder than
-   requested (tauri-apps/tauri#14286). Since Inter ships as a variable
-   font across the full 100–900 axis, compensating by simply requesting
-   one step lighter is exact and free — no synthesis involved either way.
-   Platform is detected once at startup (src/design/platform.ts). */
-:root[data-platform="linux"] {
-  --font-weight-regular: 350;
-  --font-weight-medium: 450;
-  --font-weight-semibold: 550;
-  --font-weight-bold: 650;
-}
+/* Previously this block requested weights ~50 units lighter on Linux to
+   compensate for a suspected WebKitGTK over-bolding bug
+   (tauri-apps/tauri#14286). In practice that made body text render
+   *below* Regular (350 weight — lighter than Inter's own 400), which is
+   exactly the "thin/soft/blurry" text users report on real WebKitGTK
+   builds. The over-bolding either doesn't reproduce across the
+   WebKitGTK versions users actually run, or wasn't worth trading away
+   baseline legibility for. Ship the real weights everywhere; revisit
+   with a narrower, version-gated fix if genuine over-bolding turns up
+   again. Platform is still detected at startup (src/design/platform.ts)
+   for any future platform-specific need. */

@@ -9,13 +9,14 @@ fn hook_event_channel(worktree_id: &str) -> String {
     format!("hook://{worktree_id}")
 }
 
+// See `git.rs::DiffContent`'s comment — enum-level `rename_all` doesn't
+// cascade into struct-like variants' fields, each needs its own.
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum HookEvent {
-    Line {
-        stream: &'static str,
-        text: String,
-    },
+    #[serde(rename_all = "camelCase")]
+    Line { stream: &'static str, text: String },
+    #[serde(rename_all = "camelCase")]
     Done {
         exit_code: Option<i32>,
         success: bool,
@@ -26,7 +27,7 @@ enum HookEvent {
 
 fn read_hook_config(conn: &rusqlite::Connection, project_id: &str) -> Result<HookConfig, String> {
     conn.query_row(
-        "SELECT copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script
+        "SELECT copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script, override_enabled
          FROM worktree_hooks WHERE project_id = ?1",
         params![project_id],
         |row| {
@@ -37,12 +38,55 @@ fn read_hook_config(conn: &rusqlite::Connection, project_id: &str) -> Result<Hoo
                 symlink_node_modules: row.get(3)?,
                 custom_script_enabled: row.get(4)?,
                 custom_script: row.get(5)?,
+                override_enabled: row.get(6)?,
             })
         },
     )
     .optional()
     .map_err(|e| e.to_string())
     .map(|c| c.unwrap_or_default())
+}
+
+/// The global default hook config — applied to any project whose own
+/// `worktree_hooks` row doesn't have `override_enabled` set. Its own
+/// `override_enabled` field is meaningless (always `false`): the global
+/// config has nothing to override.
+fn read_global_hook_config(conn: &rusqlite::Connection) -> Result<HookConfig, String> {
+    conn.query_row(
+        "SELECT copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script
+         FROM global_worktree_hooks WHERE id = 1",
+        [],
+        |row| {
+            Ok(HookConfig {
+                copy_env_files: row.get(0)?,
+                run_install_command: row.get(1)?,
+                install_command: row.get(2)?,
+                symlink_node_modules: row.get(3)?,
+                custom_script_enabled: row.get(4)?,
+                custom_script: row.get(5)?,
+                override_enabled: false,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+    .map(|c| c.unwrap_or_default())
+}
+
+/// The config that actually governs a project's worktree hooks: its own,
+/// if it opted in via `override_enabled`, otherwise the global default.
+/// The one place `run_worktree_hook` (and anything else that needs "what
+/// hooks apply to this project") should resolve that from.
+fn resolve_effective_hook_config(
+    conn: &rusqlite::Connection,
+    project_id: &str,
+) -> Result<HookConfig, String> {
+    let project_config = read_hook_config(conn, project_id)?;
+    if project_config.override_enabled {
+        Ok(project_config)
+    } else {
+        read_global_hook_config(conn)
+    }
 }
 
 #[tauri::command]
@@ -62,9 +106,47 @@ pub async fn set_hook_config(
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO worktree_hooks (project_id, copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO worktree_hooks (project_id, copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script, override_enabled)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(project_id) DO UPDATE SET
+           copy_env_files = excluded.copy_env_files,
+           run_install_command = excluded.run_install_command,
+           install_command = excluded.install_command,
+           symlink_node_modules = excluded.symlink_node_modules,
+           custom_script_enabled = excluded.custom_script_enabled,
+           custom_script = excluded.custom_script,
+           override_enabled = excluded.override_enabled",
+        params![
+            project_id,
+            config.copy_env_files,
+            config.run_install_command,
+            config.install_command,
+            config.symlink_node_modules,
+            config.custom_script_enabled,
+            config.custom_script,
+            config.override_enabled,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_global_hook_config(state: State<'_, AppState>) -> Result<HookConfig, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    read_global_hook_config(&conn)
+}
+
+#[tauri::command]
+pub async fn set_global_hook_config(
+    state: State<'_, AppState>,
+    config: HookConfig,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO global_worktree_hooks (id, copy_env_files, run_install_command, install_command, symlink_node_modules, custom_script_enabled, custom_script)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(id) DO UPDATE SET
            copy_env_files = excluded.copy_env_files,
            run_install_command = excluded.run_install_command,
            install_command = excluded.install_command,
@@ -72,7 +154,6 @@ pub async fn set_hook_config(
            custom_script_enabled = excluded.custom_script_enabled,
            custom_script = excluded.custom_script",
         params![
-            project_id,
             config.copy_env_files,
             config.run_install_command,
             config.install_command,
@@ -128,7 +209,7 @@ pub async fn run_worktree_hook(
 ) -> Result<(), String> {
     let (config, worktree_path, branch, repo_path) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        let config = read_hook_config(&conn, &project_id)?;
+        let config = resolve_effective_hook_config(&conn, &project_id)?;
         let (worktree_path, branch): (String, String) = conn
             .query_row(
                 "SELECT path, branch FROM worktrees WHERE id = ?1",

@@ -1,6 +1,22 @@
 import { create } from "zustand";
 import { workspaceApi } from "../api/workspace";
+import { agentsApi } from "../api/agents";
+import { terminalApi } from "../api/terminal";
+import { useTabsStore } from "./tabsStore";
+import { useAgentSessionStore } from "./agentSessionStore";
+import { useTerminalSessionStore } from "./terminalSessionStore";
 import type { Project, Worktree } from "../types/workspace";
+
+/** A stable, module-scoped empty array — use as `worktreesByProject[id]
+ * ?? EMPTY_WORKTREES` in selectors, never `?? []`. A fresh `[]` literal
+ * as a selector's fallback is a real trap: zustand compares the
+ * selector's *return value* by reference, so a project with no recorded
+ * worktrees yet gets a brand-new array every render, which reads as "the
+ * store changed" forever — confirmed live as a `Maximum update depth
+ * exceeded` infinite loop from the equivalent `.filter()` case in
+ * `agentAvailabilityStore.ts`. Reusing one constant reference fixes it
+ * for the empty-fallback shape without needing `useShallow`. */
+export const EMPTY_WORKTREES: Worktree[] = [];
 
 interface WorkspaceState {
   projects: Project[];
@@ -14,6 +30,7 @@ interface WorkspaceState {
   reloadWorktrees: (projectId: string) => Promise<void>;
   addProject: () => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
+  renameProject: (projectId: string, name: string) => Promise<void>;
   createWorktree: (projectId: string, branchName: string, baseRef: string) => Promise<Worktree>;
   removeWorktree: (projectId: string, worktreeId: string, force: boolean) => Promise<void>;
   selectWorktree: (projectId: string, worktreeId: string) => void;
@@ -26,6 +43,35 @@ interface WorkspaceState {
 
 function pickDefaultWorktree(worktrees: Worktree[]): Worktree | undefined {
   return worktrees.find((w) => w.isPrimary) ?? worktrees[0];
+}
+
+/** Kills every agent/terminal tab belonging to a just-removed worktree —
+ * see `removeWorktree` below. Agent tabs are matched by `worktreeId`
+ * (the Rust side already indexes runs that way — reused here via
+ * `killAgentRunsForWorktree` rather than re-deriving the id list);
+ * terminal tabs don't carry a `worktreeId`, so they're matched by the
+ * worktree's absolute path instead. */
+async function teardownWorktreeProcessTabs(worktreeId: string, worktreePath: string | undefined) {
+  const killedAgentRunIds = await agentsApi.killAgentRunsForWorktree(worktreeId).catch(() => []);
+  for (const runId of killedAgentRunIds) {
+    useAgentSessionStore.getState().closeRun(runId);
+  }
+
+  const terminalTabIds = worktreePath
+    ? useTabsStore
+        .getState()
+        .tabs.filter((t) => t.type === "terminal" && t.worktreeRoot === worktreePath)
+        .map((t) => t.id)
+    : [];
+  for (const terminalId of terminalTabIds) {
+    await terminalApi.kill(terminalId).catch(() => {});
+    useTerminalSessionStore.getState().closeSession(terminalId);
+  }
+
+  const closedTabIds = new Set([...killedAgentRunIds, ...terminalTabIds]);
+  if (closedTabIds.size === 0) return;
+  const { closeTab } = useTabsStore.getState();
+  for (const tabId of closedTabIds) closeTab(tabId);
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -118,6 +164,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  renameProject: async (projectId, name) => {
+    try {
+      await workspaceApi.renameProject(projectId, name);
+      set((s) => ({
+        projects: s.projects.map((p) => (p.id === projectId ? { ...p, name } : p)),
+      }));
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
   createWorktree: async (projectId, branchName, baseRef) => {
     const worktree = await workspaceApi.createWorktree(projectId, branchName, baseRef);
     await get().reloadWorktrees(projectId);
@@ -126,6 +183,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   removeWorktree: async (projectId, worktreeId, force) => {
+    const worktreePath = get().worktreesByProject[projectId]?.find(
+      (w) => w.id === worktreeId,
+    )?.path;
     await workspaceApi.removeWorktree(projectId, worktreeId, force);
     await get().reloadWorktrees(projectId);
     set((s) => {
@@ -133,6 +193,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const fallback = pickDefaultWorktree(s.worktreesByProject[projectId] ?? []);
       return { activeWorktreeId: fallback?.id ?? null };
     });
+    // Agent runs and terminal PTYs are real OS processes scoped to this
+    // worktree — a removed worktree must not leave either dangling
+    // (docs/CHECKLIST.md edge cases). File/diff/markdown tabs have no
+    // live-process concern, so they're left alone (also true of this
+    // codebase's tabs generally: they aren't otherwise worktree-scoped —
+    // see docs/ROADMAP.md's Phase 8 note on tab/window state).
+    await teardownWorktreeProcessTabs(worktreeId, worktreePath);
   },
 
   selectWorktree: (projectId, worktreeId) => {

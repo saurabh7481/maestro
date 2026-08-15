@@ -1,0 +1,49 @@
+.tab {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #08090d;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-7);
+  border-bottom: var(--border-width) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.dim {
+  color: var(--text-mute);
+}
+
+.path {
+  margin-left: auto;
+  color: var(--text-mute);
+}
+
+.errorBanner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-7);
+  background: rgba(224, 108, 117, 0.12);
+  color: var(--red);
+  font-size: var(--text-xs);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5) var(--space-6);
+}
+
+.body :global(.xterm) {
+  height: 100%;
+}

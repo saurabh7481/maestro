@@ -92,20 +92,21 @@ fn mtime_millis(metadata: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
+// See `git.rs::DiffContent`'s comment — enum-level `rename_all` doesn't
+// cascade into struct-like variants' fields, each needs its own.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FileReadResult {
+    #[serde(rename_all = "camelCase")]
     Text {
         content: String,
         size_bytes: u64,
         mtime_ms: i64,
     },
-    Binary {
-        size_bytes: u64,
-    },
-    TooLarge {
-        size_bytes: u64,
-    },
+    #[serde(rename_all = "camelCase")]
+    Binary { size_bytes: u64 },
+    #[serde(rename_all = "camelCase")]
+    TooLarge { size_bytes: u64 },
 }
 
 /// Reads a file, classifying it as text/binary/too-large before handing

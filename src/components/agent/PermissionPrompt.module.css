@@ -1,0 +1,62 @@
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-top: var(--border-width) solid var(--border);
+  background: color-mix(in srgb, var(--yellow) 8%, transparent);
+  font-size: var(--text-sm);
+  flex-wrap: wrap;
+  animation: mo-scale-in var(--duration-normal, 180ms) ease-out;
+}
+
+.message {
+  color: var(--text-dim);
+  flex: 1;
+  min-width: 12rem;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  flex: none;
+}
+
+.approve,
+.deny {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  border: var(--border-width) solid transparent;
+  transition:
+    transform var(--duration-fast, 120ms) ease-out,
+    background var(--duration-fast, 120ms) ease-out,
+    opacity var(--duration-fast, 120ms) ease-out;
+}
+.approve {
+  background: var(--accent);
+  color: #0a0c11;
+}
+.approve:hover {
+  opacity: 0.9;
+}
+.deny {
+  border-color: var(--border-2);
+  color: var(--text-dim);
+}
+.deny:hover {
+  background: var(--hover);
+}
+.approve:active,
+.deny:active {
+  transform: scale(0.97);
+}
+
+.resolved {
+  color: var(--text-mute);
+  font-style: italic;
+}

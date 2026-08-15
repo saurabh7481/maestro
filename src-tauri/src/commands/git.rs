@@ -12,9 +12,14 @@ pub(crate) fn scm_event_channel(worktree_id: &str) -> String {
     format!("scm://{worktree_id}")
 }
 
+// See `git.rs::DiffContent`'s comment — enum-level `rename_all` doesn't
+// cascade into struct-like variants' fields. Harmless here today (single
+// word field), kept for consistency so a future added field doesn't
+// silently reintroduce the bug.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum ScmEvent {
+    #[serde(rename_all = "camelCase")]
     StatusChanged { status: WorkingStatus },
 }
 

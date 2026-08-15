@@ -122,6 +122,20 @@ a:hover {
   box-shadow: 0 0 14px var(--accent-soft);
 }
 
+/* A soft "breathing" ring instead of a hard opacity flicker — used for
+   live/working status dots. */
+@keyframes mo-pulse-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--green) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 0%, transparent);
+  }
+}
+
 @keyframes mo-blink {
   0%,
   100% {
@@ -157,6 +171,19 @@ a:hover {
   }
   to {
     opacity: 1;
+  }
+}
+
+/* A touch more presence than a plain fade for things that "arrive" —
+   agent transcript entries, tool-call cards — without being showy. */
+@keyframes mo-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

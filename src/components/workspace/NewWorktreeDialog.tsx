@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { workspaceApi } from "../../api/workspace";
 import { listenToHookEvents } from "../../api/hookEvents";
-import { useWorkspaceStore, useActiveWorktree } from "../../state/workspaceStore";
+import { useWorkspaceStore, useActiveWorktree, EMPTY_WORKTREES } from "../../state/workspaceStore";
+import { useToastStore } from "../../state/toastStore";
 import type { Worktree } from "../../types/workspace";
-import { Button, Select, TextInput } from "../primitives";
+import { Button, Dropdown, TextInput } from "../primitives";
 import { HookOutputPanel } from "./HookOutputPanel";
 import type { HookOutputLine, HookRunStatus } from "./HookOutputPanel";
 import styles from "./NewWorktreeDialog.module.css";
@@ -38,7 +39,9 @@ function NewWorktreeDialogInner({
 }) {
   const createWorktree = useWorkspaceStore((s) => s.createWorktree);
   const activeWorktree = useActiveWorktree();
-  const projectWorktrees = useWorkspaceStore((s) => s.worktreesByProject[projectId] ?? []);
+  const projectWorktrees = useWorkspaceStore(
+    (s) => s.worktreesByProject[projectId] ?? EMPTY_WORKTREES,
+  );
 
   const [branches, setBranches] = useState<string[]>([]);
   const [branchName, setBranchName] = useState("");
@@ -70,18 +73,32 @@ function NewWorktreeDialogInner({
     let torndown = false;
 
     void listenToHookEvents(createdWorktree.id, (event) => {
+      // Defensive: a malformed event should be skipped, not crash the
+      // whole renderer (see `api/fsEvents.ts`).
+      if (!event?.type) return;
       if (event.type === "line") {
         setHookLines((lines) => [...lines, { stream: event.stream, text: event.text }]);
       } else {
-        setHookStatus(
-          event.cancelled
-            ? "cancelled"
-            : event.timedOut
-              ? "timedOut"
-              : event.success
-                ? "success"
-                : "failed",
-        );
+        const status = event.cancelled
+          ? "cancelled"
+          : event.timedOut
+            ? "timedOut"
+            : event.success
+              ? "success"
+              : "failed";
+        setHookStatus(status);
+        if (status !== "cancelled") {
+          useToastStore.getState().push({
+            tone: status === "success" ? "success" : "error",
+            title:
+              status === "success"
+                ? "Worktree hook finished"
+                : status === "timedOut"
+                  ? "Worktree hook timed out"
+                  : "Worktree hook failed",
+            description: createdWorktree.branch,
+          });
+        }
       }
     }).then((fn) => {
       if (torndown) fn();
@@ -154,13 +171,12 @@ function NewWorktreeDialogInner({
             onChange={(e) => setBranchName(e.target.value)}
             autoFocus
           />
-          <Select label="Base ref" value={baseRef} onChange={(e) => setBaseRef(e.target.value)}>
-            {branches.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </Select>
+          <Dropdown
+            label="Base ref"
+            value={baseRef}
+            onChange={setBaseRef}
+            options={branches.map((b) => ({ value: b, label: b }))}
+          />
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.actions}>
             <Button variant="ghost" onClick={() => onOpenChange(false)}>

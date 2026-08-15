@@ -151,6 +151,9 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
     },
 
     applyWatcherEvent: (event: FsChangeEvent) => {
+      // Belt-and-suspenders on top of `fsEvents.ts`'s own guard — never
+      // let a malformed watcher event crash the whole renderer.
+      if (!event?.changedDirs || !event.statusMap) return;
       set({ statusMap: event.statusMap });
       const { childrenByDir } = get();
       for (const dir of event.changedDirs) {

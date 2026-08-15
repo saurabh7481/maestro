@@ -1,9 +1,13 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { ThemeId } from "./themes";
+import type { Tab } from "../state/tabsStore";
 
 export interface UiPrefs {
   theme: ThemeId;
   zoom: number;
+  leftSidebarWidth: number;
+  rightSidebarWidth: number;
+  autoSaveEnabled: boolean;
 }
 
 const STORE_FILE = "ui-prefs.json";
@@ -25,4 +29,60 @@ export async function saveUiPrefs(prefs: Partial<UiPrefs>): Promise<void> {
   const store = await getStore();
   const existing = (await store.get<Partial<UiPrefs>>(PREFS_KEY)) ?? {};
   await store.set(PREFS_KEY, { ...existing, ...prefs });
+}
+
+const KEYBINDINGS_STORE_FILE = "keybindings.json";
+const KEYBINDINGS_KEY = "overrides";
+
+let keybindingsStorePromise: Promise<Store> | null = null;
+
+function getKeybindingsStore(): Promise<Store> {
+  if (!keybindingsStorePromise) {
+    keybindingsStorePromise = load(KEYBINDINGS_STORE_FILE, { autoSave: true });
+  }
+  return keybindingsStorePromise;
+}
+
+/** Maps action id → user-overridden combo. Actions without an entry here
+ * use their `defaultCombo` from `design/keymap.ts`. */
+export async function loadKeybindingOverrides(): Promise<Record<string, string>> {
+  const store = await getKeybindingsStore();
+  return (await store.get<Record<string, string>>(KEYBINDINGS_KEY)) ?? {};
+}
+
+export async function saveKeybindingOverrides(overrides: Record<string, string>): Promise<void> {
+  const store = await getKeybindingsStore();
+  await store.set(KEYBINDINGS_KEY, overrides);
+}
+
+export interface SessionPrefs {
+  activeProjectId: string | null;
+  activeWorktreeId: string | null;
+  tabs: Tab[];
+  /** Per-worktree "which tab was active" — see `state/tabsStore.ts`.
+   * Keyed by worktree root path, same as the in-memory store. */
+  activeTabIdByWorktree: Record<string, string | null>;
+}
+
+const SESSION_STORE_FILE = "session.json";
+const SESSION_KEY = "session";
+
+let sessionStorePromise: Promise<Store> | null = null;
+
+function getSessionStore(): Promise<Store> {
+  if (!sessionStorePromise) sessionStorePromise = load(SESSION_STORE_FILE, { autoSave: true });
+  return sessionStorePromise;
+}
+
+/** See `design/useSessionPersistence.ts` for restore semantics — this is
+ * just the raw disk read/write, same shape as `loadUiPrefs`/`saveUiPrefs`
+ * above. */
+export async function loadSessionPrefs(): Promise<SessionPrefs | null> {
+  const store = await getSessionStore();
+  return (await store.get<SessionPrefs>(SESSION_KEY)) ?? null;
+}
+
+export async function saveSessionPrefs(prefs: SessionPrefs): Promise<void> {
+  const store = await getSessionStore();
+  await store.set(SESSION_KEY, prefs);
 }

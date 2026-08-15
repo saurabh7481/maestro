@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
-import DOMPurify from "dompurify";
-import { marked } from "marked";
 import { FileText } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { getModel } from "../../editor/monacoModelRegistry";
+import { renderMarkdownToHtml } from "../../design/renderMarkdown";
 import type { Tab } from "../../state/tabsStore";
 import styles from "./MarkdownPane.module.css";
 
@@ -24,12 +23,19 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
   // not something that needs an effect.
   const [, forceRerender] = useReducer((c: number) => c + 1, 0);
 
-  const liveModel = mode === "preview" ? getModel(tab.id) : undefined;
+  // `getModel()` can hand back a model the LRU registry is about to evict
+  // (see `monacoModelRegistry.ts`) — guarding with `isDisposed()` here
+  // means a stale/disposed reference falls back to `fetchedContent`
+  // instead of a `.getValue()` call throwing during render.
+  const rawLiveModel = mode === "preview" ? getModel(tab.id) : undefined;
+  const liveModel = rawLiveModel && !rawLiveModel.isDisposed() ? rawLiveModel : undefined;
 
   useEffect(() => {
     if (!liveModel) return;
     const sub = liveModel.onDidChangeContent(forceRerender);
-    return () => sub.dispose();
+    return () => {
+      if (!liveModel.isDisposed()) sub.dispose();
+    };
   }, [liveModel]);
 
   useEffect(() => {
@@ -45,10 +51,7 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
 
   const content = liveModel ? liveModel.getValue() : fetchedContent;
 
-  const html = useMemo(() => {
-    if (content == null) return "";
-    return DOMPurify.sanitize(marked.parse(content, { async: false }) as string);
-  }, [content]);
+  const html = useMemo(() => (content == null ? "" : renderMarkdownToHtml(content)), [content]);
 
   return (
     <>

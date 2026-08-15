@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowCounterClockwise,
+  FloppyDisk,
   GearSix,
   GitBranch,
   Keyboard,
@@ -16,8 +17,10 @@ import { useUiStore } from "../../state/uiStore";
 import type { ThemeId } from "../../design/themes";
 import { themes, THEME_LABELS } from "../../design/themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
-import { Modal, IconButton } from "../primitives";
+import { Modal, IconButton, Switch } from "../primitives";
 import { HooksPane } from "./HooksPane";
+import { AgentsPane } from "./AgentsPane";
+import { KeybindingsPane } from "./KeybindingsPane";
 import styles from "./SettingsModal.module.css";
 
 type Section = "general" | "appearance" | "agents" | "hooks" | "keybindings";
@@ -30,13 +33,27 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
 ];
 
-const PLACEHOLDER_COPY: Record<Exclude<Section, "appearance" | "hooks">, string> = {
-  general: "General preferences land alongside their features in later phases.",
-  agents:
-    "Agent binary paths, detected versions, and default flags — wired in Phase 5/6 once the CLI adapters exist.",
-  keybindings:
-    "View and rebind the built-in keymap — wired once every command it references actually exists.",
-};
+function GeneralPane() {
+  const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
+  const setAutoSaveEnabled = useUiStore((s) => s.setAutoSaveEnabled);
+
+  return (
+    <div className={styles.group}>
+      <span className={styles.groupLabel}>Editor</span>
+      <div className={styles.presetRow}>
+        <FloppyDisk size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Auto save</div>
+          <div className={styles.presetDescription}>
+            Automatically save changes shortly after you stop typing, like VS Code — no need to
+            press Cmd/Ctrl+S.
+          </div>
+        </div>
+        <Switch label="Auto save" checked={autoSaveEnabled} onCheckedChange={setAutoSaveEnabled} />
+      </div>
+    </div>
+  );
+}
 
 function AppearancePane() {
   const theme = useUiStore((s) => s.theme);
@@ -155,11 +172,11 @@ export function SettingsModal() {
           </div>
         </div>
         <div className={styles.paneBody}>
+          {section === "general" && <GeneralPane />}
           {section === "appearance" && <AppearancePane />}
-          {section === "hooks" && <HooksPane />}
-          {section !== "appearance" && section !== "hooks" && (
-            <p className={styles.placeholder}>{PLACEHOLDER_COPY[section]}</p>
-          )}
+          {section === "hooks" && <HooksPane scope={{ kind: "global" }} />}
+          {section === "agents" && <AgentsPane />}
+          {section === "keybindings" && <KeybindingsPane />}
         </div>
       </div>
     </Modal>

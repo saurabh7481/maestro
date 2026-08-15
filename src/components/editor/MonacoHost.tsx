@@ -4,15 +4,20 @@ import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
 import { useExplorerStore } from "../../state/explorerStore";
+import { useUiStore } from "../../state/uiStore";
+import { useSearchStore } from "../../state/searchStore";
 import { fsApi } from "../../api/fs";
 import { listenToFsEvents } from "../../api/fsEvents";
 import { getModel, getOrCreateModel } from "../../editor/monacoModelRegistry";
+import { saveFileTab } from "../../editor/saveFile";
 import styles from "./MonacoHost.module.css";
 
 const LARGE_FILE_BYTES = 2 * 1024 * 1024;
+const AUTO_SAVE_DELAY_MS = 800;
 
 const MONACO_FONT_FAMILY =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const BASE_FONT_SIZE = 13;
 
 /** The one Monaco instance for the whole app session — mounted lazily
  * (see MainContent.tsx) on first file/markdown-source tab open, then kept
@@ -24,6 +29,7 @@ export function MonacoHost() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const loadedTabIdRef = useRef<string | null>(null);
+  const autoSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabId = useTabsStore((s) => s.activeTabId);
@@ -37,6 +43,8 @@ export function MonacoHost() {
   const setExternalChangePending = useOpenFilesStore((s) => s.setExternalChangePending);
   const setLoadState = useFileLoadStore((s) => s.setState);
   const worktreeId = useExplorerStore((s) => s.worktreeId);
+
+  const zoom = useUiStore((s) => s.zoom);
 
   const loadState = useFileLoadStore((s) => (activeTab ? s.byTabId[activeTab.id] : undefined));
   const isNonTextKind =
@@ -54,24 +62,54 @@ export function MonacoHost() {
       automaticLayout: true,
       theme: "vs-dark",
       fontFamily: MONACO_FONT_FAMILY,
-      fontSize: 13,
+      fontSize: BASE_FONT_SIZE,
       minimap: { enabled: true },
       scrollBeyondLastLine: false,
     });
     editorRef.current = editor;
+    const timers = autoSaveTimers.current;
 
     const changeSub = editor.onDidChangeModelContent(() => {
       const tabId = loadedTabIdRef.current;
-      if (tabId) setDirty(tabId, true);
+      if (!tabId) return;
+      setDirty(tabId, true);
+
+      const pending = timers.get(tabId);
+      if (pending) clearTimeout(pending);
+      if (!useUiStore.getState().autoSaveEnabled) return;
+
+      timers.set(
+        tabId,
+        setTimeout(() => {
+          timers.delete(tabId);
+          const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+          if (!tab || (tab.type !== "file" && tab.type !== "markdown")) return;
+          if (!tab.worktreeRoot || !tab.filePath) return;
+          if (!useOpenFilesStore.getState().byTabId[tabId]?.dirty) return;
+
+          void saveFileTab(tabId, tab.worktreeRoot, tab.filePath).catch(() => {
+            useOpenFilesStore.getState().setExternalChangePending(tabId, true);
+          });
+        }, AUTO_SAVE_DELAY_MS),
+      );
     });
 
     return () => {
       changeSub.dispose();
       editor.dispose();
       editorRef.current = null;
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // App-level zoom (Cmd/Ctrl +/-) scales the whole rem-based UI via
+  // --zoom, but Monaco manages its own canvas-rendered font size — it
+  // never picks that up on its own, so mirror it explicitly here.
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
+  }, [zoom]);
 
   // Attach the right model whenever the visible target tab changes.
   useEffect(() => {
@@ -99,6 +137,24 @@ export function MonacoHost() {
       editor?.setModel(model);
       const saved = viewStates.current.get(tabId);
       if (saved) editor?.restoreViewState(saved);
+
+      // A pending "jump to this match" from the Search panel (see
+      // searchStore.ts's `reveal`) — consumed once, here, since this is
+      // the point a tab's model actually becomes visible in the editor.
+      const pendingReveal = useSearchStore.getState().pendingReveal;
+      if (pendingReveal?.tabId === tabId) {
+        const { line, matchStart, matchEnd } = pendingReveal;
+        const selection = {
+          startLineNumber: line,
+          startColumn: matchStart + 1,
+          endLineNumber: line,
+          endColumn: matchEnd + 1,
+        };
+        editor?.revealLineInCenter(line);
+        editor?.setSelection(selection);
+        useSearchStore.getState().clearPendingReveal();
+      }
+
       editor?.focus();
       loadedTabIdRef.current = tabId;
       setLoadState(tabId, { kind: "text" });
@@ -148,6 +204,9 @@ export function MonacoHost() {
   useEffect(() => {
     if (!worktreeId) return;
     const unlistenPromise = listenToFsEvents(worktreeId, (event) => {
+      // Defensive: a malformed/partial event should skip this pass, not
+      // crash the whole renderer (see `api/fsEvents.ts`).
+      if (!event?.touchedPaths) return;
       for (const touched of event.touchedPaths) {
         const tab = tabs.find(
           (t) => (t.type === "file" || t.type === "markdown") && t.filePath === touched,

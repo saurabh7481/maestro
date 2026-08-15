@@ -8,6 +8,8 @@ export { Modal } from "./Modal";
 export type { ModalProps } from "./Modal";
 export { TextInput, TextArea, Select } from "./Field";
 export type { TextInputProps, TextAreaProps, SelectProps } from "./Field";
+export { Dropdown } from "./Dropdown";
+export type { DropdownProps, DropdownOption } from "./Dropdown";
 export { AlertDialog } from "./AlertDialog";
 export type { AlertDialogProps } from "./AlertDialog";
 export { Switch } from "./Switch";

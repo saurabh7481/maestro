@@ -1,4 +1,5 @@
 .overlay {
+  composes: fadeIn from "../../styles/motion.module.css";
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
@@ -7,10 +8,10 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-10);
-  animation: mo-fade-in var(--duration-base) var(--ease-out);
 }
 
 .content {
+  composes: scaleIn from "../../styles/motion.module.css";
   width: min(var(--modal-width, 56rem), 100%);
   height: min(var(--modal-height, 40rem), 100%);
   background: var(--bg-2);
@@ -19,7 +20,6 @@
   box-shadow: var(--shadow-modal);
   display: flex;
   overflow: hidden;
-  animation: mo-scale-in var(--duration-base) var(--ease-out);
 }
 
 .content:focus-visible {

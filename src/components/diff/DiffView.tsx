@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowCounterClockwise, GitDiff, Minus, Plus } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, Folder, GitDiff, Minus, Plus } from "@phosphor-icons/react";
 import { useTabsStore, type Tab } from "../../state/tabsStore";
 import { useScmStore } from "../../state/scmStore";
 import { formatBytes } from "../../editor/formatBytes";
@@ -10,7 +10,9 @@ import styles from "./DiffView.module.css";
 
 function splitPath(path: string): { name: string; dir: string } {
   const idx = path.lastIndexOf("/");
-  return idx === -1 ? { name: path, dir: "" } : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
+  return idx === -1
+    ? { name: path, dir: "" }
+    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
 }
 
 /** Tab content for `type: "diff"` — header chrome ported from
@@ -85,7 +87,11 @@ export function DiffView({ tab }: { tab: Tab }) {
         )}
         <div className={styles.actions}>
           {mode === "commit" && <span className={styles.readOnlyBadge}>Read-only</span>}
-          {mode === "unstaged" && (
+          {/* A directory entry (nested worktree/submodule boundary — see the
+              body panel below) isn't something a plain Stage/Revert click
+              should touch: staging it would add it to the index as a
+              gitlink, and there's nothing to line-diff. */}
+          {diff?.kind !== "directory" && mode === "unstaged" && (
             <>
               <button
                 type="button"
@@ -108,7 +114,7 @@ export function DiffView({ tab }: { tab: Tab }) {
               </button>
             </>
           )}
-          {mode === "staged" && (
+          {diff?.kind !== "directory" && mode === "staged" && (
             <button
               type="button"
               className={styles.actionBtn}
@@ -125,6 +131,15 @@ export function DiffView({ tab }: { tab: Tab }) {
       <div className={styles.body}>
         {error && <div className={styles.errorPanel}>{error}</div>}
         {!error && !diff && <div className={styles.centered}>Loading diff…</div>}
+        {!error && diff?.kind === "directory" && (
+          <div className={styles.binaryPanel}>
+            <Folder size={28} color="var(--text-mute)" />
+            <span>
+              This is a directory, not a file — most likely a nested Git worktree or submodule
+              that git won't expand into individual files.
+            </span>
+          </div>
+        )}
         {!error && diff?.kind === "binary" && (
           <div className={styles.binaryPanel}>
             <span>Binary file changed</span>

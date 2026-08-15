@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CommitFileEntry, CommitSummary, DiffContent, DiffMode, WorkingStatus } from "../types/git";
+import type {
+  CommitFileEntry,
+  CommitSummary,
+  DiffContent,
+  DiffMode,
+  WorkingStatus,
+} from "../types/git";
 
 /** Thin, typed wrapper around the SCM-related Tauri command surface — same
  * pattern as `fsApi` in `src/api/fs.ts`. Mutating commands take both

@@ -40,9 +40,15 @@ fn rel_path(worktree_root: &Path, path: &Path) -> Option<String> {
         .map(|p| p.to_string_lossy().replace('\\', "/"))
 }
 
+// See `git.rs::DiffContent`'s comment — enum-level `rename_all` doesn't
+// cascade into struct-like variants' fields. This was the actual root
+// cause behind the earlier "event.touchedPaths is undefined" crashes —
+// every field here was serializing as snake_case, so the frontend guards
+// added to survive that were silently discarding every real event too.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum FsChangeEvent {
+    #[serde(rename_all = "camelCase")]
     Changed {
         touched_paths: Vec<String>,
         changed_dirs: Vec<String>,

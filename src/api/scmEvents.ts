@@ -7,5 +7,8 @@ import type { ScmEvent } from "../types/git";
  * watcher-ignored and staging/committing/pushing would otherwise never be
  * seen). Mirrors `fsEvents.ts`'s pattern. */
 export function listenToScmEvents(worktreeId: string, onEvent: (event: ScmEvent) => void) {
-  return listen<ScmEvent>(`scm://${worktreeId}`, (event) => onEvent(event.payload));
+  return listen<ScmEvent>(`scm://${worktreeId}`, (event) => {
+    // Defensive against a malformed/undefined payload — see `fsEvents.ts`.
+    if (event?.payload) onEvent(event.payload);
+  });
 }

@@ -1,40 +1,55 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, Copy, Link, Package } from "@phosphor-icons/react";
+import { CheckCircle, Copy, Globe, Link, Package } from "@phosphor-icons/react";
 import { workspaceApi } from "../../api/workspace";
-import { useActiveProject } from "../../state/workspaceStore";
-import type { HookConfig, Project } from "../../types/workspace";
+import type { HookConfig } from "../../types/workspace";
 import { Button, Switch, TextArea, TextInput } from "../primitives";
 import styles from "./SettingsModal.module.css";
 
 const VARIABLES = ["$NEW_WORKTREE", "$SOURCE_WORKTREE", "$BRANCH", "$PROJECT_ROOT"];
 
-export function HooksPane() {
-  const project = useActiveProject();
-  if (!project) {
-    return (
-      <p className={styles.placeholder}>
-        Add a project first — worktree hooks are configured per project.
-      </p>
-    );
-  }
-  // Keyed by project id: switching the active project fully remounts this,
-  // so config state starts fresh without needing a reset-on-change effect.
-  return <HooksPaneForProject key={project.id} project={project} />;
+export type HooksPaneScope =
+  | { kind: "global" }
+  | { kind: "project"; projectId: string; projectName: string };
+
+/** Worktree-creation hooks, editable at two levels: a global default
+ * (`kind: "global"`, Settings → Worktree Hooks) applied to every project,
+ * and a per-project override (`kind: "project"`, opened from a project's
+ * right-click → Settings) that — only once its own "Override global
+ * settings" switch is on — replaces the global config for that project's
+ * worktrees. See `commands/hooks.rs::resolve_effective_hook_config` for
+ * where that resolution actually happens. */
+export function HooksPane({ scope }: { scope: HooksPaneScope }) {
+  // Keyed on the target (global vs a specific project) so switching
+  // targets fully remounts this, resetting local config/saved/saving
+  // state without needing a reset-on-change effect.
+  const key = scope.kind === "global" ? "global" : `project:${scope.projectId}`;
+  return <HooksPaneBody key={key} scope={scope} />;
 }
 
-function HooksPaneForProject({ project }: { project: Project }) {
+function HooksPaneBody({ scope }: { scope: HooksPaneScope }) {
   const [config, setConfig] = useState<HookConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const scriptRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    void workspaceApi.getHookConfig(project.id).then(setConfig);
-  }, [project.id]);
+    const load =
+      scope.kind === "global"
+        ? workspaceApi.getGlobalHookConfig()
+        : workspaceApi.getHookConfig(scope.projectId);
+    void load.then(setConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!config) {
     return <p className={styles.placeholder}>Loading…</p>;
   }
+
+  // Project scope, override off: the rest of the form describes settings
+  // that don't currently apply (the global config governs instead), so
+  // it's disabled rather than hidden — the user can see and stage values
+  // before flipping the switch on.
+  const fieldsDisabled = scope.kind === "project" && !config.overrideEnabled;
 
   function update(patch: Partial<HookConfig>) {
     setConfig((c) => (c ? { ...c, ...patch } : c));
@@ -58,7 +73,11 @@ function HooksPaneForProject({ project }: { project: Project }) {
     if (!config) return;
     setSaving(true);
     try {
-      await workspaceApi.setHookConfig(project.id, config);
+      if (scope.kind === "global") {
+        await workspaceApi.setGlobalHookConfig(config);
+      } else {
+        await workspaceApi.setHookConfig(scope.projectId, config);
+      }
       setSaved(true);
     } finally {
       setSaving(false);
@@ -67,7 +86,28 @@ function HooksPaneForProject({ project }: { project: Project }) {
 
   return (
     <>
-      <div className={styles.group}>
+      {scope.kind === "project" && (
+        <div className={styles.group}>
+          <div className={styles.presetRow}>
+            <Globe size={18} color="var(--accent-2)" />
+            <div className={styles.presetText}>
+              <div className={styles.presetTitle}>Override global settings</div>
+              <div className={styles.presetDescription}>
+                When off, <strong style={{ color: "var(--text-dim)" }}>{scope.projectName}</strong>{" "}
+                uses the global worktree hooks. When on, the settings below replace the global
+                config for this project only.
+              </div>
+            </div>
+            <Switch
+              label="Override global settings"
+              checked={config.overrideEnabled}
+              onCheckedChange={(v) => update({ overrideEnabled: v })}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={styles.group} style={fieldsDisabled ? { opacity: 0.5 } : undefined}>
         <span className={styles.groupLabel}>Quick presets</span>
 
         <div className={styles.presetRow}>
@@ -80,6 +120,7 @@ function HooksPaneForProject({ project }: { project: Project }) {
             label="Copy .env files"
             checked={config.copyEnvFiles}
             onCheckedChange={(v) => update({ copyEnvFiles: v })}
+            disabled={fieldsDisabled}
           />
         </div>
 
@@ -93,6 +134,7 @@ function HooksPaneForProject({ project }: { project: Project }) {
                   value={config.installCommand ?? ""}
                   placeholder="pnpm install"
                   onChange={(e) => update({ installCommand: e.target.value })}
+                  disabled={fieldsDisabled}
                 />
               </div>
             )}
@@ -106,6 +148,7 @@ function HooksPaneForProject({ project }: { project: Project }) {
             label="Run install command"
             checked={config.runInstallCommand}
             onCheckedChange={(v) => update({ runInstallCommand: v })}
+            disabled={fieldsDisabled}
           />
         </div>
 
@@ -119,11 +162,12 @@ function HooksPaneForProject({ project }: { project: Project }) {
             label="Symlink node_modules"
             checked={config.symlinkNodeModules}
             onCheckedChange={(v) => update({ symlinkNodeModules: v })}
+            disabled={fieldsDisabled}
           />
         </div>
       </div>
 
-      <div className={styles.group}>
+      <div className={styles.group} style={fieldsDisabled ? { opacity: 0.5 } : undefined}>
         <div className={styles.scriptHeader}>
           <span className={styles.groupLabel} style={{ flex: 1 }}>
             Custom post-create hook
@@ -133,6 +177,7 @@ function HooksPaneForProject({ project }: { project: Project }) {
             label="Enable custom script"
             checked={config.customScriptEnabled}
             onCheckedChange={(v) => update({ customScriptEnabled: v })}
+            disabled={fieldsDisabled}
           />
         </div>
         <TextArea
@@ -141,11 +186,12 @@ function HooksPaneForProject({ project }: { project: Project }) {
           placeholder={'#!/usr/bin/env bash\ncd "$NEW_WORKTREE" && pnpm install'}
           value={config.customScript}
           onChange={(e) => update({ customScript: e.target.value })}
+          disabled={fieldsDisabled}
         />
         <div className={styles.chips}>
           <span className={styles.chipsLabel}>Variables:</span>
           {VARIABLES.map((v) => (
-            <span key={v} className={styles.chip} onClick={() => insertVariable(v)}>
+            <span key={v} className={styles.chip} onClick={() => !fieldsDisabled && insertVariable(v)}>
               {v}
             </span>
           ))}
@@ -171,7 +217,13 @@ function HooksPaneForProject({ project }: { project: Project }) {
           </span>
         )}
         <span className={styles.footerNote} style={{ marginLeft: "auto" }}>
-          Applies to <strong style={{ color: "var(--text-dim)" }}>{project.name}</strong>
+          {scope.kind === "global" ? (
+            "Applies to every project without its own override"
+          ) : (
+            <>
+              Applies to <strong style={{ color: "var(--text-dim)" }}>{scope.projectName}</strong>
+            </>
+          )}
         </span>
       </div>
     </>

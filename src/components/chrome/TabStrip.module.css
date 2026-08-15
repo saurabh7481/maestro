@@ -106,6 +106,7 @@
 /* --- New tab dropdown menu --- */
 
 .menu {
+  composes: scaleIn from "../../styles/motion.module.css";
   width: 20.5rem;
   z-index: var(--z-dropdown);
   border: var(--border-width) solid var(--border-2);
@@ -113,7 +114,6 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   padding: var(--space-3);
-  animation: mo-scale-in var(--duration-fast) var(--ease-out);
   transform-origin: var(--radix-dropdown-menu-content-transform-origin);
 }
 
@@ -141,9 +141,16 @@
   cursor: pointer;
   outline: none;
 }
-.agentItem:hover,
-.agentItem[data-highlighted] {
+.agentItem:hover:not([data-disabled]),
+.agentItem[data-highlighted]:not([data-disabled]) {
   background: var(--active);
+}
+/* Radix only marks a disabled `DropdownMenu.Item` with `data-disabled` —
+   it doesn't dim it, so an agent that isn't installed/authenticated read
+   as just as clickable as a ready one. */
+.agentItem[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .agentIcon {
@@ -194,6 +201,12 @@
   font-size: var(--text-2xs);
   color: var(--text-mute);
   font-family: var(--font-mono);
+}
+
+.resumeEmpty {
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-xs);
+  color: var(--text-mute);
 }
 
 .terminalItem {

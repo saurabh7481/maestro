@@ -1,0 +1,73 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--text);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.trigger:hover {
+  border-color: var(--border-2);
+}
+.trigger[data-state="open"] {
+  border-color: var(--accent);
+}
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.content {
+  composes: scaleIn from "../../styles/motion.module.css";
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  max-height: 18rem;
+  overflow: auto;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  z-index: var(--z-dropdown);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.item:hover,
+.item[data-highlighted] {
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
+.item[data-active="true"] {
+  color: var(--text);
+}
+
+.itemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

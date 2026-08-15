@@ -1,0 +1,110 @@
+.card {
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-3);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: mo-rise-in var(--duration-normal, 180ms) ease-out;
+  transition: border-color var(--duration-fast, 150ms) ease-out;
+}
+.card:hover {
+  border-color: var(--border-2);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  user-select: none;
+}
+.header:hover {
+  background: var(--hover);
+}
+
+.name {
+  color: var(--text);
+  flex: none;
+}
+
+.summary {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-mute);
+  flex: none;
+}
+
+.added {
+  color: var(--green);
+}
+.removed {
+  color: var(--red);
+}
+.needsPermission {
+  color: var(--red);
+}
+
+.body {
+  border-top: var(--border-width) solid var(--border);
+  animation: mo-scale-in var(--duration-fast, 150ms) ease-out;
+}
+
+.output {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  padding: var(--space-5) var(--space-6);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 16rem;
+  overflow: auto;
+}
+.output[data-error="true"] {
+  color: var(--red);
+}
+
+.diff {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  padding: var(--space-3) 0;
+}
+
+.diffLine {
+  padding: 0 var(--space-6);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diffLine[data-sign="-"] {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+.diffLine[data-sign="+"] {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+}
+
+.expandToggle {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+  cursor: pointer;
+  border-top: var(--border-width) solid var(--border);
+}
+.expandToggle:hover {
+  color: var(--text-dim);
+}

@@ -4,6 +4,7 @@ import type { Icon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import styles from "./IconButton.module.css";
 import { Tooltip } from "./Tooltip";
+import { ICON_SIZE } from "../../design/iconSize";
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: Icon;
@@ -17,9 +18,9 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 const DEFAULT_ICON_SIZE: Record<NonNullable<IconButtonProps["size"]>, number> = {
-  sm: 14,
-  md: 16,
-  lg: 20,
+  sm: ICON_SIZE.sm,
+  md: ICON_SIZE.md,
+  lg: ICON_SIZE.lg,
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(

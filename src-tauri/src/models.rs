@@ -34,6 +34,14 @@ pub struct HookConfig {
     pub symlink_node_modules: bool,
     pub custom_script_enabled: bool,
     pub custom_script: String,
+    /// Project-scoped configs only — meaningless on the global config (see
+    /// `commands/hooks.rs`), which is always the fallback and has no
+    /// "overrides" of its own. When true, this project's own field values
+    /// are used instead of the global config's for that project's
+    /// worktrees. Defaults to `false` so a freshly-added project inherits
+    /// the global config until the user explicitly opts a project out.
+    #[serde(default)]
+    pub override_enabled: bool,
 }
 
 impl Default for HookConfig {
@@ -45,6 +53,7 @@ impl Default for HookConfig {
             symlink_node_modules: false,
             custom_script_enabled: false,
             custom_script: String::new(),
+            override_enabled: false,
         }
     }
 }

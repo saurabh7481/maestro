@@ -7,7 +7,9 @@ use tokio::process::Command;
 /// Shells out to the system `git` binary rather than a libgit2 binding —
 /// `git worktree` support in libgit2-based bindings (Rust's `git2`
 /// included) is incomplete/unreliable. See docs/ARCHITECTURE.md §7.
-async fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
+/// `pub(crate)` so `search.rs` can reuse it for `git ls-files`-based file
+/// enumeration instead of a second gitignore-parsing implementation.
+pub(crate) async fn run_git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -288,10 +290,23 @@ fn parse_unmerged(rest: &str) -> Option<(char, char, String)> {
 /// it explicitly. Unmerged (`u `) entries are surfaced as `Conflicted`,
 /// never collapsed into `Modified` — conflicts need to be visibly distinct
 /// in the SCM view, not silently shown as a plain change.
+///
+/// `--untracked-files=all`: without it, git's default ("normal") mode
+/// collapses an entirely-untracked directory into one `? <dir>/` entry
+/// instead of listing the files inside it — fine for `git status` on a
+/// terminal, but wrong for a UI that's meant to list files one per row
+/// (VS Code's git panel always expands these; each `?` entry it shows is
+/// a real file, never a directory).
 pub async fn working_status(worktree_dir: &Path) -> Result<WorkingStatus, String> {
     let out = run_git(
         worktree_dir,
-        &["status", "--porcelain=v2", "--branch", "-z"],
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "-z",
+            "--untracked-files=all",
+        ],
     )
     .await?;
 
@@ -398,6 +413,24 @@ pub async fn status_map(worktree_dir: &Path) -> Result<HashMap<String, char>, St
     Ok(status_glyphs(&status))
 }
 
+/// Plain-text `git diff --staged`, for feeding into a commit-message
+/// generation prompt (`commands/agents.rs::generate_commit_message`) —
+/// deliberately not the structured `DiffContent` used by the Monaco diff
+/// tab, since this just needs to be text a model reads, not something a
+/// UI renders.
+pub async fn staged_diff_text(dir: &Path) -> Result<String, String> {
+    run_git(dir, &["diff", "--staged"]).await
+}
+
+/// `git diff --staged --stat`'s per-file summary (path + insertion/deletion
+/// counts) — cheap to compute and gives a commit-message prompt an
+/// unambiguous list of exactly which files changed, instead of relying on
+/// the model to infer that correctly from `+++`/`---` hunk headers buried
+/// in a possibly-truncated full diff.
+pub async fn staged_diff_stat(dir: &Path) -> Result<String, String> {
+    run_git(dir, &["diff", "--staged", "--stat"]).await
+}
+
 pub async fn stage_paths(dir: &Path, rel_paths: &[String]) -> Result<(), String> {
     if rel_paths.is_empty() {
         return Ok(());
@@ -448,19 +481,74 @@ pub async fn commit(dir: &Path, message: &str) -> Result<String, String> {
     Ok(hash.trim().to_string())
 }
 
-/// No `-u`/upstream auto-configuration — a push that fails because no
-/// upstream is set surfaces git's own error verbatim rather than silently
-/// guessing at one.
+async fn current_branch(dir: &Path) -> Result<String, String> {
+    let out = run_git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
+    Ok(out.trim().to_string())
+}
+
+/// The first configured remote, or an error if there isn't one — used as
+/// the "which remote" guess when auto-wiring upstream tracking below.
+/// Almost every repo has exactly one remote (`origin`), and this avoids
+/// hardcoding that name for the (rarer) repo that renamed or added a
+/// second one.
+async fn default_remote(dir: &Path) -> Result<String, String> {
+    let out = run_git(dir, &["remote"]).await?;
+    out.lines()
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "no git remote configured".to_string())
+}
+
+/// Every worktree's branch starts with no upstream configured (`git
+/// worktree add -b` never wires one up — see `commands/worktrees.rs`), so
+/// a plain `git push` on a brand-new branch always fails with "no
+/// upstream branch" until the user runs `--set-upstream` manually once.
+/// Retrying with `--set-upstream <remote> <branch>` on exactly that
+/// failure makes the first push from a new worktree just work, the same
+/// way `git push -u` would, without silently changing behavior for repos
+/// that already track a remote branch (the plain `push` still runs first
+/// and is enough for that common case).
 pub async fn push(dir: &Path) -> Result<(), String> {
-    run_git(dir, &["push"]).await?;
-    Ok(())
+    match run_git(dir, &["push"]).await {
+        Ok(_) => Ok(()),
+        Err(err) if err.contains("has no upstream branch") => {
+            let branch = current_branch(dir).await?;
+            let remote = default_remote(dir).await.map_err(|_| err.clone())?;
+            run_git(dir, &["push", "--set-upstream", &remote, &branch]).await?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
 }
 
 /// Fast-forward only — never silently creates a merge commit. A diverged
 /// history surfaces as an `Err` for the caller to show, not to resolve.
+///
+/// Same upstream gap as `push` above, but pull can only wire tracking up
+/// if the remote actually already has a branch of this name (there being
+/// nothing to fast-forward from a branch that doesn't exist remotely is a
+/// real error, not a one-time setup step to paper over).
 pub async fn pull(dir: &Path) -> Result<(), String> {
-    run_git(dir, &["pull", "--ff-only"]).await?;
-    Ok(())
+    match run_git(dir, &["pull", "--ff-only"]).await {
+        Ok(_) => Ok(()),
+        Err(err) if err.contains("no tracking information") => {
+            let branch = current_branch(dir).await?;
+            let remote = default_remote(dir).await.map_err(|_| err.clone())?;
+            run_git(dir, &["fetch", &remote]).await?;
+            let remote_ref = format!("{remote}/{branch}");
+            if run_git(dir, &["rev-parse", "--verify", &remote_ref])
+                .await
+                .is_err()
+            {
+                return Err(err);
+            }
+            run_git(dir, &["branch", "--set-upstream-to", &remote_ref, &branch]).await?;
+            run_git(dir, &["pull", "--ff-only"]).await?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
 }
 
 pub async fn fetch(dir: &Path) -> Result<(), String> {
@@ -476,9 +564,15 @@ pub enum DiffMode {
     Commit,
 }
 
+// `rename_all` on the enum itself only renames the variant tags ("Text" ->
+// "text"), not the fields of a struct-like variant — each variant needs
+// its own `rename_all` for that (confirmed via a serde_json round-trip:
+// without this, fields serialized as `old_text`/`new_text` instead of the
+// camelCase the frontend's `DiffContent` type expects).
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DiffContent {
+    #[serde(rename_all = "camelCase")]
     Text {
         old_text: String,
         new_text: String,
@@ -487,10 +581,18 @@ pub enum DiffContent {
         added: u32,
         removed: u32,
     },
+    #[serde(rename_all = "camelCase")]
     Binary {
         old_size: Option<u64>,
         new_size: Option<u64>,
     },
+    /// An untracked path git reports as a single opaque entry because it's
+    /// a repository boundary it won't descend into — most commonly a
+    /// nested `git worktree` checkout (this project's own worktree
+    /// directories can end up here) or a submodule. `--untracked-files=all`
+    /// doesn't expand these; there's no file content to diff, only a
+    /// directory, so reading it as a file fails with "Is a directory".
+    Directory,
 }
 
 /// The well-known empty-tree object — diffing a root commit (no parent)
@@ -583,7 +685,15 @@ async fn diff_unstaged(dir: &Path, rel_path: &str) -> Result<DiffContent, String
                     removed: 0,
                 });
             }
-            let bytes = tokio::fs::read(dir.join(rel_path))
+            let full_path = dir.join(rel_path);
+            if tokio::fs::metadata(&full_path)
+                .await
+                .map(|m| m.is_dir())
+                .unwrap_or(false)
+            {
+                return Ok(DiffContent::Directory);
+            }
+            let bytes = tokio::fs::read(&full_path)
                 .await
                 .map_err(|e| e.to_string())?;
             if fs_ops::looks_binary(&bytes) {

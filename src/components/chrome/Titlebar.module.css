@@ -1,3 +1,14 @@
+/* A bare `<Icon>` as a direct flex child can render invisible in this
+   app's WebKitGTK build once space gets tight — see
+   `ExplorerSidebar.module.css`'s `.fileIcon` / `Sidebar.module.css`'s
+   `.rowIcon` comment for the full explanation; same fix, duplicated
+   here since this file doesn't share a stylesheet with those. */
+.rowIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
 .titlebar {
   height: 2.75rem;
   flex: none;
@@ -94,27 +105,133 @@
   text-align: left;
 }
 
-.themeSwatches {
-  display: flex;
-  align-items: center;
-  gap: 0.3125rem;
+.switcherMenu {
+  composes: scaleIn from "../../styles/motion.module.css";
+  min-width: 16rem;
+  max-height: 24rem;
+  overflow: auto;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  z-index: var(--z-dropdown);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
 }
 
-.swatch {
+.switcherEmpty {
+  padding: var(--space-5);
+  color: var(--text-mute);
+  font-size: var(--text-sm);
+}
+
+.switcherGroup + .switcherGroup {
+  margin-top: var(--space-3);
+}
+
+.switcherGroupLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+
+.switcherItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-8);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  outline: none;
+}
+.switcherItem:hover,
+.switcherItem[data-highlighted] {
+  background: var(--hover);
+  color: var(--text);
+}
+.switcherItem[data-active="true"] {
+  color: var(--text);
+  background: var(--active);
+}
+
+.switcherItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.themeTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.themeTrigger:hover,
+.themeTrigger[data-state="open"] {
+  background: var(--hover);
+}
+
+.themeSwatch {
   width: 0.9375rem;
   height: 0.9375rem;
   border-radius: var(--radius-full);
-  cursor: pointer;
+  flex: none;
   border: 1.5px solid var(--border-2);
-  padding: 0;
-  transition: transform var(--duration-fast) var(--ease-out);
 }
-.swatch:hover {
-  transform: scale(1.15);
+
+/* Scrolls once the theme list outgrows a comfortable menu height, so
+   adding more themes over time never blows out the titlebar. */
+.themeMenu {
+  composes: scaleIn from "../../styles/motion.module.css";
+  min-width: 11rem;
+  max-height: 18rem;
+  overflow: auto;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  z-index: var(--z-dropdown);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
 }
-.swatch[data-active="true"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+
+.themeMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.themeMenuItem:hover,
+.themeMenuItem[data-highlighted] {
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
+.themeMenuItem[data-active="true"] {
+  color: var(--text);
+}
+
+.themeMenuLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .windowControls {

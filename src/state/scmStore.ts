@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { gitApi } from "../api/git";
 import { listenToScmEvents } from "../api/scmEvents";
 import { useWorkspaceStore } from "./workspaceStore";
+import { useToastStore } from "./toastStore";
 import type {
   CommitFileEntry,
   CommitSummary,
@@ -113,6 +114,9 @@ export const useScmStore = create<ScmState>((set, get) => ({
   // and a currently-open diff tab re-fetching after a stage/unstage is
   // exactly the behavior that keeps it from showing stale content.
   applyScmEvent: (event) => {
+    // Defensive: a malformed event should be skipped, not crash the
+    // whole renderer (see `api/fsEvents.ts`).
+    if (!event?.status) return;
     set({ status: event.status, diffCache: new Map() });
     const { worktreeId } = get();
     if (worktreeId) {
@@ -214,6 +218,7 @@ export const useScmStore = create<ScmState>((set, get) => ({
       await gitApi.pushChanges(worktreeId, worktreeRoot);
     } catch (error) {
       set({ error: String(error) });
+      useToastStore.getState().push({ tone: "error", title: "Push failed", description: String(error) });
       throw error;
     }
   },

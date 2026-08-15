@@ -1,0 +1,44 @@
+/* Presence-safe entrance transitions for every Radix popup (Tooltip,
+   DropdownMenu, ContextMenu, Dialog, AlertDialog).
+   Radix's `Presence` component decides whether to unmount a closed
+   popup immediately or wait for an exit animation by inspecting the
+   element's computed `animation-name` — a `@keyframes`-based entrance
+   (this app's original `animation: mo-fade-in/mo-scale-in ...`) leaves
+   that property permanently non-"none" (CSS doesn't reset it after
+   playback finishes), so Presence waits for a real `animationend` event
+   to ever unmount it. On this machine's WebKitGTK build — and,
+   confirmed via a throwaway Electron/Chromium test harness, in a
+   GPU-constrained Chromium too — that event doesn't reliably fire, so
+   affected popups get stuck permanently visible even after Radix's own
+   open state has already flipped to closed (this was the real cause of
+   tooltips/menus "not closing" — not a Wayland/compositor issue, which
+   was an earlier, incorrect diagnosis).
+
+   `transition` + `@starting-style` sidesteps the whole class of bug: it
+   isn't tracked by the CSS Animations API at all, so `animation-name`
+   always reads "none" and Presence always unmounts immediately —
+   regardless of whether the entrance transition itself gets to finish
+   playing. Apply via `composes: fadeIn from "…motion.module.css";` (or
+   `scaleIn`) on the popup's overlay/content class instead of using
+   `animation: mo-*` directly. */
+
+.fadeIn {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+@starting-style {
+  .fadeIn {
+    opacity: 0;
+  }
+}
+
+.scaleIn {
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+@starting-style {
+  .scaleIn {
+    opacity: 0;
+    transform: scale(0.97) translateY(2px);
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowCounterClockwise,
   ArrowsClockwise,
@@ -8,23 +9,33 @@ import {
   Check,
   Minus,
   Plus,
+  Sparkle,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useTabsStore, diffTabId } from "../../state/tabsStore";
 import { useUiStore } from "../../state/uiStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useScmStore } from "../../state/scmStore";
+import { useReadyAgentKinds } from "../../state/agentAvailabilityStore";
+import { agentsApi } from "../../api/agents";
+import { AGENT_DISPLAY_NAME } from "../../types/agent";
+import type { AgentKind } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
 import { iconForFile } from "../explorer/fileIcons";
-import { AlertDialog, Button } from "../primitives";
+import { AlertDialog, Button, IconButton, Tooltip } from "../primitives";
+import { ICON_SIZE } from "../../design/iconSize";
 import { FileTree } from "../explorer/FileTree";
+import { SearchPanel } from "../search/SearchPanel";
+import { ScmContextMenu } from "./ScmContextMenu";
 import type { CommitFileEntry, FileStatusEntry, StatusKind } from "../../types/git";
 import sidebar from "./Sidebar.module.css";
 import styles from "./ExplorerSidebar.module.css";
 
 function splitPath(path: string): { name: string; dir: string } {
   const idx = path.lastIndexOf("/");
-  return idx === -1 ? { name: path, dir: "" } : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
+  return idx === -1
+    ? { name: path, dir: "" }
+    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
 }
 
 function glyphFor(kind: StatusKind): { glyph: string; color: string } {
@@ -52,10 +63,20 @@ interface FileRowProps {
   kind: StatusKind;
   active: boolean;
   onOpen?: () => void;
-  actions?: ReactNode;
+  onStage?: () => void;
+  onUnstage?: () => void;
+  onDiscard?: () => void;
 }
 
-function FileRow({ entry, kind, active, onOpen, actions }: FileRowProps) {
+/** A single Source Control row: file-type icon, name, (optional) parent
+ * directory, and a trailing group of hover-revealed action buttons plus
+ * the status glyph. The trailing group carries its own `margin-left:
+ * auto` (`.trailing`) rather than relying on `.filePath`'s flex-grow to
+ * push it right — a file with no subdirectory (`dir` empty, common for
+ * repo-root scripts) previously left nothing to push against, so the
+ * glyph drifted left and column-misaligned against every row that *did*
+ * have a directory shown. */
+function FileRow({ entry, kind, active, onOpen, onStage, onUnstage, onDiscard }: FileRowProps) {
   const { name, dir } = splitPath(entry.path);
   const { icon: Icon, color } = iconForFile(name);
   const { glyph, color: glyphColor } = glyphFor(kind);
@@ -65,14 +86,149 @@ function FileRow({ entry, kind, active, onOpen, actions }: FileRowProps) {
       : name;
 
   return (
-    <div className={sidebar.row} data-active={active} onClick={onOpen}>
-      <Icon size={15} color={color} />
-      <span className={sidebar.rowLabel}>{label}</span>
-      {dir && <span className={styles.filePath}>{dir}</span>}
-      {actions}
-      <span className={styles.statusGlyph} style={{ color: glyphColor }}>
-        {glyph}
-      </span>
+    <ScmContextMenu path={entry.path} onStage={onStage} onUnstage={onUnstage} onDiscard={onDiscard}>
+      <Tooltip label={entry.path} side="left">
+        <div className={sidebar.row} data-active={active} onClick={onOpen}>
+          <span className={styles.fileIcon}>
+            <Icon size={ICON_SIZE.sm} color={color} />
+          </span>
+          <span className={styles.fileName}>{label}</span>
+          {dir && <span className={styles.filePath}>{dir}</span>}
+          <span className={styles.trailing}>
+            {onStage && (
+              <IconButton
+                icon={Plus}
+                label="Stage"
+                size="sm"
+                iconSize={13}
+                className={sidebar.rowAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStage();
+                }}
+              />
+            )}
+            {onUnstage && (
+              <IconButton
+                icon={Minus}
+                label="Unstage"
+                size="sm"
+                iconSize={13}
+                className={sidebar.rowAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUnstage();
+                }}
+              />
+            )}
+            {onDiscard && (
+              <IconButton
+                icon={ArrowCounterClockwise}
+                label="Discard"
+                size="sm"
+                iconSize={13}
+                className={sidebar.rowAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDiscard();
+                }}
+              />
+            )}
+            <span className={styles.statusGlyph} style={{ color: glyphColor }}>
+              {glyph}
+            </span>
+          </span>
+        </div>
+      </Tooltip>
+    </ScmContextMenu>
+  );
+}
+
+/** "Generate with AI" split-button — the concrete cross-feature use case
+ * that motivated centralizing agent availability
+ * (`agentAvailabilityStore`): draft a commit message from the staged
+ * diff using whichever CLI is ready, or a specifically picked one via
+ * the caret. See `commands/agents.rs::generate_commit_message`. */
+function GenerateCommitMessageButton({
+  worktreeRoot,
+  onGenerated,
+}: {
+  worktreeRoot: string;
+  onGenerated: (message: string) => void;
+}) {
+  const readyKinds = useReadyAgentKinds();
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (readyKinds.length === 0) return null;
+
+  async function generate(kind: AgentKind) {
+    setGenerating(true);
+    setError(null);
+    try {
+      const message = await agentsApi.generateCommitMessage(kind, worktreeRoot);
+      onGenerated(message);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center" }} title={error ?? undefined}>
+      <div
+        onClick={() => !generating && void generate(readyKinds[0])}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.25rem",
+          padding: "0.125rem 0.375rem",
+          borderRadius: "var(--radius-sm)",
+          cursor: generating ? "default" : "pointer",
+          fontSize: "var(--text-2xs)",
+          color: error ? "var(--red)" : "var(--text-mute)",
+        }}
+      >
+        <Sparkle size={12} className={generating ? "mo-spin" : undefined} />
+        {generating ? "Generating…" : "Generate with AI"}
+      </div>
+      {readyKinds.length > 1 && (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <div style={{ padding: "0.125rem", cursor: "pointer", color: "var(--text-mute)" }}>
+              <CaretDown size={9} />
+            </div>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="mo-glass"
+              align="end"
+              sideOffset={4}
+              style={{
+                padding: "0.25rem",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--border-2)",
+              }}
+            >
+              {readyKinds.map((kind) => (
+                <DropdownMenu.Item
+                  key={kind}
+                  onSelect={() => void generate(kind)}
+                  style={{
+                    padding: "0.375rem 0.625rem",
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer",
+                    fontSize: "var(--text-sm)",
+                  }}
+                >
+                  {AGENT_DISPLAY_NAME[kind]}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      )}
     </div>
   );
 }
@@ -86,7 +242,6 @@ function CommitBox() {
   const commit = useScmStore((s) => s.commit);
   const push = useScmStore((s) => s.push);
   const pull = useScmStore((s) => s.pull);
-  const fetch = useScmStore((s) => s.fetch);
   const activeWorktree = useActiveWorktree();
 
   const stagedCount =
@@ -138,6 +293,14 @@ function CommitBox() {
             font: "inherit",
           }}
         />
+        {activeWorktree && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.125rem" }}>
+            <GenerateCommitMessageButton
+              worktreeRoot={activeWorktree.path}
+              onGenerated={setMessage}
+            />
+          </div>
+        )}
       </div>
       {error && (
         <div className={styles.scmError} onClick={clearError}>
@@ -145,40 +308,76 @@ function CommitBox() {
         </div>
       )}
       <div className={styles.scmActions}>
-        <Button variant="primary" style={{ flex: 1 }} disabled={!canCommit} onClick={handleCommit}>
-          <Check size={15} />
+        <Button
+          variant="primary"
+          className={styles.scmAction}
+          disabled={!canCommit}
+          onClick={handleCommit}
+        >
+          {busy === "commit" ? <ArrowsClockwise size={14} className="mo-spin" /> : <Check size={15} />}
           Commit
         </Button>
         <Button
           variant="secondary"
-          className={styles.push}
+          className={styles.scmAction}
           disabled={busy !== null}
-          title="Push"
-          onClick={() => void run("push", push)}
-        >
-          <ArrowsClockwise size={14} style={{ transform: "rotate(180deg)" }} />
-          {!!activeWorktree?.ahead && <span>{activeWorktree.ahead}</span>}
-        </Button>
-        <Button
-          variant="secondary"
-          className={styles.push}
-          disabled={busy !== null}
-          title="Pull"
+          title="Pull from remote"
           onClick={() => void run("pull", pull)}
         >
-          <ArrowDown size={14} />
-          {!!activeWorktree?.behind && <span>{activeWorktree.behind}</span>}
+          {busy === "pull" ? (
+            <ArrowsClockwise size={14} className="mo-spin" />
+          ) : (
+            <ArrowDown size={14} />
+          )}
+          Pull
+          {!!activeWorktree?.behind && <span className={styles.scmActionCount}>{activeWorktree.behind}</span>}
         </Button>
         <Button
           variant="secondary"
-          className={styles.push}
+          className={styles.scmAction}
           disabled={busy !== null}
-          title="Fetch"
-          onClick={() => void run("fetch", fetch)}
+          title="Push to remote"
+          onClick={() => void run("push", push)}
         >
-          <ArrowsClockwise size={14} />
+          {busy === "push" ? (
+            <ArrowsClockwise size={14} className="mo-spin" />
+          ) : (
+            <ArrowsClockwise size={14} style={{ transform: "rotate(180deg)" }} />
+          )}
+          Push
+          {!!activeWorktree?.ahead && <span className={styles.scmActionCount}>{activeWorktree.ahead}</span>}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** A Source Control section header — click anywhere on it (other than the
+ * bulk-action icon) to collapse/expand that section's rows. Previously
+ * this was inert: a `CaretDown` that never became a `CaretRight` and
+ * never actually hid anything. */
+function SectionHeader({
+  icon,
+  label,
+  count,
+  collapsed,
+  onToggle,
+  bulkAction,
+}: {
+  icon?: ReactNode;
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  bulkAction?: ReactNode;
+}) {
+  return (
+    <div className={styles.sectionHeader} onClick={onToggle}>
+      {collapsed ? <CaretRight size={11} /> : <CaretDown size={11} />}
+      {icon}
+      {label}
+      <span className={styles.sectionCount}>{count}</span>
+      {bulkAction}
     </div>
   );
 }
@@ -194,6 +393,9 @@ function ScmView() {
   const unstageAll = useScmStore((s) => s.unstageAll);
   const discardChange = useScmStore((s) => s.discardChange);
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
+  const [conflictedCollapsed, setConflictedCollapsed] = useState(false);
+  const [stagedCollapsed, setStagedCollapsed] = useState(false);
+  const [changesCollapsed, setChangesCollapsed] = useState(false);
 
   const entries = status?.entries ?? [];
   const conflicted = entries.filter((e) => e.staged?.kind === "conflicted");
@@ -233,112 +435,97 @@ function ScmView() {
       <div className={sidebar.body}>
         {conflicted.length > 0 && (
           <>
-            <div className={styles.sectionHeader}>
-              <WarningCircle size={12} color="var(--red)" />
-              Conflicted
-              <span className={styles.sectionCount}>{conflicted.length}</span>
-            </div>
-            {conflicted.map((entry) => (
-              <FileRow
-                key={`conflict:${entry.path}`}
-                entry={entry}
-                kind={entry.staged!}
-                active={false}
-              />
-            ))}
+            <SectionHeader
+              icon={<WarningCircle size={12} color="var(--red)" />}
+              label="Conflicted"
+              count={conflicted.length}
+              collapsed={conflictedCollapsed}
+              onToggle={() => setConflictedCollapsed((c) => !c)}
+            />
+            {!conflictedCollapsed &&
+              conflicted.map((entry) => (
+                <FileRow
+                  key={`conflict:${entry.path}`}
+                  entry={entry}
+                  kind={entry.staged!}
+                  active={false}
+                />
+              ))}
           </>
         )}
 
-        <div className={styles.sectionHeader}>
-          <CaretDown size={11} />
-          Staged changes
-          <span className={styles.sectionCount}>{staged.length}</span>
-          {staged.length > 0 && (
-            <span
-              className={sidebar.rowAction}
-              style={{ marginLeft: "auto", opacity: 1, cursor: "pointer" }}
-              title="Unstage all"
-              onClick={() => void unstageAll()}
-            >
-              <Minus size={12} />
-            </span>
-          )}
-        </div>
-        {staged.map((entry) => (
-          <FileRow
-            key={`staged:${entry.path}`}
-            entry={entry}
-            kind={entry.staged!}
-            active={
-              !!activeWorktree && activeTabId === diffTabId(activeWorktree.id, entry.path, "staged")
-            }
-            onOpen={() => openDiff(entry, "staged")}
-            actions={
-              <span
-                className={sidebar.rowAction}
-                title="Unstage"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void unstagePaths([entry.path]);
+        <SectionHeader
+          label="Staged changes"
+          count={staged.length}
+          collapsed={stagedCollapsed}
+          onToggle={() => setStagedCollapsed((c) => !c)}
+          bulkAction={
+            staged.length > 0 && (
+              <IconButton
+                icon={Minus}
+                label="Unstage all"
+                size="sm"
+                iconSize={13}
+                className={styles.bulkAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void unstageAll();
                 }}
-              >
-                <Minus size={12} />
-              </span>
-            }
-          />
-        ))}
+              />
+            )
+          }
+        />
+        {!stagedCollapsed &&
+          staged.map((entry) => (
+            <FileRow
+              key={`staged:${entry.path}`}
+              entry={entry}
+              kind={entry.staged!}
+              active={
+                !!activeWorktree &&
+                activeTabId === diffTabId(activeWorktree.id, entry.path, "staged")
+              }
+              onOpen={() => openDiff(entry, "staged")}
+              onUnstage={() => void unstagePaths([entry.path])}
+            />
+          ))}
 
-        <div className={styles.sectionHeader}>
-          <CaretDown size={11} />
-          Changes
-          <span className={styles.sectionCount}>{changes.length}</span>
-          {changes.length > 0 && (
-            <span
-              className={sidebar.rowAction}
-              style={{ marginLeft: "auto", opacity: 1, cursor: "pointer" }}
-              title="Stage all"
-              onClick={() => void stageAll()}
-            >
-              <Plus size={12} />
-            </span>
-          )}
-        </div>
-        {changes.map((entry) => (
-          <FileRow
-            key={`changes:${entry.path}`}
-            entry={entry}
-            kind={entry.unstaged!}
-            active={
-              !!activeWorktree &&
-              activeTabId === diffTabId(activeWorktree.id, entry.path, "unstaged")
-            }
-            onOpen={() => openDiff(entry, "unstaged")}
-            actions={
-              <>
-                <span
-                  className={sidebar.rowAction}
-                  title="Stage"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void stagePaths([entry.path]);
-                  }}
-                >
-                  <Plus size={12} />
-                </span>
-                <span
-                  className={sidebar.rowAction}
-                  title="Discard"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setDiscardTarget(entry.path);
-                  }}
-                >
-                  <ArrowCounterClockwise size={12} />
-                </span>
-              </>
-            }
-          />
-        ))}
+        <SectionHeader
+          label="Changes"
+          count={changes.length}
+          collapsed={changesCollapsed}
+          onToggle={() => setChangesCollapsed((c) => !c)}
+          bulkAction={
+            changes.length > 0 && (
+              <IconButton
+                icon={Plus}
+                label="Stage all"
+                size="sm"
+                iconSize={13}
+                className={styles.bulkAction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void stageAll();
+                }}
+              />
+            )
+          }
+        />
+        {!changesCollapsed &&
+          changes.map((entry) => (
+            <FileRow
+              key={`changes:${entry.path}`}
+              entry={entry}
+              kind={entry.unstaged!}
+              active={
+                !!activeWorktree &&
+                activeTabId === diffTabId(activeWorktree.id, entry.path, "unstaged")
+              }
+              onOpen={() => openDiff(entry, "unstaged")}
+              onStage={() => void stagePaths([entry.path])}
+              onDiscard={() => setDiscardTarget(entry.path)}
+            />
+          ))}
       </div>
 
       <AlertDialog
@@ -383,28 +570,32 @@ function CommitFileRow({
   const id = diffTabId(worktreeId, path, "commit", hash);
 
   return (
-    <div
-      className={`${sidebar.row} ${sidebar.indent1}`}
-      data-active={activeTabId === id}
-      onClick={() =>
-        ensureTab({
-          id,
-          type: "diff",
-          title: name,
-          filePath: path,
-          worktreeRoot,
-          diffMode: "commit",
-          commitHash: hash,
-        })
-      }
-    >
-      <Icon size={14} color={color} />
-      <span className={sidebar.rowLabel}>{name}</span>
-      {dir && <span className={styles.filePath}>{dir}</span>}
-      <span className={styles.statusGlyph} style={{ color: glyphColor }}>
-        {glyph}
-      </span>
-    </div>
+    <Tooltip label={path} side="left">
+      <div
+        className={`${sidebar.row} ${sidebar.indent1}`}
+        data-active={activeTabId === id}
+        onClick={() =>
+          ensureTab({
+            id,
+            type: "diff",
+            title: name,
+            filePath: path,
+            worktreeRoot,
+            diffMode: "commit",
+            commitHash: hash,
+          })
+        }
+      >
+        <span className={styles.fileIcon}>
+          <Icon size={ICON_SIZE.sm} color={color} />
+        </span>
+        <span className={styles.fileName}>{name}</span>
+        {dir && <span className={styles.filePath}>{dir}</span>}
+        <span className={styles.statusGlyph} style={{ color: glyphColor }}>
+          {glyph}
+        </span>
+      </div>
+    </Tooltip>
   );
 }
 
@@ -494,7 +685,11 @@ function HistoryView() {
           );
         })}
         {!commitsExhausted && commits.length > 0 && (
-          <Button variant="ghost" style={{ margin: "var(--space-5)" }} onClick={() => void loadCommitLog()}>
+          <Button
+            variant="ghost"
+            style={{ margin: "var(--space-5)" }}
+            onClick={() => void loadCommitLog()}
+          >
             Load more
           </Button>
         )}
@@ -515,5 +710,6 @@ export function ExplorerSidebar() {
   // HistoryView fresh — resets its local expand/files-cache state without
   // needing a setState-in-effect to do it.
   if (sidebarView === "history") return <HistoryView key={activeWorktree?.id} />;
+  if (sidebarView === "search") return <SearchPanel key={activeWorktree?.id} />;
   return <FileTree />;
 }

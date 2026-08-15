@@ -1,0 +1,27 @@
+import { useState } from "react";
+import { Brain, CaretDown } from "@phosphor-icons/react";
+import styles from "./ThinkingBlock.module.css";
+
+/** Collapsed-by-default "Thought for …" chip, matching the design file's
+ * agent-chat markup. There's no real elapsed-time field on the wire
+ * (the `thinking` content block carries text only), so this shows a
+ * generic label rather than fabricating a duration. */
+export function ThinkingBlock({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div>
+      <div className={styles.chip} onClick={() => setExpanded((v) => !v)}>
+        <Brain size={14} color="var(--purple)" />
+        Thinking
+        <CaretDown
+          size={11}
+          style={{
+            transform: expanded ? "rotate(180deg)" : "none",
+            transition: "transform var(--duration-fast, 120ms)",
+          }}
+        />
+      </div>
+      {expanded && <div className={styles.text}>{text}</div>}
+    </div>
+  );
+}

@@ -65,6 +65,10 @@ in parallel without them stepping on each other.
 - Unsaved-changes indicator + confirm-on-close/quit.
 - External file-change detection (file changed on disk while open →
   reload-or-keep-mine prompt).
+- Filename quick-open (⌘P) plus a global full-text search/replace panel
+  across every file in the active worktree (⌘K's "Search" rail item) —
+  pulled forward from v2 candidates (below) since it was the most
+  requested post-Phase-7 gap; see `commands/search.rs`.
 
 ### 5. Git integration (SCM view)
 
@@ -141,7 +145,8 @@ in parallel without them stepping on each other.
 - Team features: shared sessions, comments, PR review UI beyond opening the
   browser.
 - In-app terminal split panes / multiple terminals per tab.
-- Symbol/full-text code search beyond filename fuzzy-match.
+- Symbol search / go-to-definition (full-text search itself moved into
+  v1 — see §4 above).
 - Full code-signing + notarization pipeline for macOS/Windows.
 
 ## Non-goals (rejected for the product, not just v1)

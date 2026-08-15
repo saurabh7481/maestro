@@ -10,13 +10,12 @@ import { BinaryFileView } from "../editor/BinaryFileView";
 import { TooLargeFileView } from "../editor/TooLargeFileView";
 import { ExternalChangeBanner } from "../editor/ExternalChangeBanner";
 import { DiffView } from "../diff/DiffView";
+import { AgentTab } from "../agent/AgentTab";
+import { TerminalTab } from "../terminal/TerminalTab";
 import styles from "./MainContent.module.css";
 
 const NOTE: Record<string, string> = {
-  agent:
-    "The live agent chat — tool cards, permission prompts, session resume — arrives with the agent CLI integration phase.",
   diff: "Open a diff from Source Control or History to review it here.",
-  terminal: "The real PTY-backed terminal arrives with the terminal phase.",
 };
 
 export function MainContent() {
@@ -36,9 +35,6 @@ export function MainContent() {
   );
 
   const isEditorTab = activeTab?.type === "file" || activeTab?.type === "markdown";
-  // The mock initial "d1" tab (see tabsStore.ts) has no filePath/diffMode —
-  // falls through to the generic placeholder below rather than DiffView,
-  // which needs those to fetch anything.
   const isRealDiffTab = activeTab?.type === "diff" && !!activeTab.filePath && !!activeTab.diffMode;
 
   return (
@@ -75,18 +71,27 @@ export function MainContent() {
 
         {isRealDiffTab && activeTab && <DiffView key={activeTab.id} tab={activeTab} />}
 
-        {activeTab && !isEditorTab && !isRealDiffTab && (
-          <div className={styles.placeholder}>
-            <div className={styles.placeholderIcon}>
-              {(() => {
-                const Icon = TAB_VISUALS[activeTab.type].icon;
-                return <Icon size={26} color={TAB_VISUALS[activeTab.type].color} />;
-              })()}
-            </div>
-            <div className={styles.placeholderTitle}>{activeTab.title}</div>
-            <div className={styles.placeholderNote}>{NOTE[activeTab.type]}</div>
-          </div>
+        {activeTab?.type === "agent" && <AgentTab key={activeTab.id} tab={activeTab} />}
+        {activeTab?.type === "terminal" && activeTab.worktreeRoot && (
+          <TerminalTab key={activeTab.id} tab={activeTab} />
         )}
+
+        {activeTab &&
+          !isEditorTab &&
+          !isRealDiffTab &&
+          activeTab.type !== "agent" &&
+          activeTab.type !== "terminal" && (
+            <div className={styles.placeholder}>
+              <div className={styles.placeholderIcon}>
+                {(() => {
+                  const Icon = TAB_VISUALS[activeTab.type].icon;
+                  return <Icon size={26} color={TAB_VISUALS[activeTab.type].color} />;
+                })()}
+              </div>
+              <div className={styles.placeholderTitle}>{activeTab.title}</div>
+              <div className={styles.placeholderNote}>{NOTE[activeTab.type]}</div>
+            </div>
+          )}
 
         {!activeTab && (
           <div className={styles.empty}>

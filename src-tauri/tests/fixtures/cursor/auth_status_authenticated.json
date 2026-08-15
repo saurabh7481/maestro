@@ -1,0 +1,13 @@
+{
+  "status": "authenticated",
+  "isAuthenticated": true,
+  "hasAccessToken": true,
+  "hasRefreshToken": true,
+  "userInfo": {
+    "email": "saurabh.thakur@madverse.co",
+    "userId": 120106261,
+    "firstName": "saurabh",
+    "lastName": "Thakur",
+    "createdAt": "2024-11-01T07:04:42.331Z"
+  }
+}

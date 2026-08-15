@@ -9,6 +9,8 @@ export const workspaceApi = {
   pickProjectFolder: () => invoke<string | null>("pick_project_folder"),
   addProject: (path: string) => invoke<Project>("add_project", { path }),
   removeProject: (projectId: string) => invoke<void>("remove_project", { projectId }),
+  renameProject: (projectId: string, name: string) =>
+    invoke<void>("rename_project", { projectId, name }),
 
   listWorktrees: (projectId: string) => invoke<Worktree[]>("list_worktrees", { projectId }),
   listProjectBranches: (projectId: string) =>
@@ -22,6 +24,9 @@ export const workspaceApi = {
   getHookConfig: (projectId: string) => invoke<HookConfig>("get_hook_config", { projectId }),
   setHookConfig: (projectId: string, config: HookConfig) =>
     invoke<void>("set_hook_config", { projectId, config }),
+  getGlobalHookConfig: () => invoke<HookConfig>("get_global_hook_config"),
+  setGlobalHookConfig: (config: HookConfig) =>
+    invoke<void>("set_global_hook_config", { config }),
   runWorktreeHook: (projectId: string, worktreeId: string, sourceWorktreePath: string) =>
     invoke<void>("run_worktree_hook", { projectId, worktreeId, sourceWorktreePath }),
   cancelWorktreeHook: (worktreeId: string) => invoke<void>("cancel_worktree_hook", { worktreeId }),

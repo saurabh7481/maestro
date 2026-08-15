@@ -2,12 +2,14 @@ import { useEffect, useRef } from "react";
 import * as monaco from "monaco-editor";
 import { ensureMonacoEnvironment } from "../../editor/monacoSetup";
 import { languageForPath } from "../../editor/monacoModelRegistry";
+import { useUiStore } from "../../state/uiStore";
 import styles from "./MonacoDiffHost.module.css";
 
 ensureMonacoEnvironment();
 
 const MONACO_FONT_FAMILY =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const BASE_FONT_SIZE = 13;
 
 interface MonacoDiffHostProps {
   relPath: string;
@@ -31,29 +33,52 @@ interface MonacoDiffHostProps {
 export function MonacoDiffHost({ relPath, oldText, newText }: MonacoDiffHostProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+  const zoom = useUiStore((s) => s.zoom);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const editor = monaco.editor.createDiffEditor(containerRef.current, {
+    const container = containerRef.current;
+    if (!container) return;
+    // StrictMode's dev-mode double-invoke (mount, cleanup, mount again)
+    // creates and disposes a throwaway editor into this same container
+    // before the real one — `dispose()` doesn't reliably strip every DOM
+    // node it injected, and the second `createDiffEditor` call into a
+    // container that isn't truly empty has been observed to render a
+    // broken/blank diff despite the model API reporting correct content.
+    // Clearing the container first guarantees each instance starts clean.
+    container.innerHTML = "";
+    const editor = monaco.editor.createDiffEditor(container, {
       automaticLayout: true,
       theme: "vs-dark",
       readOnly: true,
       renderSideBySide: true,
       fontFamily: MONACO_FONT_FAMILY,
-      fontSize: 13,
+      fontSize: Math.round(BASE_FONT_SIZE * useUiStore.getState().zoom),
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
     });
     editorRef.current = editor;
 
     return () => {
+      // Order matters: disposing a model while it's still the widget's
+      // active model throws ("TextModel got disposed before
+      // DiffEditorWidget model got reset") — confirmed live. `dispose()`
+      // the editor first (it detaches its model references internally),
+      // capture the model reference beforehand since `getModel()` isn't
+      // reliable to call after the editor itself is gone.
       const model = editor.getModel();
+      editor.dispose();
       model?.original.dispose();
       model?.modified.dispose();
-      editor.dispose();
       editorRef.current = null;
     };
   }, []);
+
+  // App-level zoom (Cmd/Ctrl +/-) scales the whole rem-based UI via
+  // --zoom, but Monaco manages its own canvas-rendered font size — it
+  // never picks that up on its own, so mirror it explicitly here.
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
+  }, [zoom]);
 
   useEffect(() => {
     const editor = editorRef.current;

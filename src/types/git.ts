@@ -40,7 +40,8 @@ export type DiffContent =
       added: number;
       removed: number;
     }
-  | { kind: "binary"; oldSize: number | null; newSize: number | null };
+  | { kind: "binary"; oldSize: number | null; newSize: number | null }
+  | { kind: "directory" };
 
 export interface CommitSummary {
   hash: string;

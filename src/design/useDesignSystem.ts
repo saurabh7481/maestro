@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useUiStore } from "../state/uiStore";
+import { useKeybindingsStore } from "../state/keybindingsStore";
 import { applyTheme } from "./themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "./zoom";
 import { loadUiPrefs, saveUiPrefs } from "./persistence";
 import { applyPlatformAttribute } from "./platform";
+import { comboMatchesEvent } from "./keymap";
 
 /** Wires the design system into the DOM: applies the platform attribute,
  * hydrates persisted theme/zoom, reflects store changes onto CSS custom
@@ -13,6 +15,9 @@ export function useDesignSystem(): void {
   const theme = useUiStore((s) => s.theme);
   const zoom = useUiStore((s) => s.zoom);
   const setZoom = useUiStore((s) => s.setZoom);
+  const leftSidebarWidth = useUiStore((s) => s.leftSidebarWidth);
+  const rightSidebarWidth = useUiStore((s) => s.rightSidebarWidth);
+  const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
   const hydrate = useUiStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -24,6 +29,7 @@ export function useDesignSystem(): void {
       hydrate(prefs);
       hydrated.current = true;
     });
+    void useKeybindingsStore.getState().hydrate();
     return () => {
       cancelled = true;
     };
@@ -37,23 +43,33 @@ export function useDesignSystem(): void {
     document.documentElement.style.setProperty("--zoom", String(zoom));
   }, [zoom]);
 
+  // Live drags write straight to these same CSS vars (see
+  // `useResizablePanel.ts`) without touching the store — this effect only
+  // needs to reflect the *committed* width, i.e. on hydrate and after a
+  // drag ends, not per-frame.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--left-sidebar-width", `${leftSidebarWidth}rem`);
+  }, [leftSidebarWidth]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--right-sidebar-width", `${rightSidebarWidth}rem`);
+  }, [rightSidebarWidth]);
+
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveUiPrefs({ theme, zoom });
-  }, [theme, zoom]);
+    void saveUiPrefs({ theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled });
+  }, [theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      const isModPressed = event.metaKey || event.ctrlKey;
-      if (!isModPressed) return;
-
-      if (event.key === "=" || event.key === "+") {
+      const comboFor = useKeybindingsStore.getState().comboFor;
+      if (comboMatchesEvent(comboFor("zoom.in"), event)) {
         event.preventDefault();
         setZoom(clampZoom(useUiStore.getState().zoom + ZOOM_STEP));
-      } else if (event.key === "-") {
+      } else if (comboMatchesEvent(comboFor("zoom.out"), event)) {
         event.preventDefault();
         setZoom(clampZoom(useUiStore.getState().zoom - ZOOM_STEP));
-      } else if (event.key === "0") {
+      } else if (comboMatchesEvent(comboFor("zoom.reset"), event)) {
         event.preventDefault();
         setZoom(ZOOM_DEFAULT);
       }

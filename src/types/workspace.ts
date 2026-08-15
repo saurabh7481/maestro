@@ -26,6 +26,10 @@ export interface HookConfig {
   symlinkNodeModules: boolean;
   customScriptEnabled: boolean;
   customScript: string;
+  /** Project-scoped configs only — when true, this project's own field
+   * values are used instead of the global config's. Meaningless on the
+   * global config itself, which has nothing to override. */
+  overrideEnabled: boolean;
 }
 
 export type HookEvent =

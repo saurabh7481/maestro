@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/claude-1000/-home-saurabh-Projects-maestro/9afe9e75-89bb-404f-b3d6-b1280cab2cda/scratchpad/cursor-spike","session_id":"77535224-c46c-4703-86e7-85afd6af938a","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply with exactly the word: PONG"}]},"session_id":"77535224-c46c-4703-86e7-85afd6af938a"}
+{"type":"thinking","subtype":"delta","text":"The response will be","session_id":"77535224-c46c-4703-86e7-85afd6af938a","timestamp_ms":1786676102148}
+{"type":"thinking","subtype":"delta","text":" exactly \"PONG\".","session_id":"77535224-c46c-4703-86e7-85afd6af938a","timestamp_ms":1786676102151}
+{"type":"thinking","subtype":"completed","session_id":"77535224-c46c-4703-86e7-85afd6af938a","timestamp_ms":1786676102151}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PONG"}]},"session_id":"77535224-c46c-4703-86e7-85afd6af938a"}
+{"type":"result","subtype":"success","duration_ms":6594,"duration_api_ms":6594,"is_error":false,"result":"PONG","session_id":"77535224-c46c-4703-86e7-85afd6af938a","request_id":"75790bc8-91c3-4079-9444-0fd56a960d2f","usage":{"inputTokens":14737,"outputTokens":34,"cacheReadTokens":5632,"cacheWriteTokens":0}}

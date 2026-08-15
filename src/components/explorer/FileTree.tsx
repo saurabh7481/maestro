@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { FilePlus, FolderSimplePlus } from "@phosphor-icons/react";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
+import { useUiStore } from "../../state/uiStore";
 import { useTabsStore, fileTabId } from "../../state/tabsStore";
 import { IconButton, AlertDialog } from "../primitives";
 import { FileTreeRow, ROW_HEIGHT } from "./FileTreeRow";
@@ -83,13 +84,24 @@ export function FileTree() {
     [childrenByDir, expandedPaths, statusMap, pendingCreate],
   );
 
+  const zoom = useUiStore((s) => s.zoom);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => ROW_HEIGHT * zoom,
     overscan: 12,
   });
+
+  // `estimateSize` above only feeds the virtualizer's *initial* estimate —
+  // it doesn't retroactively resize rows it already measured, so without
+  // this a zoom change leaves stale (pre-zoom) offsets in place and rows
+  // start overlapping/gapping. `measure()` forces every row's offset to be
+  // recomputed from the current `estimateSize`.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [zoom, virtualizer]);
 
   function openFile(row: TreeRow) {
     if (!worktreeId || !worktreeRoot) return;
@@ -160,6 +172,7 @@ export function FileTree() {
                     active={false}
                     isRenaming
                     virtualStart={item.start}
+                    zoom={zoom}
                     onToggle={() => {}}
                     onOpen={() => {}}
                     onStartRename={() => {}}
@@ -181,6 +194,7 @@ export function FileTree() {
                   }
                   isRenaming={renamingPath === row.relPath}
                   virtualStart={item.start}
+                  zoom={zoom}
                   onToggle={() => toggleDir(row.relPath)}
                   onOpen={() => openFile(row)}
                   onStartRename={() => setRenamingPath(row.relPath)}

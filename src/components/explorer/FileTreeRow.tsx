@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { CaretDown, CaretRight, Folder, FolderOpen } from "@phosphor-icons/react";
 import { iconForFile } from "./fileIcons";
+import { ICON_SIZE } from "../../design/iconSize";
 import { ExplorerContextMenu } from "./ExplorerContextMenu";
 import sidebar from "../chrome/Sidebar.module.css";
 import styles from "./FileTree.module.css";
@@ -32,6 +33,13 @@ interface FileTreeRowProps {
   active: boolean;
   isRenaming: boolean;
   virtualStart: number;
+  /** Current zoom multiplier — row height and indent are inline pixel
+   * styles (the virtualizer needs real numbers, not CSS `rem`), so unlike
+   * the rest of this row's sizing (which rides `--zoom`-scaled rem tokens
+   * automatically) they have to be scaled by hand to keep the row's actual
+   * rendered height in sync with what `FileTree.tsx` told the virtualizer
+   * to reserve — otherwise rows overlap at any zoom other than 100%. */
+  zoom: number;
   onToggle: () => void;
   onOpen: () => void;
   onStartRename: () => void;
@@ -47,6 +55,7 @@ export function FileTreeRow({
   active,
   isRenaming,
   virtualStart,
+  zoom,
   onToggle,
   onOpen,
   onStartRename,
@@ -76,8 +85,8 @@ export function FileTreeRow({
 
   const style: CSSProperties = {
     transform: `translateY(${virtualStart}px)`,
-    height: ROW_HEIGHT,
-    paddingLeft: BASE_INDENT + row.depth * DEPTH_STEP,
+    height: ROW_HEIGHT * zoom,
+    paddingLeft: (BASE_INDENT + row.depth * DEPTH_STEP) * zoom,
   };
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -100,7 +109,7 @@ export function FileTreeRow({
       aria-expanded={row.isDir ? row.isExpanded : undefined}
     >
       <div
-        className={sidebar.row}
+        className={`${sidebar.row} ${styles.row}`}
         data-active={active}
         onClick={row.isDir ? onToggle : onOpen}
         onDoubleClick={beginRename}
@@ -115,12 +124,12 @@ export function FileTreeRow({
         <span className={styles.icon}>
           {row.isDir ? (
             row.isExpanded ? (
-              <FolderOpen size={15} color="var(--accent-2)" />
+              <FolderOpen size={ICON_SIZE.sm} color="var(--accent-2)" />
             ) : (
-              <Folder size={15} color="var(--text-mute)" />
+              <Folder size={ICON_SIZE.sm} color="var(--text-mute)" />
             )
           ) : (
-            <FileIcon size={15} color={fileColor} />
+            <FileIcon size={ICON_SIZE.sm} color={fileColor} />
           )}
         </span>
         {isRenaming ? (

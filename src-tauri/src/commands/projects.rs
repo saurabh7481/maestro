@@ -92,3 +92,26 @@ pub async fn remove_project(state: State<'_, AppState>, project_id: String) -> R
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// Renames a project's *display name* only — the `name` column shown in
+/// the sidebar, not the folder on disk. `root_path` (and every worktree's
+/// actual path under it) is untouched, matching how the context menu that
+/// calls this describes it: "Rename (locally)".
+#[tauri::command]
+pub async fn rename_project(
+    state: State<'_, AppState>,
+    project_id: String,
+    name: String,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Project name must not be empty".to_string());
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE projects SET name = ?1 WHERE id = ?2",
+        params![name, project_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}

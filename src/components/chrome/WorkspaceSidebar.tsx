@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CaretDown,
   CaretLineLeft,
@@ -15,11 +15,13 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
-import { useWorkspaceStore } from "../../state/workspaceStore";
+import { useWorkspaceStore, EMPTY_WORKTREES } from "../../state/workspaceStore";
 import type { Project, Worktree } from "../../types/workspace";
 import { IconButton } from "../primitives";
 import { NewWorktreeDialog } from "../workspace/NewWorktreeDialog";
 import { RemoveWorktreeDialog } from "../workspace/RemoveWorktreeDialog";
+import { ProjectContextMenu } from "../workspace/ProjectContextMenu";
+import { ProjectSettingsDialog } from "../workspace/ProjectSettingsDialog";
 import styles from "./Sidebar.module.css";
 
 function WorktreeRow({ project, worktree }: { project: Project; worktree: Worktree }) {
@@ -35,7 +37,9 @@ function WorktreeRow({ project, worktree }: { project: Project; worktree: Worktr
         data-active={isActive}
         onClick={() => selectWorktree(project.id, worktree.id)}
       >
-        <GitBranch size={14} color={isActive ? "var(--accent)" : undefined} />
+        <span className={styles.rowIcon}>
+          <GitBranch size={14} color={isActive ? "var(--accent)" : undefined} />
+        </span>
         <span
           className={styles.rowLabel}
           style={isActive ? { fontWeight: "var(--font-weight-semibold)" } : undefined}
@@ -82,39 +86,94 @@ function ProjectSection({
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
-  const worktrees = useWorkspaceStore((s) => s.worktreesByProject[project.id] ?? []);
+  const worktrees = useWorkspaceStore((s) => s.worktreesByProject[project.id] ?? EMPTY_WORKTREES);
   const removeProject = useWorkspaceStore((s) => s.removeProject);
+  const renameProject = useWorkspaceStore((s) => s.renameProject);
   const [newWorktreeOpen, setNewWorktreeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(project.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) requestAnimationFrame(() => renameInputRef.current?.select());
+  }, [renaming]);
+
+  function beginRename() {
+    setDraftName(project.name);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== project.name) void renameProject(project.id, trimmed);
+    setRenaming(false);
+  }
 
   return (
     <>
-      <div className={styles.row} onClick={onToggleCollapsed}>
-        {collapsed ? (
-          <CaretRight size={11} color="var(--text-mute)" />
-        ) : (
-          <CaretDown size={11} color="var(--text-mute)" />
-        )}
-        {collapsed ? (
-          <Folder size={15} color="var(--text-mute)" />
-        ) : (
-          <FolderOpen size={15} color="var(--yellow)" />
-        )}
-        <span className={styles.rowLabel} style={{ fontWeight: "var(--font-weight-semibold)" }}>
-          {project.name}
-        </span>
-        <IconButton
-          icon={Trash}
-          label="Remove project"
-          size="sm"
-          iconSize={12}
-          className={styles.rowAction}
-          onClick={(e) => {
-            e.stopPropagation();
-            void removeProject(project.id);
-          }}
-        />
-        <span className={styles.rowMeta}>{worktrees.length} wt</span>
-      </div>
+      <ProjectContextMenu
+        onRename={beginRename}
+        onDelete={() => void removeProject(project.id)}
+        onSettings={() => setSettingsOpen(true)}
+      >
+        <div className={styles.row} onClick={renaming ? undefined : onToggleCollapsed}>
+          <span className={styles.rowIcon}>
+            {collapsed ? (
+              <CaretRight size={11} color="var(--text-mute)" />
+            ) : (
+              <CaretDown size={11} color="var(--text-mute)" />
+            )}
+          </span>
+          <span className={styles.rowIcon}>
+            {collapsed ? (
+              <Folder size={15} color="var(--text-mute)" />
+            ) : (
+              <FolderOpen size={15} color="var(--yellow)" />
+            )}
+          </span>
+          {renaming ? (
+            <input
+              ref={renameInputRef}
+              className={styles.renameInput}
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitRename();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            <span
+              className={styles.rowLabel}
+              style={{ fontWeight: "var(--font-weight-semibold)" }}
+            >
+              {project.name}
+            </span>
+          )}
+          <IconButton
+            icon={Trash}
+            label="Remove project"
+            size="sm"
+            iconSize={12}
+            className={styles.rowAction}
+            onClick={(e) => {
+              e.stopPropagation();
+              void removeProject(project.id);
+            }}
+          />
+          <span className={styles.rowMeta}>{worktrees.length} wt</span>
+        </div>
+      </ProjectContextMenu>
+
+      <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {!collapsed && (
         <>
@@ -126,7 +185,9 @@ function ProjectSection({
             data-accent="true"
             onClick={() => setNewWorktreeOpen(true)}
           >
-            <PlusCircle size={14} />
+            <span className={styles.rowIcon}>
+              <PlusCircle size={14} />
+            </span>
             <span className={styles.rowLabel}>New worktree…</span>
           </div>
         </>
@@ -272,7 +333,9 @@ export function WorkspaceSidebar() {
         <div className={styles.divider} />
 
         <div className={styles.row} data-accent="true" onClick={() => void addProject()}>
-          <FolderPlus size={15} />
+          <span className={styles.rowIcon}>
+            <FolderPlus size={15} />
+          </span>
           <span className={styles.rowLabel}>Add project…</span>
         </div>
       </div>

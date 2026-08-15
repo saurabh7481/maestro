@@ -12,6 +12,10 @@
     background-color var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out);
   position: relative;
+  /* WebKitGTK has been observed leaving a `:hover` background "stuck"
+     after the pointer leaves — see `Sidebar.module.css`'s `.row` for the
+     same fix applied to panel icon buttons specifically. */
+  will-change: background-color;
 }
 
 .button:hover {

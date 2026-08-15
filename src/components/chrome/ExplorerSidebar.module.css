@@ -34,15 +34,20 @@
   margin-top: var(--space-5);
 }
 
-.scmActions .push {
+.scmAction {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
-.scmActions .push span {
+
+.scmActionCount {
   font-family: var(--font-mono);
+  font-size: var(--text-xs);
   color: var(--orange);
 }
 
@@ -50,11 +55,38 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-5) var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 calc(-1 * var(--space-3));
+  border-radius: var(--radius-md);
   color: var(--text-mute);
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--tracking-wide);
+  cursor: pointer;
+  user-select: none;
+}
+.sectionHeader:hover {
+  background: var(--hover);
+  color: var(--text-dim);
+}
+
+/* Unlike `.rowAction` (Sidebar.module.css), a section's bulk-action
+   button (stage all / unstage all) is always visible, not
+   hover-revealed — it isn't scoped to one file's row, so there's no
+   "hovering the row" gesture to reveal it on. */
+.bulkAction {
+  margin-left: var(--space-2);
+}
+
+/* Wraps a file row's hover-revealed action buttons + status glyph so
+   they stay flush right even when `.filePath` isn't rendered (a
+   repo-root file with no subdirectory) — see `FileRow`'s comment. */
+.trailing {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .sectionCount {
@@ -65,18 +97,59 @@
   color: var(--text-dim);
 }
 
+/* A fixed height + flex-centering, rather than relying on text
+   line-height, keeps this glyph's visual center aligned with the row's
+   fixed-pixel-size icon at every zoom level — line-height grows with the
+   surrounding (rem-scaled) font-size, but the icon next to it doesn't, so
+   center-aligning by line-height alone drifts out of line as zoom
+   increases. */
 .statusGlyph {
   font-family: var(--font-mono);
   width: 0.875rem;
-  text-align: center;
+  height: 0.9375rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
 }
 
+/* A bare `<Icon>` as a direct flex child of `.row` (no `flex: none`)
+   renders invisible in this app's WebKitGTK build — confirmed missing
+   the same way `design/iconSize.ts`'s rem-vs-px doc explains for icon
+   *size*, but here it's the flex-shrink/min-width:auto sizing of the SVG
+   itself collapsing to zero rather than the size prop. FileTreeRow
+   avoids this by wrapping its icon in a `flex: none` span (`.icon` in
+   FileTree.module.css); this is that same fix for the SCM rows. */
+.fileIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+/* The filename (`.fileName` below) must always render in full — the
+   directory path is secondary context and is what should give up space
+   first, matching VS Code's SCM panel. Previously this was `flex: none`
+   while the filename used the shared, shrinkable `.rowLabel`, so a long
+   directory (e.g. "packages/domain/analytics/src") could claim its full
+   width and squeeze the filename down to nothing. */
 .filePath {
   font-size: var(--text-sm);
   color: var(--text-mute);
   font-family: var(--font-mono);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileName {
   flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .commitRow {

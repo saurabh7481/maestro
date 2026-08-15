@@ -30,4 +30,14 @@ export const fsApi = {
     invoke<void>("start_worktree_watcher", { worktreeId, worktreePath }),
   stopWorktreeWatcher: (worktreeId: string) =>
     invoke<void>("stop_worktree_watcher", { worktreeId }),
+
+  /** Stages a pasted file's raw bytes (base64-encoded to cross the IPC
+   * boundary) into `<worktree>/.maestro/attachments/` and returns its
+   * worktree-relative path. */
+  savePastedAttachment: (worktreeRoot: string, fileName: string, base64Content: string) =>
+    invoke<string>("save_pasted_attachment", { worktreeRoot, fileName, base64Content }),
+  /** Same staging, for a file pasted by reference (a file manager's
+   * `text/uri-list` clipboard entry) rather than by bytes. */
+  copyFileIntoAttachments: (worktreeRoot: string, sourcePath: string) =>
+    invoke<string>("copy_file_into_attachments", { worktreeRoot, sourcePath }),
 };

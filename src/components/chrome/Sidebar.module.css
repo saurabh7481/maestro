@@ -1,20 +1,29 @@
 /* Shared styling for the two flanking sidebars (workspace + explorer). */
 
 .panel {
-  width: 16.625rem;
+  composes: fadeIn from "../../styles/motion.module.css";
   flex: none;
   display: flex;
   flex-direction: column;
   background: var(--bg-2);
   min-height: 0;
+  /* Suppressed mid-drag (see useResizablePanel.ts) — the handle writes
+     this same property every animation frame while dragging, and
+     animating that would fight the drag instead of tracking the
+     cursor. Only the discrete open/close toggle should ever animate. */
+  transition: width var(--duration-base) var(--ease-out);
+}
+:root[data-resizing-sidebar] .panel {
+  transition: none;
 }
 .panel[data-side="left"] {
   order: 1;
+  width: var(--left-sidebar-width);
   border-right: var(--border-width) solid var(--border);
 }
 .panel[data-side="right"] {
   order: 3;
-  width: 19rem;
+  width: var(--right-sidebar-width);
   border-left: var(--border-width) solid var(--border);
 }
 
@@ -27,6 +36,10 @@
   padding: var(--space-5) 0;
   gap: var(--space-6);
   background: var(--bg-2);
+  transition: width var(--duration-base) var(--ease-out);
+}
+:root[data-resizing-sidebar] .collapsed {
+  transition: none;
 }
 .collapsed[data-side="left"] {
   order: 1;
@@ -73,6 +86,11 @@
   font-size: var(--text-base);
   min-width: 0;
   transition: background-color var(--duration-fast) var(--ease-out);
+  /* WebKitGTK has been observed leaving a `:hover`-triggered background
+     "stuck" after the pointer actually leaves — promoting this to its
+     own compositor layer makes WebKit reliably repaint the transition
+     instead of occasionally missing the invalidation. */
+  will-change: background-color;
 }
 .row:hover {
   background: var(--hover);
@@ -99,6 +117,34 @@
   white-space: nowrap;
 }
 
+/* A bare `<Icon>` as a direct flex child of `.row` renders invisible in
+   this app's WebKitGTK build once its siblings (a label, a meta count,
+   an action button) leave it competing for space — flex's default
+   `min-width: auto` lets the browser shrink an SVG's own intrinsic size
+   away to zero instead of respecting its `size` attribute, the same
+   class of gap `ExplorerSidebar.module.css`'s `.fileIcon` comment
+   documents for the SCM panel. Every row that leads with an icon shares
+   this one class rather than each consumer inventing its own. */
+.rowIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--text-base);
+  font-family: inherit;
+  padding: 0 var(--space-3);
+  height: 1.25rem;
+  outline: none;
+}
+
 .rowMeta {
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
@@ -110,6 +156,9 @@
   opacity: 0;
   flex: none;
   transition: opacity var(--duration-fast) var(--ease-out);
+  /* See `.row`'s comment above — same WebKitGTK repaint nudge, for the
+     hover-revealed action icons specifically. */
+  will-change: opacity;
 }
 .row:hover .rowAction {
   opacity: 1;
