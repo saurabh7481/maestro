@@ -19,7 +19,9 @@ import styles from "./SearchPanel.module.css";
 
 function splitPath(path: string): { name: string; dir: string } {
   const idx = path.lastIndexOf("/");
-  return idx === -1 ? { name: path, dir: "" } : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
+  return idx === -1
+    ? { name: path, dir: "" }
+    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
 }
 
 function MatchRow({
@@ -46,7 +48,13 @@ function MatchRow({
   );
 }
 
-function FileGroup({ file, onOpenMatch }: { file: FileMatches; onOpenMatch: (m: SearchMatch) => void }) {
+function FileGroup({
+  file,
+  onOpenMatch,
+}: {
+  file: FileMatches;
+  onOpenMatch: (m: SearchMatch) => void;
+}) {
   const collapsedFiles = useSearchStore((s) => s.collapsedFiles);
   const toggleFileCollapsed = useSearchStore((s) => s.toggleFileCollapsed);
   const collapsed = collapsedFiles.has(file.path);
@@ -124,7 +132,11 @@ export function SearchPanel() {
       <div className={sidebar.header}>
         <span className={sidebar.headerLabel}>Search</span>
         <span
-          style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-dim)" }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-xs)",
+            color: "var(--text-dim)",
+          }}
         >
           {activeWorktree?.branch ?? "—"}
         </span>
@@ -185,7 +197,9 @@ export function SearchPanel() {
             <Button
               variant="secondary"
               disabled={results.length === 0 || !worktreeId || !worktreeRoot}
-              onClick={() => worktreeId && worktreeRoot && void replaceAll(worktreeId, worktreeRoot)}
+              onClick={() =>
+                worktreeId && worktreeRoot && void replaceAll(worktreeId, worktreeRoot)
+              }
             >
               Replace All
             </Button>
@@ -198,7 +212,13 @@ export function SearchPanel() {
           <div className={styles.statusRow}>
             <ArrowsClockwise size={13} className="mo-spin" />
             Searching…
-            <IconButton icon={X} label="Cancel search" size="sm" iconSize={12} onClick={cancelSearch} />
+            <IconButton
+              icon={X}
+              label="Cancel search"
+              size="sm"
+              iconSize={12}
+              onClick={cancelSearch}
+            />
           </div>
         )}
         {status !== "searching" && query.trim() && (
@@ -235,7 +255,9 @@ export function SearchPanel() {
         }
         confirmLabel="Replace anyway"
         destructive
-        onConfirm={() => worktreeId && worktreeRoot && void confirmReplaceAll(worktreeId, worktreeRoot)}
+        onConfirm={() =>
+          worktreeId && worktreeRoot && void confirmReplaceAll(worktreeId, worktreeRoot)
+        }
       />
     </div>
   );

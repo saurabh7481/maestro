@@ -25,8 +25,7 @@ export const workspaceApi = {
   setHookConfig: (projectId: string, config: HookConfig) =>
     invoke<void>("set_hook_config", { projectId, config }),
   getGlobalHookConfig: () => invoke<HookConfig>("get_global_hook_config"),
-  setGlobalHookConfig: (config: HookConfig) =>
-    invoke<void>("set_global_hook_config", { config }),
+  setGlobalHookConfig: (config: HookConfig) => invoke<void>("set_global_hook_config", { config }),
   runWorktreeHook: (projectId: string, worktreeId: string, sourceWorktreePath: string) =>
     invoke<void>("run_worktree_hook", { projectId, worktreeId, sourceWorktreePath }),
   cancelWorktreeHook: (worktreeId: string) => invoke<void>("cancel_worktree_hook", { worktreeId }),

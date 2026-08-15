@@ -135,8 +135,8 @@ export function DiffView({ tab }: { tab: Tab }) {
           <div className={styles.binaryPanel}>
             <Folder size={28} color="var(--text-mute)" />
             <span>
-              This is a directory, not a file — most likely a nested Git worktree or submodule
-              that git won't expand into individual files.
+              This is a directory, not a file — most likely a nested Git worktree or submodule that
+              git won't expand into individual files.
             </span>
           </div>
         )}

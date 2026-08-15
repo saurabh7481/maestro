@@ -1,4 +1,11 @@
-import { ArrowsClockwise, Bell, CircleHalf, GitBranch, Sparkle, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  Bell,
+  CircleHalf,
+  GitBranch,
+  Sparkle,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useTabsStore } from "../../state/tabsStore";
@@ -32,7 +39,10 @@ function ActiveTabStatus() {
   }
 
   return (
-    <span className={styles.item} style={{ color: status === "working" ? "var(--green)" : "var(--text-dim)" }}>
+    <span
+      className={styles.item}
+      style={{ color: status === "working" ? "var(--green)" : "var(--text-dim)" }}
+    >
       <Sparkle size={12} className={status === "working" ? "mo-spin" : undefined} />
       {label} · {status}
     </span>

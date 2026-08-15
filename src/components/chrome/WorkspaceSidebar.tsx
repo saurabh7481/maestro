@@ -151,10 +151,7 @@ function ProjectSection({
               }}
             />
           ) : (
-            <span
-              className={styles.rowLabel}
-              style={{ fontWeight: "var(--font-weight-semibold)" }}
-            >
+            <span className={styles.rowLabel} style={{ fontWeight: "var(--font-weight-semibold)" }}>
               {project.name}
             </span>
           )}

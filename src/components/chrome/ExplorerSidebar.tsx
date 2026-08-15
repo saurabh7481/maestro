@@ -314,7 +314,11 @@ function CommitBox() {
           disabled={!canCommit}
           onClick={handleCommit}
         >
-          {busy === "commit" ? <ArrowsClockwise size={14} className="mo-spin" /> : <Check size={15} />}
+          {busy === "commit" ? (
+            <ArrowsClockwise size={14} className="mo-spin" />
+          ) : (
+            <Check size={15} />
+          )}
           Commit
         </Button>
         <Button
@@ -330,7 +334,9 @@ function CommitBox() {
             <ArrowDown size={14} />
           )}
           Pull
-          {!!activeWorktree?.behind && <span className={styles.scmActionCount}>{activeWorktree.behind}</span>}
+          {!!activeWorktree?.behind && (
+            <span className={styles.scmActionCount}>{activeWorktree.behind}</span>
+          )}
         </Button>
         <Button
           variant="secondary"
@@ -345,7 +351,9 @@ function CommitBox() {
             <ArrowsClockwise size={14} style={{ transform: "rotate(180deg)" }} />
           )}
           Push
-          {!!activeWorktree?.ahead && <span className={styles.scmActionCount}>{activeWorktree.ahead}</span>}
+          {!!activeWorktree?.ahead && (
+            <span className={styles.scmActionCount}>{activeWorktree.ahead}</span>
+          )}
         </Button>
       </div>
     </div>

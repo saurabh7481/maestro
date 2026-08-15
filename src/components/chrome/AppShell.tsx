@@ -143,7 +143,8 @@ function useTerminalShortcut() {
   const activeWorktree = useActiveWorktree();
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!comboMatchesEvent(useKeybindingsStore.getState().comboFor("terminal.new"), event)) return;
+      if (!comboMatchesEvent(useKeybindingsStore.getState().comboFor("terminal.new"), event))
+        return;
       if (!activeWorktree) return;
       event.preventDefault();
       const tab: Tab = {

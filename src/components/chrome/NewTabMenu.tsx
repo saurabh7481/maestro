@@ -95,10 +95,7 @@ export function NewTabMenu() {
     () => Object.values(worktreesByProject).flat(),
     [worktreesByProject],
   );
-  const projectNameById = useMemo(
-    () => new Map(projects.map((p) => [p.id, p.name])),
-    [projects],
-  );
+  const projectNameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const statusByKind = useAgentAvailabilityStore((s) => s.statusByKind);
   const openSettings = useUiStore((s) => s.openSettings);
 
@@ -121,9 +118,7 @@ export function NewTabMenu() {
     const roots = searchWorktrees.map((w) => w.path);
     void Promise.all(
       SESSION_DISCOVERY_KINDS.map(async (kind) => {
-        const sessions = await agentsApi
-          .listResumableSessionsForRoots(kind, roots)
-          .catch(() => []);
+        const sessions = await agentsApi.listResumableSessionsForRoots(kind, roots).catch(() => []);
         return sessions.map((s): TaggedSession => ({ ...s, kind }));
       }),
     ).then((byKind) => {
@@ -261,9 +256,7 @@ export function NewTabMenu() {
                   onCheckedChange={setGlobalResume}
                 >
                   <Globe size={16} color="var(--text-dim)" />
-                  <span style={{ fontSize: "var(--text-sm)", flex: 1 }}>
-                    Search all projects
-                  </span>
+                  <span style={{ fontSize: "var(--text-sm)", flex: 1 }}>Search all projects</span>
                   <DropdownMenu.ItemIndicator>
                     <Check size={13} color="var(--accent)" />
                   </DropdownMenu.ItemIndicator>
@@ -288,8 +281,8 @@ export function NewTabMenu() {
                       <div className={styles.resumeMeta}>
                         {AGENT_DISPLAY_NAME[session.kind]}
                         {meta?.branch && <> · {meta.branch}</>}
-                        {globalResume && meta?.projectName && <> · {meta.projectName}</>}{" "}
-                        · {relativeTime(session.lastActiveAt)} · {session.turnCount} turns
+                        {globalResume && meta?.projectName && <> · {meta.projectName}</>} ·{" "}
+                        {relativeTime(session.lastActiveAt)} · {session.turnCount} turns
                       </div>
                     </div>
                   </DropdownMenu.Item>

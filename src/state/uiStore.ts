@@ -46,10 +46,7 @@ interface UiState {
   setAutoSaveEnabled: (enabled: boolean) => void;
   hydrate: (
     partial: Partial<
-      Pick<
-        UiState,
-        "theme" | "zoom" | "leftSidebarWidth" | "rightSidebarWidth" | "autoSaveEnabled"
-      >
+      Pick<UiState, "theme" | "zoom" | "leftSidebarWidth" | "rightSidebarWidth" | "autoSaveEnabled">
     >,
   ) => void;
 }
@@ -79,7 +76,8 @@ export const useUiStore = create<UiState>((set) => ({
   closeSettings: () => set({ settingsOpen: false }),
   setCommandPaletteOpen: (open) =>
     set({ commandPaletteOpen: open, newTabMenuOpen: false, quickOpenMode: false }),
-  openQuickOpen: () => set({ commandPaletteOpen: true, newTabMenuOpen: false, quickOpenMode: true }),
+  openQuickOpen: () =>
+    set({ commandPaletteOpen: true, newTabMenuOpen: false, quickOpenMode: true }),
   setNewTabMenuOpen: (open) => set({ newTabMenuOpen: open }),
   setAutoSaveEnabled: (autoSaveEnabled) => set({ autoSaveEnabled }),
   hydrate: (partial) => set(partial),

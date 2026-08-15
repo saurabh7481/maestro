@@ -8,8 +8,7 @@ import styles from "./SettingsModal.module.css";
 const VARIABLES = ["$NEW_WORKTREE", "$SOURCE_WORKTREE", "$BRANCH", "$PROJECT_ROOT"];
 
 export type HooksPaneScope =
-  | { kind: "global" }
-  | { kind: "project"; projectId: string; projectName: string };
+  { kind: "global" } | { kind: "project"; projectId: string; projectName: string };
 
 /** Worktree-creation hooks, editable at two levels: a global default
  * (`kind: "global"`, Settings → Worktree Hooks) applied to every project,
@@ -191,7 +190,11 @@ function HooksPaneBody({ scope }: { scope: HooksPaneScope }) {
         <div className={styles.chips}>
           <span className={styles.chipsLabel}>Variables:</span>
           {VARIABLES.map((v) => (
-            <span key={v} className={styles.chip} onClick={() => !fieldsDisabled && insertVariable(v)}>
+            <span
+              key={v}
+              className={styles.chip}
+              onClick={() => !fieldsDisabled && insertVariable(v)}
+            >
               {v}
             </span>
           ))}

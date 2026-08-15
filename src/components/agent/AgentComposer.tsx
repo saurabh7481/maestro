@@ -433,7 +433,10 @@ export function AgentComposer({
   const mentionMatch = slashMatch ? null : /@([\w./-]*)$/.exec(draft.slice(0, cursorPos));
 
   const slashCandidates = useSlashCandidates(slashOptions, slashMatch ? slashMatch[1] : null);
-  const mentionCandidates = useMentionCandidates(worktreeFiles, mentionMatch ? mentionMatch[1] : null);
+  const mentionCandidates = useMentionCandidates(
+    worktreeFiles,
+    mentionMatch ? mentionMatch[1] : null,
+  );
 
   // The slash menu stays open even with zero candidates — unlike
   // @-mention, "no matches" here can mean three different things the
@@ -450,7 +453,8 @@ export function AgentComposer({
     : mentionMatch && mentionCandidates.length > 0
       ? "mention"
       : null;
-  const menuMatch = activeMenu === "slash" ? slashMatch : activeMenu === "mention" ? mentionMatch : null;
+  const menuMatch =
+    activeMenu === "slash" ? slashMatch : activeMenu === "mention" ? mentionMatch : null;
   const menuLength = activeMenu === "slash" ? slashCandidates.length : mentionCandidates.length;
 
   const [menuIndexRaw, setMenuIndex] = useState(0);
@@ -722,8 +726,8 @@ export function AgentComposer({
             {slashCandidates.length === 0 &&
               (slashOptions.length === 0 ? (
                 <div className={styles.slashEmpty}>
-                  {AGENT_DISPLAY_NAME[kind]} has no discoverable slash commands for Maestro to
-                  list — typing one still sends it as a plain message.
+                  {AGENT_DISPLAY_NAME[kind]} has no discoverable slash commands for Maestro to list
+                  — typing one still sends it as a plain message.
                 </div>
               ) : (
                 <div className={styles.slashEmpty}>

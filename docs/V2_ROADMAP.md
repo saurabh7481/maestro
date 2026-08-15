@@ -123,7 +123,7 @@ Phase 7's terminal-kill criteria was).
 
 **Goal:** lean further into "GUI for the CLIs you already trust" — right
 now Maestro reads each CLI's config (`~/.cursor/cli-config.json`,
-`~/.claude/...`) but never helps a user *edit* it. MCP servers,
+`~/.claude/...`) but never helps a user _edit_ it. MCP servers,
 subagents, and project instruction files (`CLAUDE.md`, `.cursor/rules`,
 `AGENTS.md`) are exactly the kind of config a GUI is better at than
 hand-editing JSON.
@@ -325,7 +325,7 @@ without data loss.
 deliberately — a queue of agent jobs that run unattended, instead of
 live in a tab you're watching turn-by-turn. This is "Maestro can do
 things across worktrees that a single terminal can't" pushed from
-*simultaneous* to *unattended-over-time*: a real throughput multiplier,
+_simultaneous_ to _unattended-over-time_: a real throughput multiplier,
 built entirely out of primitives the rest of this roadmap already
 lands, rather than a new deployment model.
 
@@ -378,4 +378,5 @@ its worktree is actually gone from disk.
                     │
         19 Autonomous task queue / background agent runs (capstone)
 ```
+
 </content>

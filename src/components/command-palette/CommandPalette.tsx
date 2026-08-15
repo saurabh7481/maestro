@@ -181,7 +181,9 @@ function useCommands(): Command[] {
 
 function splitPath(path: string): { name: string; dir: string } {
   const idx = path.lastIndexOf("/");
-  return idx === -1 ? { name: path, dir: "" } : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
+  return idx === -1
+    ? { name: path, dir: "" }
+    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
 }
 
 /** Fetches the active worktree's file list once per (worktree, mode-open)

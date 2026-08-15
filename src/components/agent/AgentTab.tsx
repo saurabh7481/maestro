@@ -313,8 +313,8 @@ export function AgentTab({ tab }: { tab: Tab }) {
           />
           <p className={styles.settingsNote}>
             Off by default. When on, every tool call runs without an approval card — only enable
-            this in a sandbox you trust. The composer's mode picker below the message box offers
-            the same switch, plus a read-only Plan mode.
+            this in a sandbox you trust. The composer's mode picker below the message box offers the
+            same switch, plus a read-only Plan mode.
           </p>
           {tab.worktreeId && tab.worktreeRoot && (
             <ResumeSessionPicker

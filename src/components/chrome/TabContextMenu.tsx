@@ -43,11 +43,7 @@ export function TabContextMenu({
             <X size={15} />
             Close
           </ContextMenu.Item>
-          <ContextMenu.Item
-            className={styles.item}
-            disabled={!hasOthers}
-            onSelect={onCloseOthers}
-          >
+          <ContextMenu.Item className={styles.item} disabled={!hasOthers} onSelect={onCloseOthers}>
             <XCircle size={15} />
             Close Others
           </ContextMenu.Item>
@@ -60,7 +56,10 @@ export function TabContextMenu({
             Close to the Right
           </ContextMenu.Item>
           {filePath && (
-            <ContextMenu.Item className={styles.item} onSelect={() => void navigator.clipboard.writeText(filePath)}>
+            <ContextMenu.Item
+              className={styles.item}
+              onSelect={() => void navigator.clipboard.writeText(filePath)}
+            >
               <Copy size={15} />
               Copy Path
             </ContextMenu.Item>

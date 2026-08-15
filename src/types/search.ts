@@ -20,8 +20,7 @@ export interface FileMatches {
 }
 
 export type SearchEvent =
-  | { type: "match"; file: FileMatches }
-  | { type: "done"; filesMatched: number; cancelled: boolean };
+  { type: "match"; file: FileMatches } | { type: "done"; filesMatched: number; cancelled: boolean };
 
 export interface ReplaceSummary {
   filesChanged: number;

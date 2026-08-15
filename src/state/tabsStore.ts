@@ -144,7 +144,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       const scoped = s.tabs.filter((t) => worktreeKey(t) === key);
       const remembered = s.activeTabIdByWorktree[key];
       const activeTabId =
-        remembered && scoped.some((t) => t.id === remembered) ? remembered : (scoped[0]?.id ?? null);
+        remembered && scoped.some((t) => t.id === remembered)
+          ? remembered
+          : (scoped[0]?.id ?? null);
       return { activeTabId };
     }),
 }));

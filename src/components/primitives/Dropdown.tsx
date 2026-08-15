@@ -44,11 +44,7 @@ export function Dropdown({
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className={`${styles.content} mo-glass`}
-          align="start"
-          sideOffset={4}
-        >
+        <DropdownMenu.Content className={`${styles.content} mo-glass`} align="start" sideOffset={4}>
           {options.map((option) => (
             <DropdownMenu.Item
               key={option.value}

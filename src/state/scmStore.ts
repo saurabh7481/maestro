@@ -218,7 +218,9 @@ export const useScmStore = create<ScmState>((set, get) => ({
       await gitApi.pushChanges(worktreeId, worktreeRoot);
     } catch (error) {
       set({ error: String(error) });
-      useToastStore.getState().push({ tone: "error", title: "Push failed", description: String(error) });
+      useToastStore
+        .getState()
+        .push({ tone: "error", title: "Push failed", description: String(error) });
       throw error;
     }
   },

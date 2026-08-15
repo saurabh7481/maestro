@@ -57,11 +57,7 @@ function ThemePicker() {
         </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className={`${styles.themeMenu} mo-glass`}
-          align="end"
-          sideOffset={6}
-        >
+        <DropdownMenu.Content className={`${styles.themeMenu} mo-glass`} align="end" sideOffset={6}>
           {THEME_IDS.map((id) => (
             <DropdownMenu.Item
               key={id}
@@ -122,9 +118,7 @@ function WorktreeSwitcher() {
           align="start"
           sideOffset={6}
         >
-          {projects.length === 0 && (
-            <div className={styles.switcherEmpty}>No projects yet</div>
-          )}
+          {projects.length === 0 && <div className={styles.switcherEmpty}>No projects yet</div>}
           {projects.map((project) => {
             const worktrees = worktreesByProject[project.id] ?? EMPTY_WORKTREES;
             return (

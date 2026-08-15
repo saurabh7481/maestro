@@ -171,7 +171,7 @@ mode manual` + `--allowedTools` gates tools; a gated call auto-denies
 
 - [x] `detect()`: binary on PATH, `--version` parse, logged-in check — via
       each CLI's own real local auth-status command (`claude auth status
-    --json`, `cursor-agent status --format json`); Codex's is
+--json`, `cursor-agent status --format json`); Codex's is
       unverified (not installed anywhere this project could test against)
       and reported as `Unknown`, never guessed
 - [x] Clear UI state for "not installed" / "not logged in" — `AgentTab`'s
@@ -179,7 +179,7 @@ mode manual` + `--allowedTools` gates tools; a gated call auto-denies
       items with reason tooltips. "Unsupported version" gating not
       implemented (no version floor identified to gate on)
 - [x] Spawn: `--print --input-format stream-json --output-format
-    stream-json --permission-mode manual --allowedTools ...` (real flag
+stream-json --permission-mode manual --allowedTools ...` (real flag
       surface, not the stale assumed one — see note above)
 - [x] NDJSON parser with unit tests for partial lines, interleaved events,
       malformed input — fixture-driven against real captured CLI output
@@ -211,7 +211,7 @@ mode manual` + `--allowedTools` gates tools; a gated call auto-denies
       approve/deny, quit+relaunch, resume, transcript matches native
       `claude --resume`) — not run in this session (sandboxed, no
       interactive verification); typecheck/lint/`cargo test`/`cargo
-    clippy`/full `cargo build` all pass, but this line item specifically
+clippy`/full `cargo build` all pass, but this line item specifically
       needs a human pass
 
 ## Phase 6 — Agent CLI: Codex & Cursor Agent
@@ -235,7 +235,7 @@ mode manual` + `--allowedTools` gates tools; a gated call auto-denies
 > an unrelated key first), not the single-key object assumed.
 >
 > **Cursor's permission model is config-file-driven** (`~/.cursor/
-> cli-config.json`'s `approvalMode`/`permissions.allow`/`deny`), not
+cli-config.json`'s `approvalMode`/`permissions.allow`/`deny`), not
 > per-invocation like Claude's `--allowedTools` — Maestro deliberately
 > doesn't read/rewrite that file (global, shared with the user's IDE).
 > With this machine's config already set to `unrestricted`, a live tool
@@ -257,7 +257,7 @@ mode manual` + `--allowedTools` gates tools; a gated call auto-denies
       until Codex is actually installed somewhere to observe whether the
       gap `ARCHITECTURE.md` §3.2 flagged is still real in a current build
 - [x] `CursorAgentAdapter`: `-p <prompt> --output-format stream-json
-      --trust [--resume <id>]` (real flag surface, confirmed live —
+--trust [--resume <id>]` (real flag surface, confirmed live —
       `agent -p --output-format json`/`agent ls` from `ARCHITECTURE.md`
       §3.3 don't match: `ls` is an interactive TUI, confirmed live, and
       one-shot uses `--output-format json` not the streaming form)

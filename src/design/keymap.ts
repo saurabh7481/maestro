@@ -16,7 +16,12 @@ export interface KeybindingAction {
 }
 
 export const KEYBINDING_ACTIONS: KeybindingAction[] = [
-  { id: "commandPalette.open", label: "Command Palette", group: "Navigation", defaultCombo: "mod+k" },
+  {
+    id: "commandPalette.open",
+    label: "Command Palette",
+    group: "Navigation",
+    defaultCombo: "mod+k",
+  },
   {
     id: "commandPalette.openAlt",
     label: "Command Palette (alternate)",

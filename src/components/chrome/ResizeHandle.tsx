@@ -16,8 +16,22 @@ export interface ResizeHandleProps {
  * no measurement or ref-coordination with the sidebar's own content
  * needed. One of these is rendered per open sidebar, as a sibling in
  * `AppShell.tsx`'s `.body`. */
-export function ResizeHandle({ cssVar, edge, minPx, maxPx, getWidthRem, onCommit }: ResizeHandleProps) {
-  const { onPointerDown } = useResizablePanel({ cssVar, edge, minPx, maxPx, getWidthRem, onCommit });
+export function ResizeHandle({
+  cssVar,
+  edge,
+  minPx,
+  maxPx,
+  getWidthRem,
+  onCommit,
+}: ResizeHandleProps) {
+  const { onPointerDown } = useResizablePanel({
+    cssVar,
+    edge,
+    minPx,
+    maxPx,
+    getWidthRem,
+    onCommit,
+  });
   return (
     <div
       className={styles.handle}

@@ -15,7 +15,13 @@ export interface ScmContextMenuProps {
  * lists) — VS Code's SCM context menu is the reference. Without this,
  * right-clicking a change fell through to the WebView's native context
  * menu instead of Stage/Unstage/Discard. */
-export function ScmContextMenu({ children, path, onStage, onUnstage, onDiscard }: ScmContextMenuProps) {
+export function ScmContextMenu({
+  children,
+  path,
+  onStage,
+  onUnstage,
+  onDiscard,
+}: ScmContextMenuProps) {
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
@@ -33,7 +39,10 @@ export function ScmContextMenu({ children, path, onStage, onUnstage, onDiscard }
               Unstage Changes
             </ContextMenu.Item>
           )}
-          <ContextMenu.Item className={styles.item} onSelect={() => void navigator.clipboard.writeText(path)}>
+          <ContextMenu.Item
+            className={styles.item}
+            onSelect={() => void navigator.clipboard.writeText(path)}
+          >
             <Copy size={15} />
             Copy Path
           </ContextMenu.Item>

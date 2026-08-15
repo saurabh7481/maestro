@@ -21,10 +21,14 @@ const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1];
 if (checkOnly) {
   const versions = [packageJson.version, tauriConfig.version, cargoVersion];
   if (!versions.every((version) => version === versions[0])) {
-    throw new Error(`Version mismatch: package=${versions[0]}, tauri=${versions[1]}, cargo=${versions[2]}`);
+    throw new Error(
+      `Version mismatch: package=${versions[0]}, tauri=${versions[1]}, cargo=${versions[2]}`,
+    );
   }
   if (expectedTag && expectedTag !== `v${versions[0]}`) {
-    throw new Error(`Release tag ${expectedTag} does not match application version v${versions[0]}`);
+    throw new Error(
+      `Release tag ${expectedTag} does not match application version v${versions[0]}`,
+    );
   }
   console.log(`Maestro version ${versions[0]} is synchronized.`);
   process.exit(0);
