@@ -3,6 +3,10 @@ name: Release
 permissions:
   contents: write
 
+env:
+  # Monaco's production bundle can exceed Node's default ~2 GB heap.
+  NODE_OPTIONS: --max-old-space-size=4096
+
 on:
   push:
     tags:
