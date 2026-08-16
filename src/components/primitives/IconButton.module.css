@@ -18,12 +18,12 @@
   will-change: background-color;
 }
 
-.button:hover {
+.button:not(:disabled):hover {
   background: var(--hover);
   color: var(--text);
 }
 
-.button:active {
+.button:not(:disabled):active {
   transform: scale(0.94);
 }
 
@@ -37,9 +37,13 @@
   color: var(--text);
 }
 
-.button[data-tone="danger"]:hover {
+.button[data-tone="danger"]:not(:disabled):hover {
   background: #c14b52;
   color: #fff;
+}
+.button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .sm {

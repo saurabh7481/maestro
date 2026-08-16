@@ -17,7 +17,7 @@
   white-space: nowrap;
 }
 
-.button:active {
+.button:not(:disabled):active {
   transform: scale(0.98);
 }
 
@@ -30,7 +30,7 @@
   background: var(--accent);
   color: var(--titlebar);
 }
-.primary:hover {
+.primary:not(:disabled):hover {
   filter: brightness(1.08);
 }
 
@@ -39,7 +39,7 @@
   border-color: var(--border);
   color: var(--text-dim);
 }
-.secondary:hover {
+.secondary:not(:disabled):hover {
   border-color: var(--border-2);
   color: var(--text);
 }
@@ -48,7 +48,12 @@
   background: transparent;
   color: var(--text-dim);
 }
-.ghost:hover {
+.ghost:not(:disabled):hover {
   background: var(--hover);
   color: var(--text);
+}
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }

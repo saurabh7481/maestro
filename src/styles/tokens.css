@@ -88,6 +88,8 @@
      user later changes --zoom. */
   --left-sidebar-width: 16.625rem;
   --right-sidebar-width: 19rem;
+  --activity-rail-width: 3.25rem;
+  --sidebar-responsive-max-width: 25vw;
 
   /* Note: Phosphor icon sizing (the `size={...}` prop) is *not* driven by
      a CSS custom property — see `src/design/iconSize.ts`'s comment for

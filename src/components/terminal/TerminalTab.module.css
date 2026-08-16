@@ -16,14 +16,36 @@
   font-size: var(--text-sm);
   color: var(--text-dim);
   font-family: var(--font-mono);
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .dim {
+  color: var(--text-mute);
+  flex: none;
+}
+
+.title,
+.branch,
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  flex: 1 1 12rem;
+}
+
+.branch {
+  flex: 0 1 28%;
   color: var(--text-mute);
 }
 
 .path {
   margin-left: auto;
+  flex: 0 1 42%;
   color: var(--text-mute);
 }
 

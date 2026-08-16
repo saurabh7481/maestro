@@ -171,10 +171,16 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
     <div className={styles.tab}>
       <div className={styles.header}>
         <TerminalWindow size={15} color="var(--green)" />
-        {tab.title}
+        <span className={styles.title} title={tab.title}>
+          {tab.title}
+        </span>
         <span className={styles.dim}>·</span>
-        <span className={styles.dim}>{activeWorktree?.branch ?? tab.title}</span>
-        <span className={styles.path}>{tab.worktreeRoot}</span>
+        <span className={styles.branch} title={activeWorktree?.branch ?? tab.title}>
+          {activeWorktree?.branch ?? tab.title}
+        </span>
+        <span className={styles.path} title={tab.worktreeRoot}>
+          {tab.worktreeRoot}
+        </span>
       </div>
       {spawnError && (
         <div className={styles.errorBanner}>

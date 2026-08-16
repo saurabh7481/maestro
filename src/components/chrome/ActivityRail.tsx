@@ -5,7 +5,6 @@ import {
   GitBranch,
   MagnifyingGlass,
   SidebarSimple,
-  UserCircle,
   WarningCircle,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
@@ -89,7 +88,6 @@ export function ActivityRail() {
 
       <div className={styles.spacer} />
 
-      <IconButton icon={UserCircle} label="Accounts" size="lg" iconSize={22} />
       <IconButton icon={GearSix} label="Settings" size="lg" iconSize={22} onClick={openSettings} />
     </div>
   );

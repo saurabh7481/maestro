@@ -68,24 +68,51 @@ export function useResizablePanel({
         if (!rafId) rafId = window.requestAnimationFrame(applyPending);
       }
 
-      function onPointerUp() {
+      function finishDrag() {
         if (rafId) window.cancelAnimationFrame(rafId);
         window.removeEventListener("pointermove", onPointerMove);
-        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointerup", finishDrag);
+        window.removeEventListener("pointercancel", finishDrag);
         delete root.dataset.resizingSidebar;
-        target.releasePointerCapture(event.pointerId);
+        if (target.hasPointerCapture(event.pointerId))
+          target.releasePointerCapture(event.pointerId);
 
         const finalPx = pendingPx ?? startPx;
+        root.style.setProperty(cssVar, `${finalPx}px`);
         const finalZoom = Number(getComputedStyle(root).getPropertyValue("--zoom")) || ZOOM_DEFAULT;
         onCommit(finalPx / (BASE_ROOT_FONT_PX * finalZoom));
         dragState.current = null;
       }
 
       window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointerup", finishDrag);
+      window.addEventListener("pointercancel", finishDrag);
     },
     [cssVar, edge, minPx, maxPx, getWidthRem, onCommit],
   );
 
-  return { onPointerDown };
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const direction = edge === "left" ? 1 : -1;
+      let nextPx: number | null = null;
+      const root = document.documentElement;
+      const zoom = Number(getComputedStyle(root).getPropertyValue("--zoom")) || ZOOM_DEFAULT;
+      const rootFontPx = BASE_ROOT_FONT_PX * zoom;
+      const currentPx = getWidthRem() * rootFontPx;
+
+      if (event.key === "ArrowLeft") nextPx = currentPx - 8 * direction;
+      else if (event.key === "ArrowRight") nextPx = currentPx + 8 * direction;
+      else if (event.key === "Home") nextPx = minPx;
+      else if (event.key === "End") nextPx = maxPx;
+      if (nextPx == null) return;
+
+      event.preventDefault();
+      const clamped = Math.min(maxPx, Math.max(minPx, nextPx));
+      root.style.setProperty(cssVar, `${clamped}px`);
+      onCommit(clamped / rootFontPx);
+    },
+    [cssVar, edge, minPx, maxPx, getWidthRem, onCommit],
+  );
+
+  return { onPointerDown, onKeyDown };
 }

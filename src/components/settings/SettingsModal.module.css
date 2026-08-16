@@ -35,6 +35,12 @@
 .navItem:hover {
   background: var(--hover);
 }
+.navItem:focus-visible,
+.themeCard:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .navItem[data-active="true"] {
   background: var(--active);
   color: var(--text);
@@ -108,6 +114,19 @@
 }
 .themeCard[data-active="true"] {
   border-color: var(--accent);
+}
+
+@media (max-width: 680px) {
+  .nav {
+    width: 10.5rem;
+  }
+  .paneHeader,
+  .paneBody {
+    padding: var(--space-6);
+  }
+  .themeGrid {
+    flex-direction: column;
+  }
 }
 
 .themePreview {

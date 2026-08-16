@@ -390,7 +390,19 @@ function SectionHeader({
   bulkAction?: ReactNode;
 }) {
   return (
-    <div className={styles.sectionHeader} onClick={onToggle}>
+    <div
+      className={styles.sectionHeader}
+      role="button"
+      tabIndex={0}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " "))
+          return;
+        event.preventDefault();
+        onToggle();
+      }}
+    >
       {collapsed ? <CaretRight size={11} /> : <CaretDown size={11} />}
       {icon}
       {label}

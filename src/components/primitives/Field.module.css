@@ -17,8 +17,13 @@
   transition: border-color var(--duration-fast) var(--ease-out);
 }
 .control:focus-visible {
-  outline: none;
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
   border-color: var(--accent);
+}
+.control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .control::placeholder {
   color: var(--text-mute);

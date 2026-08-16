@@ -17,12 +17,16 @@
 .trigger:hover {
   border-color: var(--border-2);
 }
+.trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .trigger[data-state="open"] {
   border-color: var(--accent);
 }
 .trigger:disabled {
-  opacity: 0.6;
-  cursor: default;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .triggerLabel {

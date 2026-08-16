@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDesignSystem } from "../../design/useDesignSystem";
 import { useSessionPersistence } from "../../design/useSessionPersistence";
@@ -31,6 +31,26 @@ import styles from "./AppShell.module.css";
 
 const SIDEBAR_MIN_PX = 180;
 const SIDEBAR_MAX_PX = 480;
+
+function useWindowWidth() {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setWidth(window.innerWidth);
+      });
+    };
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+  return width;
+}
 
 /** Starts/stops the file watcher as the active worktree changes — one
  * live watcher at a time (docs/ROADMAP.md Phase 3), not one per worktree. */
@@ -230,7 +250,12 @@ export function AppShell() {
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const setLeftSidebarWidth = useUiStore((s) => s.setLeftSidebarWidth);
   const setRightSidebarWidth = useUiStore((s) => s.setRightSidebarWidth);
-  const maxPx = Math.min(SIDEBAR_MAX_PX, window.innerWidth * 0.4);
+  const windowWidth = useWindowWidth();
+  // Two sidebars may be open simultaneously. Capping each at a quarter of
+  // the viewport preserves at least roughly half the window for the actual
+  // editor/terminal (minus the activity rail), including at increased UI
+  // zoom where the persisted rem widths otherwise consume nearly everything.
+  const maxPx = Math.min(SIDEBAR_MAX_PX, windowWidth * 0.25);
 
   return (
     <TooltipProvider>

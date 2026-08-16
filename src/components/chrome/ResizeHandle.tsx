@@ -10,6 +10,9 @@ export interface ResizeHandleProps {
   onCommit: (widthRem: number) => void;
 }
 
+const ACTIVITY_RAIL_WIDTH = "var(--activity-rail-width)";
+const RESPONSIVE_MAX_WIDTH = "var(--sidebar-responsive-max-width)";
+
 /** A thin drag strip pinned to a sidebar's inner edge, tracking that
  * sidebar's width via `cssVar` (see `Sidebar.module.css`'s
  * `.panel[data-side]` rules) so it moves with the panel automatically —
@@ -24,7 +27,7 @@ export function ResizeHandle({
   getWidthRem,
   onCommit,
 }: ResizeHandleProps) {
-  const { onPointerDown } = useResizablePanel({
+  const { onPointerDown, onKeyDown } = useResizablePanel({
     cssVar,
     edge,
     minPx,
@@ -36,8 +39,20 @@ export function ResizeHandle({
     <div
       className={styles.handle}
       data-edge={edge}
-      style={{ [edge]: `calc(var(${cssVar}) - 3px)` } as React.CSSProperties}
+      role="separator"
+      aria-label={`${edge === "left" ? "Workspace" : "Side"} panel width`}
+      aria-orientation="vertical"
+      tabIndex={0}
+      style={
+        {
+          [edge]:
+            edge === "right"
+              ? `calc(min(var(${cssVar}), ${RESPONSIVE_MAX_WIDTH}) + ${ACTIVITY_RAIL_WIDTH} - 5px)`
+              : `calc(min(var(${cssVar}), ${RESPONSIVE_MAX_WIDTH}) - 5px)`,
+        } as React.CSSProperties
+      }
       onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
     />
   );
 }

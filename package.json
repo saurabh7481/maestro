@@ -1,7 +1,7 @@
 {
   "name": "maestro",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Cross-platform GUI Agentic Development Environment wrapping Claude Code, Codex CLI, and Cursor Agent, organized around git projects and worktrees.",
   "license": "UNLICENSED",
   "type": "module",

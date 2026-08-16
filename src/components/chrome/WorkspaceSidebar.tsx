@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   CaretDown,
   CaretLineLeft,
@@ -8,7 +8,6 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
-  MagnifyingGlass,
   Plus,
   PlusCircle,
   Trash,
@@ -24,6 +23,12 @@ import { ProjectContextMenu } from "../workspace/ProjectContextMenu";
 import { ProjectSettingsDialog } from "../workspace/ProjectSettingsDialog";
 import styles from "./Sidebar.module.css";
 
+function activateOnKeyboard(event: KeyboardEvent<HTMLElement>, action: () => void) {
+  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+  event.preventDefault();
+  action();
+}
+
 function WorktreeRow({ project, worktree }: { project: Project; worktree: Worktree }) {
   const activeWorktreeId = useWorkspaceStore((s) => s.activeWorktreeId);
   const selectWorktree = useWorkspaceStore((s) => s.selectWorktree);
@@ -35,7 +40,13 @@ function WorktreeRow({ project, worktree }: { project: Project; worktree: Worktr
       <div
         className={`${styles.row} ${styles.indent1}`}
         data-active={isActive}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isActive}
         onClick={() => selectWorktree(project.id, worktree.id)}
+        onKeyDown={(event) =>
+          activateOnKeyboard(event, () => selectWorktree(project.id, worktree.id))
+        }
       >
         <span className={styles.rowIcon}>
           <GitBranch size={14} color={isActive ? "var(--accent)" : undefined} />
@@ -117,7 +128,14 @@ function ProjectSection({
         onDelete={() => void removeProject(project.id)}
         onSettings={() => setSettingsOpen(true)}
       >
-        <div className={styles.row} onClick={renaming ? undefined : onToggleCollapsed}>
+        <div
+          className={styles.row}
+          role="button"
+          tabIndex={renaming ? -1 : 0}
+          aria-expanded={!collapsed}
+          onClick={renaming ? undefined : onToggleCollapsed}
+          onKeyDown={(event) => !renaming && activateOnKeyboard(event, onToggleCollapsed)}
+        >
           <span className={styles.rowIcon}>
             {collapsed ? (
               <CaretRight size={11} color="var(--text-mute)" />
@@ -180,7 +198,10 @@ function ProjectSection({
           <div
             className={`${styles.row} ${styles.indent1}`}
             data-accent="true"
+            role="button"
+            tabIndex={0}
             onClick={() => setNewWorktreeOpen(true)}
+            onKeyDown={(event) => activateOnKeyboard(event, () => setNewWorktreeOpen(true))}
           >
             <span className={styles.rowIcon}>
               <PlusCircle size={14} />
@@ -271,7 +292,6 @@ export function WorkspaceSidebar() {
       <div className={styles.header}>
         <span className={styles.headerLabel}>Workspace</span>
         <div className={styles.headerActions}>
-          <IconButton icon={MagnifyingGlass} label="Search worktrees" size="sm" iconSize={14} />
           <IconButton
             icon={Plus}
             label="Add project"
@@ -305,7 +325,7 @@ export function WorkspaceSidebar() {
           }}
         >
           <span style={{ flex: 1 }}>{error}</span>
-          <X size={12} style={{ cursor: "pointer", flexShrink: 0 }} onClick={clearError} />
+          <IconButton icon={X} label="Dismiss error" size="sm" iconSize={12} onClick={clearError} />
         </div>
       )}
 
@@ -329,7 +349,14 @@ export function WorkspaceSidebar() {
 
         <div className={styles.divider} />
 
-        <div className={styles.row} data-accent="true" onClick={() => void addProject()}>
+        <div
+          className={styles.row}
+          data-accent="true"
+          role="button"
+          tabIndex={0}
+          onClick={() => void addProject()}
+          onKeyDown={(event) => activateOnKeyboard(event, () => void addProject())}
+        >
           <span className={styles.rowIcon}>
             <FolderPlus size={15} />
           </span>

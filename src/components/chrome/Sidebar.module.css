@@ -18,12 +18,12 @@
 }
 .panel[data-side="left"] {
   order: 1;
-  width: var(--left-sidebar-width);
+  width: min(var(--left-sidebar-width), var(--sidebar-responsive-max-width));
   border-right: var(--border-width) solid var(--border);
 }
 .panel[data-side="right"] {
   order: 3;
-  width: var(--right-sidebar-width);
+  width: min(var(--right-sidebar-width), var(--sidebar-responsive-max-width));
   border-left: var(--border-width) solid var(--border);
 }
 
@@ -162,6 +162,21 @@
 }
 .row:hover .rowAction {
   opacity: 1;
+}
+.row:focus-within .rowAction,
+.rowAction:focus-visible {
+  opacity: 1;
+}
+
+.row[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (hover: none) {
+  .rowAction {
+    opacity: 1;
+  }
 }
 
 .dot {

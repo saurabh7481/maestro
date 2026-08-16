@@ -47,14 +47,14 @@ export function PermissionPrompt({
     <div className={styles.prompt}>
       <span className={styles.message}>{permission.message}</span>
       <div className={styles.actions}>
-        <div className={styles.approve} onClick={() => respond("approve")}>
+        <button type="button" className={styles.approve} onClick={() => respond("approve")}>
           <Check size={13} />
           Approve
-        </div>
-        <div className={styles.deny} onClick={() => respond("deny")}>
+        </button>
+        <button type="button" className={styles.deny} onClick={() => respond("deny")}>
           <X size={13} />
           Deny
-        </div>
+        </button>
       </div>
     </div>
   );

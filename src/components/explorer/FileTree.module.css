@@ -17,6 +17,13 @@
      what's actually painted. */
   will-change: transform;
 }
+.rowWrap:focus-visible {
+  outline: none;
+}
+.rowWrap:focus-visible .row {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 /* The virtualizer (FileTree.tsx) reserves an exact `ROW_HEIGHT * zoom`
    slot per row via `.rowWrap`'s inline height. The shared `sidebar.row`

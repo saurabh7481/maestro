@@ -39,14 +39,18 @@ function MatchRow({
   const hit = match.lineText.slice(match.matchStart, match.matchEnd);
   const after = match.lineText.slice(match.matchEnd);
   return (
-    <div className={`${sidebar.row} ${sidebar.indent1} ${styles.matchRow}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`${sidebar.row} ${sidebar.indent1} ${styles.matchRow}`}
+      onClick={onClick}
+    >
       <span className={styles.matchLine}>{match.line}</span>
       <span className={styles.matchText} title={`${path}:${match.line}`}>
         {before}
         <mark className={styles.matchHighlight}>{hit}</mark>
         {after}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -56,7 +60,12 @@ function FileHeaderRow({ file, collapsed }: { file: FileMatches; collapsed: bool
   const { icon: Icon, color } = iconForFile(name);
 
   return (
-    <div className={sidebar.row} onClick={() => toggleFileCollapsed(file.path)}>
+    <button
+      type="button"
+      className={sidebar.row}
+      aria-expanded={!collapsed}
+      onClick={() => toggleFileCollapsed(file.path)}
+    >
       {collapsed ? <CaretRight size={11} /> : <CaretDown size={11} />}
       <span className={styles.fileIcon}>
         <Icon size={ICON_SIZE.sm} color={color} />
@@ -64,7 +73,7 @@ function FileHeaderRow({ file, collapsed }: { file: FileMatches; collapsed: bool
       <span className={styles.fileName}>{name}</span>
       {dir && <span className={styles.filePath}>{dir}</span>}
       <span className={styles.matchCount}>{file.matches.length}</span>
-    </div>
+    </button>
   );
 }
 
@@ -183,10 +192,16 @@ export function SearchPanel() {
           </Tooltip>
         </div>
 
-        <div className={styles.replaceToggle} onClick={() => setReplaceOpen(!replaceOpen)}>
+        <button
+          type="button"
+          className={styles.replaceToggle}
+          aria-label={replaceOpen ? "Hide replace" : "Show replace"}
+          aria-expanded={replaceOpen}
+          onClick={() => setReplaceOpen(!replaceOpen)}
+        >
           {replaceOpen ? <CaretDown size={11} /> : <CaretRight size={11} />}
           Replace
-        </div>
+        </button>
 
         {replaceOpen && (
           <div className={styles.inputRow}>

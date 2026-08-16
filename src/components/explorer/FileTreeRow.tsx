@@ -91,7 +91,7 @@ export function FileTreeRow({
     paddingLeft: (BASE_INDENT + row.depth * DEPTH_STEP) * zoom,
   };
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleRenameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       event.preventDefault();
       const trimmed = draftName.trim();
@@ -103,12 +103,32 @@ export function FileTreeRow({
     }
   }
 
+  function handleTreeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      (row.isDir ? onToggle : onOpen)();
+    } else if (event.key === "ArrowRight" && row.isDir && !row.isExpanded) {
+      event.preventDefault();
+      onToggle();
+    } else if (event.key === "ArrowLeft" && row.isDir && row.isExpanded) {
+      event.preventDefault();
+      onToggle();
+    } else if (event.key === "F2") {
+      event.preventDefault();
+      beginRename();
+    }
+  }
+
   const content = (
     <div
       className={styles.rowWrap}
       style={style}
       role="treeitem"
       aria-expanded={row.isDir ? row.isExpanded : undefined}
+      aria-selected={active}
+      tabIndex={isRenaming ? -1 : 0}
+      onKeyDown={handleTreeKeyDown}
     >
       <div
         className={`${sidebar.row} ${styles.row}`}
@@ -140,7 +160,7 @@ export function FileTreeRow({
             className={styles.renameInput}
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={handleRenameKeyDown}
             onBlur={() => onCancelRename()}
             onClick={(e) => e.stopPropagation()}
           />

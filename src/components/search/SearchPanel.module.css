@@ -53,6 +53,11 @@
   cursor: pointer;
   width: fit-content;
 }
+.replaceToggle:focus-visible,
+.matchRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .replaceToggle:hover {
   color: var(--text);
 }

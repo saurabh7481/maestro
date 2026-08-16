@@ -1,6 +1,6 @@
 .rail {
   order: 4;
-  width: 3.25rem;
+  width: var(--activity-rail-width);
   flex: none;
   display: flex;
   flex-direction: column;

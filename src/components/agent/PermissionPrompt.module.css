@@ -55,6 +55,11 @@
 .deny:active {
   transform: scale(0.97);
 }
+.approve:focus-visible,
+.deny:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .resolved {
   color: var(--text-mute);

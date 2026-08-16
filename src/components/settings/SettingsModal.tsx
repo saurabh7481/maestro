@@ -75,6 +75,7 @@ function AppearancePane() {
               type="button"
               className={styles.themeCard}
               data-active={theme === id}
+              aria-pressed={theme === id}
               onClick={() => setTheme(id)}
             >
               <div
@@ -156,6 +157,7 @@ export function SettingsModal() {
               type="button"
               className={styles.navItem}
               data-active={section === item.id}
+              aria-current={section === item.id ? "page" : undefined}
               onClick={() => setSection(item.id)}
             >
               <ItemIcon size={16} color={section === item.id ? "var(--accent)" : undefined} />
