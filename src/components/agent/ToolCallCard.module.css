@@ -9,6 +9,19 @@
 .card:hover {
   border-color: var(--border-2);
 }
+.card[data-nested] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  animation: none;
+}
+.card[data-nested] + .card[data-nested] {
+  border-top: var(--border-width) solid var(--border);
+}
+.card[data-nested] .header {
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-xs);
+}
 
 .header {
   display: flex;

@@ -23,6 +23,8 @@ export function PermissionPrompt({
 }) {
   const setStatus = useAgentSessionStore((s) => s.setToolCallPermissionStatus);
   const setWorking = useAgentSessionStore((s) => s.setWorking);
+  const setRunError = useAgentSessionStore((s) => s.setRunError);
+  const working = useAgentSessionStore((s) => s.byRunId[runId]?.status === "working");
 
   if (permission.status !== "pending") {
     return (
@@ -34,28 +36,48 @@ export function PermissionPrompt({
     );
   }
 
-  function respond(decision: "approve" | "deny") {
+  async function respond(decision: "approve" | "deny") {
+    // These CLIs report a denial before their current process has emitted
+    // its final result. Starting the retry during that gap creates two
+    // concurrent turns for one run and races session/cancel bookkeeping.
+    if (working) return;
     setStatus(runId, toolCallId, decision === "approve" ? "approved" : "denied");
     setWorking(runId);
-    void agentsApi.respondToPermission(
-      runId,
-      decision === "approve" ? { decision: "approve", toolName } : { decision: "deny" },
-    );
+    try {
+      await agentsApi.respondToPermission(
+        runId,
+        decision === "approve" ? { decision: "approve", toolName } : { decision: "deny" },
+      );
+    } catch (error) {
+      setRunError(runId, `Could not continue after the permission decision: ${String(error)}`);
+    }
   }
 
   return (
     <div className={styles.prompt}>
       <span className={styles.message}>{permission.message}</span>
       <div className={styles.actions}>
-        <button type="button" className={styles.approve} onClick={() => respond("approve")}>
+        <button
+          type="button"
+          className={styles.approve}
+          disabled={working}
+          title={working ? "Waiting for the current agent turn to finish" : undefined}
+          onClick={() => void respond("approve")}
+        >
           <Check size={13} />
           Approve
         </button>
-        <button type="button" className={styles.deny} onClick={() => respond("deny")}>
+        <button
+          type="button"
+          className={styles.deny}
+          disabled={working}
+          onClick={() => void respond("deny")}
+        >
           <X size={13} />
           Deny
         </button>
       </div>
+      {working && <span className={styles.waiting}>Finishing current step…</span>}
     </div>
   );
 }

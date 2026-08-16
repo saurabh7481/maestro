@@ -136,6 +136,19 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                 total_cost_usd: None,
                 duration_ms: 0,
                 num_turns: 1,
+                input_tokens: value
+                    .get("usage")
+                    .and_then(|u| u.get("input_tokens"))
+                    .and_then(|n| n.as_u64()),
+                output_tokens: value
+                    .get("usage")
+                    .and_then(|u| u.get("output_tokens"))
+                    .and_then(|n| n.as_u64()),
+                cache_read_tokens: value
+                    .get("usage")
+                    .and_then(|u| u.get("cached_input_tokens"))
+                    .and_then(|n| n.as_u64()),
+                cache_write_tokens: None,
                 result_text: None,
             }],
             None,
@@ -288,6 +301,10 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                     total_cost_usd: None,
                     duration_ms: 0,
                     num_turns: 1,
+                    input_tokens: None,
+                    output_tokens: None,
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
                     result_text: msg
                         .get("last_agent_message")
                         .and_then(|s| s.as_str())
@@ -341,6 +358,13 @@ mod tests {
             r#"{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":3}}"#,
             &mut cache,
         );
-        assert!(matches!(events.as_slice(), [AgentEvent::TurnResult { .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::TurnResult {
+                input_tokens: Some(12),
+                output_tokens: Some(3),
+                ..
+            }]
+        ));
     }
 }

@@ -50,7 +50,17 @@ export type TranscriptItem =
       permission?: PermissionState;
     }
   | { id: string; kind: "error"; message: string }
-  | { id: string; kind: "turnComplete"; baselineHead: string | null; baselinePaths: string[] }
+  | {
+      id: string;
+      kind: "turnComplete";
+      baselineHead: string | null;
+      baselinePaths: string[];
+      durationMs: number;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      cacheReadTokens: number | null;
+      cacheWriteTokens: number | null;
+    }
   /** An event Maestro's adapter for this CLI didn't recognize and
    * forwarded verbatim rather than dropping (docs/CHECKLIST.md's "no
    * silent failure") — rendered as a small collapsed raw-JSON card
@@ -64,7 +74,17 @@ export interface AgentTabState {
   items: TranscriptItem[];
   status: AgentRunStatus;
   errorMessage: string | null;
-  lastResult: { sessionId: string; totalCostUsd: number | null; durationMs: number } | null;
+  lastResult: {
+    sessionId: string;
+    totalCostUsd: number | null;
+    durationMs: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+  } | null;
+  permissionMode: import("../types/agent").PermissionMode;
+  turnStartedAtMs: number | null;
   /** Whether `start_agent_session` has been called yet — determines
    * whether the next composer submit calls `startAgentSession` or
    * `sendAgentMessage`. */
@@ -78,6 +98,8 @@ function emptyTabState(): AgentTabState {
     status: "idle",
     errorMessage: null,
     lastResult: null,
+    permissionMode: "manual",
+    turnStartedAtMs: null,
     started: false,
     turnBaseline: null,
   };
@@ -123,6 +145,8 @@ interface AgentSessionState {
   resumeSession: (runId: string, sessionId: string, turns: TranscriptTurn[]) => void;
   appendUserMessage: (runId: string, text: string) => void;
   setWorking: (runId: string) => void;
+  setRunError: (runId: string, message: string) => void;
+  setPermissionMode: (runId: string, mode: import("../types/agent").PermissionMode) => void;
   setTurnBaseline: (runId: string, head: string | null, paths: string[]) => void;
   setToolCallPermissionStatus: (
     runId: string,
@@ -214,9 +238,19 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
           items,
           status: "idle",
           errorMessage: null,
-          lastResult: { sessionId, totalCostUsd: null, durationMs: 0 },
+          lastResult: {
+            sessionId,
+            totalCostUsd: null,
+            durationMs: 0,
+            inputTokens: null,
+            outputTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+          },
           started: true,
           turnBaseline: null,
+          permissionMode: "manual",
+          turnStartedAtMs: null,
         },
       },
     }));
@@ -232,6 +266,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             ...tab,
             status: "working",
             errorMessage: null,
+            turnStartedAtMs: Date.now(),
             items: [...tab.items, { id: nextId(), kind: "user", text }],
           },
         },
@@ -242,7 +277,31 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
   setWorking: (runId) => {
     set((s) => {
       const tab = s.byRunId[runId] ?? emptyTabState();
-      return { byRunId: { ...s.byRunId, [runId]: { ...tab, status: "working" } } };
+      return {
+        byRunId: {
+          ...s.byRunId,
+          [runId]: { ...tab, status: "working", errorMessage: null, turnStartedAtMs: Date.now() },
+        },
+      };
+    });
+  },
+
+  setRunError: (runId, message) => {
+    set((s) => {
+      const tab = s.byRunId[runId] ?? emptyTabState();
+      return {
+        byRunId: {
+          ...s.byRunId,
+          [runId]: { ...tab, status: "error", errorMessage: message, turnStartedAtMs: null },
+        },
+      };
+    });
+  },
+
+  setPermissionMode: (runId, mode) => {
+    set((s) => {
+      const tab = s.byRunId[runId] ?? emptyTabState();
+      return { byRunId: { ...s.byRunId, [runId]: { ...tab, permissionMode: mode } } };
     });
   },
 
@@ -354,13 +413,20 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             },
           };
         case "turnResult":
-          notifyIfBackgrounded(runId, "success", "Agent finished");
+          notifyIfBackgrounded(
+            runId,
+            event.isError ? "error" : "success",
+            event.isError ? "Agent stopped with an error" : "Agent finished",
+          );
           return {
             byRunId: {
               ...s.byRunId,
               [runId]: {
                 ...tab,
-                status: "idle",
+                status: event.isError ? "error" : "idle",
+                errorMessage: event.isError
+                  ? (event.resultText ?? "The agent reported that this turn failed.")
+                  : null,
                 items: [
                   ...items,
                   {
@@ -368,13 +434,23 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                     kind: "turnComplete",
                     baselineHead: tab.turnBaseline?.head ?? null,
                     baselinePaths: tab.turnBaseline?.paths ?? [],
+                    durationMs: event.durationMs,
+                    inputTokens: event.inputTokens,
+                    outputTokens: event.outputTokens,
+                    cacheReadTokens: event.cacheReadTokens,
+                    cacheWriteTokens: event.cacheWriteTokens,
                   },
                 ],
                 turnBaseline: null,
+                turnStartedAtMs: null,
                 lastResult: {
                   sessionId: event.sessionId,
                   totalCostUsd: event.totalCostUsd,
                   durationMs: event.durationMs,
+                  inputTokens: event.inputTokens,
+                  outputTokens: event.outputTokens,
+                  cacheReadTokens: event.cacheReadTokens,
+                  cacheWriteTokens: event.cacheWriteTokens,
                 },
               },
             },
@@ -402,6 +478,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                 [runId]: {
                   ...tab,
                   status: "error",
+                  turnStartedAtMs: null,
                   errorMessage: `Agent process exited unexpectedly${event.code !== null ? ` (code ${event.code})` : ""}.`,
                 },
               },

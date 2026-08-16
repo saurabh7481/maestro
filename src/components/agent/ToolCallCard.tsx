@@ -71,9 +71,11 @@ function diffColoredLines(content: string): { sign: "-" | "+" | null; text: stri
 export const ToolCallCard = memo(function ToolCallCard({
   runId,
   item,
+  nested = false,
 }: {
   runId: string;
   item: ToolCallItem;
+  nested?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const visual = TOOL_ICON[item.name] ?? { icon: Wrench, color: "var(--text-dim)" };
@@ -90,11 +92,18 @@ export const ToolCallCard = memo(function ToolCallCard({
     : (item.result?.content ?? "");
 
   return (
-    <div className={styles.card}>
+    <div className={styles.card} data-nested={nested || undefined}>
       <div
         className={styles.header}
         onClick={() => hasBody && setExpanded((v) => !v)}
         role={hasBody ? "button" : undefined}
+        tabIndex={hasBody ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (hasBody && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            setExpanded((value) => !value);
+          }
+        }}
       >
         {pending ? (
           <SpinnerGap size={15} color="var(--accent)" className="mo-spin" />

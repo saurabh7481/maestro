@@ -16,6 +16,14 @@
     border-color var(--duration-fast, 150ms) ease-out,
     background var(--duration-fast, 150ms) ease-out;
 }
+
+[data-nested] > .chip {
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border-radius: 0;
+  justify-content: flex-start;
+  font-size: var(--text-xs);
+}
 .chip:hover {
   border-color: var(--border-2);
   background: var(--hover);

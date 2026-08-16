@@ -64,6 +64,10 @@ export type AgentEvent =
       totalCostUsd: number | null;
       durationMs: number;
       numTurns: number;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      cacheReadTokens: number | null;
+      cacheWriteTokens: number | null;
       resultText: string | null;
     }
   | { type: "error"; message: string }

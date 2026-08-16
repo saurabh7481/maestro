@@ -65,3 +65,15 @@
   color: var(--text-mute);
   font-style: italic;
 }
+
+.waiting {
+  width: 100%;
+  color: var(--text-mute);
+  font-size: var(--text-xs);
+}
+
+.approve:disabled,
+.deny:disabled {
+  cursor: wait;
+  opacity: 0.48;
+}

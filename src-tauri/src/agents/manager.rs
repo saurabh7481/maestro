@@ -230,6 +230,9 @@ pub struct StartAgentSessionRequest {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub fast: bool,
+    /// Must travel with session creation. Calling `set_permission_mode`
+    /// before this command is a no-op because the run does not exist yet.
+    pub permission_mode: PermissionMode,
 }
 
 #[tauri::command]
@@ -249,6 +252,7 @@ pub async fn start_agent_session(
         model,
         effort,
         fast,
+        permission_mode,
     } = request;
     {
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
@@ -267,7 +271,7 @@ pub async fn start_agent_session(
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                permission_mode: PermissionMode::default(),
+                permission_mode,
                 cancel_tx: None,
                 pid: None,
                 started_at_ms: crate::processes::now_ms(),

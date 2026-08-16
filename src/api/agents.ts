@@ -52,6 +52,7 @@ export const agentsApi = {
     model: string | null;
     effort: string | null;
     fast: boolean;
+    permissionMode: PermissionMode;
   }) => invoke<void>("start_agent_session", { request }),
   sendAgentMessage: (runId: string, text: string) =>
     invoke<void>("send_agent_message", { runId, text }),

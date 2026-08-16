@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -30,6 +30,7 @@ import type {
   SlashCommandOption,
 } from "../../types/agent";
 import styles from "./AgentComposer.module.css";
+import { resizeComposerTextarea } from "./composerSizing";
 
 const PERMISSION_MODE_META: Record<
   PermissionMode,
@@ -51,6 +52,7 @@ const PERMISSION_MODE_META: Record<
     description: "Read-only: analyze and propose, no edits or commands.",
   },
 };
+
 const PERMISSION_MODE_ORDER: PermissionMode[] = ["manual", "auto", "plan"];
 
 /** Fetched from the CLI itself, not a static guess (docs/V1_SCOPE.md §6
@@ -492,6 +494,11 @@ export function AgentComposer({
   // not read from `textareaRef.current` during render — reading a ref's
   // value at render time is unsafe (react-hooks/refs).
   const [cursorPos, setCursorPos] = useState(0);
+
+  useLayoutEffect(() => {
+    const element = textareaRef.current;
+    if (element) resizeComposerTextarea(element);
+  }, [draft]);
 
   const worktreeFiles = useWorktreeFileList(worktreeRoot);
   const selectedModel = modelOptions.find((option) => option.id === model) ?? null;

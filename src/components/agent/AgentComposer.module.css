@@ -81,6 +81,8 @@
   line-height: var(--leading-normal);
   min-height: 1.375rem;
   max-height: 12rem;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
 }
 .textarea::placeholder {
   color: var(--text-mute);
@@ -92,6 +94,12 @@
   gap: var(--space-5);
   margin-top: var(--space-6);
   flex-wrap: wrap;
+}
+
+@media (max-height: 42rem) {
+  .textarea {
+    max-height: 8rem;
+  }
 }
 
 .picker {

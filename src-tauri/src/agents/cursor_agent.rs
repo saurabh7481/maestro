@@ -312,6 +312,22 @@ pub fn parse_line(line: &str, cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Opt
                         .and_then(|n| n.as_u64())
                         .unwrap_or(0),
                     num_turns: 1,
+                    input_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("inputTokens"))
+                        .and_then(|n| n.as_u64()),
+                    output_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("outputTokens"))
+                        .and_then(|n| n.as_u64()),
+                    cache_read_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("cacheReadTokens"))
+                        .and_then(|n| n.as_u64()),
+                    cache_write_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("cacheWriteTokens"))
+                        .and_then(|n| n.as_u64()),
                     result_text: value
                         .get("result")
                         .and_then(|s| s.as_str())
@@ -387,6 +403,15 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, AgentEvent::TurnResult { .. })));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AgentEvent::TurnResult {
+                input_tokens: Some(14737),
+                output_tokens: Some(34),
+                cache_read_tokens: Some(5632),
+                ..
+            }
+        )));
     }
 
     #[test]

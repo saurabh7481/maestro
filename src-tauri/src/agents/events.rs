@@ -68,6 +68,13 @@ pub enum AgentEvent {
         total_cost_usd: Option<f64>,
         duration_ms: u64,
         num_turns: u32,
+        /// Normalized usage reported by the CLI for this turn. These are
+        /// optional because older CLI builds (and a few legacy event
+        /// shapes) do not expose every counter.
+        input_tokens: Option<u64>,
+        output_tokens: Option<u64>,
+        cache_read_tokens: Option<u64>,
+        cache_write_tokens: Option<u64>,
         result_text: Option<String>,
     },
     /// stderr output or a spawn-level failure.

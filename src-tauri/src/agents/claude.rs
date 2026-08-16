@@ -309,6 +309,22 @@ pub fn parse_line(
                         .and_then(|n| n.as_u64())
                         .unwrap_or(0),
                     num_turns: value.get("num_turns").and_then(|n| n.as_u64()).unwrap_or(0) as u32,
+                    input_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("input_tokens"))
+                        .and_then(|n| n.as_u64()),
+                    output_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("output_tokens"))
+                        .and_then(|n| n.as_u64()),
+                    cache_read_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("cache_read_input_tokens"))
+                        .and_then(|n| n.as_u64()),
+                    cache_write_tokens: value
+                        .get("usage")
+                        .and_then(|u| u.get("cache_creation_input_tokens"))
+                        .and_then(|n| n.as_u64()),
                     result_text: value
                         .get("result")
                         .and_then(|s| s.as_str())

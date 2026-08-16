@@ -2,15 +2,12 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
-  CaretDown,
-  CaretRight,
   ClockCounterClockwise,
   FolderSimple,
   GearSix,
   MagnifyingGlass,
   Stop,
   WarningCircle,
-  Wrench,
 } from "@phosphor-icons/react";
 import { agentsApi } from "../../api/agents";
 import { gitApi } from "../../api/git";
@@ -22,12 +19,12 @@ import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind, PermissionMode, ResumableSession } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
 import { Switch } from "../primitives";
-import { ToolCallCard } from "./ToolCallCard";
-import { ThinkingBlock } from "./ThinkingBlock";
 import { AgentComposer } from "./AgentComposer";
 import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { FileChangeReceipt } from "./FileChangeReceipt";
+import { ProcessingCard } from "./ProcessingCard";
+import { buildResponseBlocks } from "./processingBlocks";
 import styles from "./AgentTab.module.css";
 
 type Group =
@@ -115,25 +112,6 @@ function folderName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-/** An event the adapter didn't recognize, forwarded verbatim rather than
- * dropped (docs/CHECKLIST.md's "no silent failure") — expected mainly
- * from `codex.rs`, whose event shapes are best-effort/unverified until
- * it's live-tested against a real install. Collapsed by default so it
- * doesn't dominate the transcript. */
-const RawEventCard = memo(function RawEventCard({ json }: { json: unknown }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className={styles.rawCard}>
-      <div className={styles.rawHeader} onClick={() => setExpanded((v) => !v)}>
-        <Wrench size={13} />
-        Unrecognized event
-        {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
-      </div>
-      {expanded && <pre className={styles.rawBody}>{JSON.stringify(json, null, 2)}</pre>}
-    </div>
-  );
-});
-
 /** One transcript row. `memo`'d so a streamed event only re-renders the
  * group it actually touched — paired with `useStableGroups` above, which
  * is what makes the memo bite. */
@@ -144,6 +122,8 @@ const TranscriptGroup = memo(function TranscriptGroup({
   isNewest,
   worktreeId,
   worktreeRoot,
+  active,
+  turnStartedAtMs,
 }: {
   group: Group;
   kind: AgentKind;
@@ -151,6 +131,8 @@ const TranscriptGroup = memo(function TranscriptGroup({
   isNewest: boolean;
   worktreeId?: string;
   worktreeRoot?: string;
+  active: boolean;
+  turnStartedAtMs: number | null;
 }) {
   if (group.role === "user") {
     return (
@@ -162,6 +144,7 @@ const TranscriptGroup = memo(function TranscriptGroup({
       </div>
     );
   }
+  const blocks = buildResponseBlocks(group.items, active);
   return (
     <div className={`${styles.row} ${styles.assistantRow}`} data-newest={isNewest || undefined}>
       <div className={`${styles.avatar} mo-gradient-mark`}>
@@ -170,27 +153,27 @@ const TranscriptGroup = memo(function TranscriptGroup({
       <div className={styles.assistantMessage}>
         <div className={styles.roleLabel}>{AGENT_DISPLAY_NAME[kind]}</div>
         <div className={styles.assistantGroup}>
-          {group.items.map((item) => {
-            if (item.kind === "assistantText") {
-              return <AgentMarkdown key={item.id} text={item.text} />;
+          {blocks.map((block) => {
+            if (block.kind === "text") {
+              return <AgentMarkdown key={block.item.id} text={block.item.text} />;
             }
-            if (item.kind === "thinking") {
-              return <ThinkingBlock key={item.id} text={item.text} />;
-            }
-            if (item.kind === "toolCall") {
-              return <ToolCallCard key={item.id} runId={runId} item={item} />;
-            }
-            if (item.kind === "error") {
+            if (block.kind === "error") {
               return (
-                <div className={styles.inlineError} key={item.id}>
-                  {item.message}
+                <div className={styles.inlineError} key={block.item.id}>
+                  {block.item.message}
                 </div>
               );
             }
-            if (item.kind === "raw") {
-              return <RawEventCard key={item.id} json={item.json} />;
-            }
-            return null;
+            return (
+              <ProcessingCard
+                key={block.key}
+                runId={runId}
+                items={block.items}
+                active={block.active}
+                completion={block.completion}
+                turnStartedAtMs={turnStartedAtMs}
+              />
+            );
           })}
           {group.items.some((item) => item.kind === "turnComplete") &&
             worktreeId &&
@@ -207,39 +190,6 @@ const TranscriptGroup = memo(function TranscriptGroup({
     </div>
   );
 });
-
-/** The working indicator's elapsed-seconds counter, isolated in its own
- * leaf component *specifically* so its 1 Hz `setState` can't reach the
- * transcript. Living inside `AgentTab`, this ticker re-rendered the entire
- * conversation once per second for the whole duration of every turn, even
- * with no events arriving at all (docs/PERFORMANCE_AUDIT.md §1.3). */
-function WorkingIndicator({ kind }: { kind: AgentKind }) {
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const start = Date.now();
-    const id = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - start) / 1000));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <div className={`${styles.row} ${styles.assistantRow}`}>
-      <div className={`${styles.avatar} mo-gradient-mark`}>
-        <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
-      </div>
-      <div className={styles.typing}>
-        <span className={styles.typingDot} style={{ animationDelay: "0s" }} />
-        <span className={styles.typingDot} style={{ animationDelay: "0.2s" }} />
-        <span className={styles.typingDot} style={{ animationDelay: "0.4s" }} />
-        <span className={styles.typingLabel}>
-          {elapsed > 2 ? `Working… ${elapsed}s` : "Working…"}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function NotReadyCard({ title, detail }: { title: string; detail: string | null | undefined }) {
   return (
@@ -409,6 +359,7 @@ function Transcript({
   active,
   worktreeId,
   worktreeRoot,
+  turnStartedAtMs,
 }: {
   groups: Group[];
   kind: AgentKind;
@@ -417,6 +368,7 @@ function Transcript({
   active: boolean;
   worktreeId?: string;
   worktreeRoot?: string;
+  turnStartedAtMs: number | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Whether the user is following the bottom of the conversation. Held in
@@ -513,15 +465,30 @@ function Transcript({
                   isNewest={virtualItem.index === lastIndex}
                   worktreeId={worktreeId}
                   worktreeRoot={worktreeRoot}
+                  active={working && virtualItem.index === lastIndex && group.role === "assistant"}
+                  turnStartedAtMs={turnStartedAtMs}
                 />
               </div>
             );
           })}
         </div>
       </div>
-      {working && (
+      {working && groups[lastIndex]?.role === "user" && (
         <div className={styles.workingRow}>
-          <WorkingIndicator kind={kind} />
+          <div className={`${styles.row} ${styles.assistantRow}`}>
+            <div className={`${styles.avatar} mo-gradient-mark`}>
+              <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
+            </div>
+            <div className={styles.assistantMessage}>
+              <ProcessingCard
+                runId={runId}
+                items={[]}
+                active
+                completion={null}
+                turnStartedAtMs={turnStartedAtMs}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -539,9 +506,11 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const appendUserMessage = useAgentSessionStore((s) => s.appendUserMessage);
   const markStarted = useAgentSessionStore((s) => s.markStarted);
   const setTurnBaseline = useAgentSessionStore((s) => s.setTurnBaseline);
+  const setRunError = useAgentSessionStore((s) => s.setRunError);
+  const setStoredPermissionMode = useAgentSessionStore((s) => s.setPermissionMode);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [permissionMode, setPermissionModeState] = useState<PermissionMode>("manual");
+  const permissionMode: PermissionMode = tabState?.permissionMode ?? "manual";
   const working = tabState?.status === "working";
 
   useEffect(() => {
@@ -573,28 +542,39 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
       }
     }
     appendUserMessage(runId, text);
-    if (!tabState?.started) {
-      markStarted(runId);
-      await agentsApi.startAgentSession({
-        runId,
-        worktreeId: tab.worktreeId ?? "",
-        worktreeRoot: tab.worktreeRoot ?? "",
-        kind,
-        resumeSessionId: tab.resumeSessionId ?? null,
-        forkSession: tab.forkSession ?? false,
-        firstMessage: text,
-        model,
-        effort,
-        fast,
-      });
-    } else {
-      await agentsApi.sendAgentMessage(runId, text);
+    try {
+      if (!tabState?.started) {
+        markStarted(runId);
+        await agentsApi.startAgentSession({
+          runId,
+          worktreeId: tab.worktreeId ?? "",
+          worktreeRoot: tab.worktreeRoot ?? "",
+          kind,
+          resumeSessionId: tab.resumeSessionId ?? null,
+          forkSession: tab.forkSession ?? false,
+          firstMessage: text,
+          model,
+          effort,
+          fast,
+          permissionMode,
+        });
+      } else {
+        await agentsApi.sendAgentMessage(runId, text);
+      }
+    } catch (error) {
+      setRunError(runId, `Agent could not continue: ${String(error)}`);
     }
   }
 
   function changePermissionMode(next: PermissionMode) {
-    setPermissionModeState(next);
-    void agentsApi.setPermissionMode(runId, next);
+    setStoredPermissionMode(runId, next);
+    // A not-yet-started run has no backend entry. Its selected mode is
+    // carried by `startAgentSession` above instead of being silently lost.
+    if (tabState?.started) {
+      void agentsApi
+        .setPermissionMode(runId, next)
+        .catch((error) => setRunError(runId, `Could not change permission mode: ${String(error)}`));
+    }
   }
 
   if (!loaded || !status) {
@@ -696,6 +676,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         active={active}
         worktreeId={tab.worktreeId}
         worktreeRoot={tab.worktreeRoot}
+        turnStartedAtMs={tabState?.turnStartedAtMs ?? null}
       />
 
       <AgentComposer
