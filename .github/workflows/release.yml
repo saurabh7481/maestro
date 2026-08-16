@@ -39,7 +39,7 @@ jobs:
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
-            args: ""
+            args: "--bundles deb,rpm"
           - platform: windows-latest
             args: ""
 
@@ -89,3 +89,35 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Tauri's current linuxdeploy path forces XWayland and bundles an old
+      # libwayland, which leaves a blank window on Mesa 25+ systems. Build the
+      # AppImage separately, repair its AppDir, then package and upload the
+      # corrected artifact. The deb/rpm bundles above are unaffected.
+      - name: Build compatible Linux AppImage
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          pnpm tauri build --bundles appimage
+
+          appimage_dir="src-tauri/target/release/bundle/appimage"
+          app_dir="$appimage_dir/Maestro.AppDir"
+          version="${GITHUB_REF_NAME#v}"
+          artifact="$appimage_dir/Maestro_${version}_amd64.AppImage"
+
+          node scripts/fix-appimage.mjs "$app_dir"
+          mv "$artifact" "$artifact.unpatched"
+
+          (
+            cd "$appimage_dir"
+            ARCH=x86_64 \
+              APPIMAGE_EXTRACT_AND_RUN=1 \
+              LINUXDEPLOY_OUTPUT_VERSION="$version" \
+              "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage" \
+              --appdir=Maestro.AppDir
+            mv "Maestro-${version}-x86_64.AppImage" "Maestro_${version}_amd64.AppImage"
+          )
+
+          gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
