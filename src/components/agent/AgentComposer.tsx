@@ -15,7 +15,12 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
-import { EMPTY_ATTACHMENTS, useAgentSessionStore } from "../../state/agentSessionStore";
+import {
+  EMPTY_ATTACHMENTS,
+  EMPTY_QUEUE,
+  useAgentSessionStore,
+} from "../../state/agentSessionStore";
+import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
 import { agentsApi } from "../../api/agents";
 import { fsApi } from "../../api/fs";
 import { searchApi } from "../../api/search";
@@ -23,6 +28,7 @@ import { fuzzyScore } from "../../design/fuzzy";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type {
+  AgentCapabilities,
   AgentEffort,
   AgentKind,
   ModelOption,
@@ -300,19 +306,20 @@ function EffortPicker({
   values,
   value,
   onChange,
-  thinkingLabel,
+  label,
 }: {
   values: AgentEffort[];
   value: AgentEffort;
   onChange: (value: AgentEffort) => void;
-  thinkingLabel: boolean;
+  /** The provider's own name for this dial (`capabilities.effortLabel`). */
+  label: string;
 }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <div className={styles.picker}>
           <Lightning size={13} color="var(--accent)" />
-          {thinkingLabel ? "Thinking" : "Effort"}: {EFFORT_LABEL[value]}
+          {label}: {EFFORT_LABEL[value]}
           <CaretDown size={10} color="var(--text-mute)" />
         </div>
       </DropdownMenu.Trigger>
@@ -361,12 +368,26 @@ function OptionToggle({
 function PermissionModePicker({
   mode,
   onChange,
+  capabilities,
 }: {
   mode: PermissionMode;
   onChange: (mode: PermissionMode) => void;
+  capabilities: AgentCapabilities;
 }) {
   const meta = PERMISSION_MODE_META[mode];
   const ModeIcon = meta.icon;
+  // Per-mode small print, straight from the provider's own declaration —
+  // a new CLI describes itself in `capabilities.rs` and this picker stops
+  // overstating what its modes do, with no edit here.
+  const caveats: Partial<Record<PermissionMode, string>> = {
+    manual:
+      capabilities.manualGate === "prompt"
+        ? undefined
+        : (capabilities.manualGateDetail ?? undefined),
+    plan: capabilities.planMode
+      ? undefined
+      : "This CLI has no confirmed read-only mode, so Plan behaves like Manual.",
+  };
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -397,6 +418,7 @@ function PermissionModePicker({
                 <div className={styles.modeItemText}>
                   <div className={styles.modeItemLabel}>{optionMeta.label}</div>
                   <div className={styles.modeItemDescription}>{optionMeta.description}</div>
+                  {caveats[id] && <div className={styles.modeItemCaveat}>{caveats[id]}</div>}
                 </div>
                 {id === mode && <Check size={13} color="var(--accent)" />}
               </DropdownMenu.Item>
@@ -463,6 +485,7 @@ export function AgentComposer({
   permissionMode,
   onPermissionModeChange,
   onSend,
+  onReplace,
 }: {
   runId: string;
   kind: AgentKind;
@@ -474,6 +497,14 @@ export function AgentComposer({
   permissionMode: PermissionMode;
   onPermissionModeChange: (mode: PermissionMode) => void;
   onSend: (text: string, model: string | null, effort: string | null, fast: boolean) => void;
+  /** Re-runs the conversation from an earlier message, replacing it. */
+  onReplace: (
+    itemId: string,
+    text: string,
+    model: string | null,
+    effort: string | null,
+    fast: boolean,
+  ) => void;
 }) {
   const draft = useAgentSessionStore((s) => s.draftByRunId[runId] ?? "");
   const setDraft = useAgentSessionStore((s) => s.setDraft);
@@ -481,8 +512,17 @@ export function AgentComposer({
   const addAttachment = useAgentSessionStore((s) => s.addAttachment);
   const removeAttachment = useAgentSessionStore((s) => s.removeAttachment);
   const clearAttachments = useAgentSessionStore((s) => s.clearAttachments);
+  const queueMessage = useAgentSessionStore((s) => s.queueMessage);
+  const unqueueMessage = useAgentSessionStore((s) => s.unqueueMessage);
+  const queued = useAgentSessionStore((s) => s.byRunId[runId]?.queued ?? EMPTY_QUEUE);
+  const editingId = useAgentSessionStore((s) => s.editingByRunId[runId] ?? null);
+  const cancelEditing = useAgentSessionStore((s) => s.cancelEditing);
   const modelOptions = useAgentModels(kind);
   const slashOptions = useSlashCommands(kind, worktreeRoot);
+  // Read here rather than passed down: the composer is the only consumer,
+  // and going through the store keeps `AgentTab` from having to thread a
+  // prop that every future provider-aware control would also need.
+  const capabilities = useAgentCapabilities(kind);
   const [model, setModel] = useState<string | null>(null);
   const [effort, setEffort] = useState<AgentEffort>("high");
   const [thinking, setThinking] = useState(false);
@@ -512,8 +552,13 @@ export function AgentComposer({
   const resolvedModel = selectedModel?.variants.length
     ? (resolvedVariant?.id ?? selectedModel.variants[0]?.id ?? null)
     : model;
-  const cliEffort = kind === "cursorAgent" || effortValues.length === 0 ? null : effort;
-  const cliFast = kind === "cursorAgent" ? false : fast;
+  // A CLI that encodes these in the model id has already had them applied
+  // by `resolvedModel` above; sending them again as flags would duplicate
+  // (or invalidate) the arguments. Declared per provider rather than
+  // special-cased by name here — see `capabilities.rs`.
+  const sendsOptionFlags = capabilities.separateOptionFlags;
+  const cliEffort = !sendsOptionFlags || effortValues.length === 0 ? null : effort;
+  const cliFast = sendsOptionFlags ? fast : false;
 
   function updateConfiguration(next: {
     model?: string | null;
@@ -543,8 +588,8 @@ export function AgentComposer({
       void agentsApi.setAgentConfiguration(
         runId,
         nextResolved,
-        kind === "cursorAgent" || !option?.supportedEfforts.length ? null : nextEffort,
-        kind === "cursorAgent" ? false : nextFast,
+        !sendsOptionFlags || !option?.supportedEfforts.length ? null : nextEffort,
+        sendsOptionFlags ? nextFast : false,
       );
     }
   }
@@ -757,7 +802,7 @@ export function AgentComposer({
 
   function submit() {
     const text = draft.trim();
-    if (!text || disabled) return;
+    if (!text) return;
     // Attached-via-button files become the same `@path` mentions typing
     // them inline would — reuses the one proven attachment mechanism
     // instead of a separate, unverified protocol. Prepended so they read
@@ -766,7 +811,16 @@ export function AgentComposer({
     const fullText = attachmentPrefix ? `${attachmentPrefix}\n${text}` : text;
     setDraft(runId, "");
     clearAttachments(runId);
-    onSend(fullText, resolvedModel, cliEffort, cliFast);
+    // Each turn is its own CLI process, so there is nothing to hand a
+    // mid-turn message to. Hold it until the agent is free rather than
+    // dropping it — the composer accepted the keystrokes, so silently
+    // discarding them is the one behaviour that isn't defensible.
+    if (disabled) {
+      queueMessage(runId, fullText);
+      return;
+    }
+    if (editingId) onReplace(editingId, fullText, resolvedModel, cliEffort, cliFast);
+    else onSend(fullText, resolvedModel, cliEffort, cliFast);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -861,6 +915,42 @@ export function AgentComposer({
           </div>
         )}
         <div className={styles.box}>
+          {editingId && (
+            <div className={styles.editingBanner}>
+              <span className={styles.editingLabel}>Editing</span>
+              <span className={styles.editingText}>
+                {capabilities.forkSession
+                  ? "Sending replaces this message and everything after it. The original conversation is kept as its own session."
+                  : "Sending replaces this message and everything after it here — but this CLI can’t branch a session, so the agent still remembers the original."}
+              </span>
+              <button
+                type="button"
+                className={styles.chipRemove}
+                aria-label="Cancel editing"
+                onClick={() => cancelEditing(runId)}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          )}
+          {queued.length > 0 && (
+            <div className={styles.queue}>
+              {queued.map((message, index) => (
+                <div className={styles.queuedItem} key={`${index}-${message}`}>
+                  <span className={styles.queuedLabel}>Queued</span>
+                  <span className={styles.queuedText}>{message}</span>
+                  <button
+                    type="button"
+                    className={styles.chipRemove}
+                    aria-label="Remove queued message"
+                    onClick={() => unqueueMessage(runId, index)}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {(attachedPaths.length > 0 || attaching) && (
             <div className={styles.chips}>
               {attachedPaths.map((path) => (
@@ -893,7 +983,7 @@ export function AgentComposer({
             rows={1}
             placeholder={
               disabled
-                ? "Working…"
+                ? "Working… type to queue a follow-up"
                 : "Reply, or ask a follow-up… (@ file, / command, paste to attach)"
             }
             value={draft}
@@ -935,7 +1025,7 @@ export function AgentComposer({
                 values={effortValues}
                 value={effortValues.includes(effort) ? effort : effortValues[0]}
                 onChange={(value) => updateConfiguration({ effort: value })}
-                thinkingLabel={kind === "claudeCode"}
+                label={capabilities.effortLabel}
               />
             )}
             {selectedModel?.supportsThinking && (
@@ -952,14 +1042,21 @@ export function AgentComposer({
                 onChange={(value) => updateConfiguration({ fast: value })}
               />
             )}
-            <PermissionModePicker mode={permissionMode} onChange={onPermissionModeChange} />
+            <PermissionModePicker
+              mode={permissionMode}
+              onChange={onPermissionModeChange}
+              capabilities={capabilities}
+            />
             <div style={{ flex: 1 }} />
             <button
               type="button"
               className={styles.send}
-              disabled={disabled || draft.trim().length === 0}
+              disabled={draft.trim().length === 0}
               onClick={submit}
-              aria-label="Send"
+              aria-label={disabled ? "Queue message" : "Send"}
+              title={
+                disabled ? "The agent is busy — this will be sent when it finishes" : undefined
+              }
             >
               <ArrowUp size={16} />
             </button>

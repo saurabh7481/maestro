@@ -69,6 +69,10 @@
 .needsPermission {
   color: var(--red);
 }
+.interrupted {
+  color: var(--text-mute);
+  font-style: italic;
+}
 
 .body {
   border-top: var(--border-width) solid var(--border);

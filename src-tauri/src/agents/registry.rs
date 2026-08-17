@@ -1,3 +1,4 @@
+use crate::agents::capabilities::{capabilities_for, AgentCapabilities};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::process::Command;
@@ -79,6 +80,12 @@ pub struct CliStatus {
     /// failure" requirement.
     pub auth_detail: Option<String>,
     pub checked_at: String,
+    /// What this CLI supports — see `capabilities.rs`. Carried on the
+    /// detection result rather than fetched separately so every existing
+    /// consumer of `CliStatus` gets it for free, and so a future
+    /// capability that depends on the detected `version` has somewhere
+    /// natural to be computed.
+    pub capabilities: AgentCapabilities,
 }
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -132,6 +139,7 @@ pub async fn detect(kind: AgentKind, binary_override: Option<String>) -> CliStat
             auth_state: AuthState::Unknown,
             auth_detail: Some(format!("`{binary_path}` was not found on PATH.")),
             checked_at,
+            capabilities: capabilities_for(kind),
         };
     }
 
@@ -144,6 +152,7 @@ pub async fn detect(kind: AgentKind, binary_override: Option<String>) -> CliStat
         auth_state,
         auth_detail,
         checked_at,
+        capabilities: capabilities_for(kind),
     }
 }
 

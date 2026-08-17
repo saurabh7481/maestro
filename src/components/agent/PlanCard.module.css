@@ -1,0 +1,66 @@
+/* Deliberately louder than the activity card: this one is asking the user
+   for a decision, not reporting work already done. */
+.card {
+  border: var(--border-width) solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: var(--border-width) solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.icon {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.title {
+  flex: 1;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.approve {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: #0a0c11;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: opacity var(--duration-fast) ease-out;
+}
+.approve:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.approve:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.body {
+  padding: var(--space-6);
+}
+
+.empty {
+  padding: var(--space-6);
+  color: var(--text-mute);
+  font-size: var(--text-xs);
+}

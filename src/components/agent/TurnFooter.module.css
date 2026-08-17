@@ -1,0 +1,19 @@
+/* Deliberately understated: this is a receipt, not a headline. It should
+   be findable when the user goes looking for it and invisible otherwise. */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  color: var(--text-mute);
+  font: var(--text-2xs) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}

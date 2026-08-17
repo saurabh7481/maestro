@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { agentsApi } from "../api/agents";
-import { AGENT_KINDS, isReady } from "../types/agent";
-import type { AgentKind, CliStatus } from "../types/agent";
+import { AGENT_KINDS, CONSERVATIVE_CAPABILITIES, isReady } from "../types/agent";
+import type { AgentCapabilities, AgentKind, CliStatus } from "../types/agent";
 
 interface AgentAvailabilityState {
   statusByKind: Partial<Record<AgentKind, CliStatus>>;
@@ -71,5 +71,22 @@ export const useAgentAvailabilityStore = create<AgentAvailabilityState>((set, ge
 export function useReadyAgentKinds(): AgentKind[] {
   return useAgentAvailabilityStore(
     useShallow((s) => AGENT_KINDS.filter((k) => isReady(s.statusByKind[k]))),
+  );
+}
+
+/** What this provider supports, for gating optional chat affordances.
+ *
+ * This is the seam that keeps the chat UI provider-agnostic: components
+ * ask what the CLI can do, never which CLI it is. Falls back to
+ * `CONSERVATIVE_CAPABILITIES` until detection resolves, so an affordance
+ * never appears before it's known to work.
+ *
+ * The returned object is a stable reference from the store (or the shared
+ * fallback constant), so it's safe in dependency arrays — see this file's
+ * `useReadyAgentKinds` comment for what a fresh object literal per call
+ * would do to `useSyncExternalStore`. */
+export function useAgentCapabilities(kind: AgentKind): AgentCapabilities {
+  return useAgentAvailabilityStore(
+    (s) => s.statusByKind[kind]?.capabilities ?? CONSERVATIVE_CAPABILITIES,
   );
 }

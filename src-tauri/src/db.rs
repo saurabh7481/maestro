@@ -97,6 +97,25 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             last_active_at TEXT NOT NULL,
             title          TEXT
         );
+
+        -- The rendered conversation for one agent tab, so closing and
+        -- reopening the app doesn't look like the history was thrown away.
+        -- The CLI's own session file is *not* a substitute: it replays as
+        -- text-only turns (see `agents/sessions.rs::TranscriptTurn`), which
+        -- loses every tool call, diff and thinking block the transcript
+        -- showed. `items` is the frontend's `TranscriptItem[]` verbatim —
+        -- deliberately opaque to Rust, which never needs to interpret it,
+        -- and versioned so a future shape change can be discarded rather
+        -- than crash a restore.
+        CREATE TABLE IF NOT EXISTS agent_transcripts (
+            run_id         TEXT PRIMARY KEY,
+            worktree_id    TEXT NOT NULL,
+            agent          TEXT NOT NULL,
+            cli_session_id TEXT,
+            version        INTEGER NOT NULL,
+            items          TEXT NOT NULL,
+            updated_at     TEXT NOT NULL
+        );
         ",
     )?;
 

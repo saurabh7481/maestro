@@ -1,34 +1,11 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
 import { Brain, CaretDown, Wrench } from "@phosphor-icons/react";
 import type { TranscriptItem } from "../../state/agentSessionStore";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
-import type { ProcessItem, TurnCompleteItem } from "./processingBlocks";
+import { formatDuration } from "./turnMetrics";
+import type { ProcessItem } from "./processingBlocks";
 import styles from "./ProcessingCard.module.css";
-
-function compactNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
-    value,
-  );
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 60_000) return `${Math.max(1, Math.round(durationMs / 1000))}s`;
-  const minutes = Math.floor(durationMs / 60_000);
-  const seconds = Math.round((durationMs % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
-}
-
-function usageLabel(completion: TurnCompleteItem | null): string | null {
-  if (!completion) return null;
-  const parts: string[] = [];
-  if (completion.inputTokens !== null) parts.push(`${compactNumber(completion.inputTokens)} in`);
-  if (completion.outputTokens !== null) parts.push(`${compactNumber(completion.outputTokens)} out`);
-  if (completion.cacheReadTokens !== null && completion.cacheReadTokens > 0) {
-    parts.push(`${compactNumber(completion.cacheReadTokens)} cached`);
-  }
-  return parts.length ? parts.join(" · ") : null;
-}
 
 const RawDetail = memo(function RawDetail({
   item,
@@ -45,24 +22,28 @@ const RawDetail = memo(function RawDetail({
   );
 });
 
+/** The single collapsed card that stands in for a run of the agent's
+ * under-the-hood work — thinking, tool calls, unrecognized events — so a
+ * response reads as prose punctuated by activity rather than a wall of
+ * one card per step. Expanding it reveals every step, unedited, inside a
+ * fixed-height scroller. */
 export const ProcessingCard = memo(function ProcessingCard({
   runId,
   items,
   active,
-  completion,
   turnStartedAtMs,
 }: {
   runId: string;
   items: ProcessItem[];
   active: boolean;
-  completion: TurnCompleteItem | null;
   turnStartedAtMs: number | null;
 }) {
   const requiresPermission = items.some(
     (item) => item.kind === "toolCall" && item.permission?.status === "pending",
   );
   const [expanded, setExpanded] = useState(requiresPermission);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const detailsId = useId();
 
   useEffect(() => {
     if (requiresPermission) setExpanded(true);
@@ -70,6 +51,9 @@ export const ProcessingCard = memo(function ProcessingCard({
 
   useEffect(() => {
     if (!active || !turnStartedAtMs) return;
+    // Re-sync immediately as well as on the interval: a card that becomes
+    // active later would otherwise carry a `now` frozen at mount time.
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [active, turnStartedAtMs]);
@@ -87,9 +71,12 @@ export const ProcessingCard = memo(function ProcessingCard({
       .join(" · ");
   }, [items]);
 
-  const durationMs = completion?.durationMs ?? (turnStartedAtMs ? now - turnStartedAtMs : 0);
-  const usage = usageLabel(completion);
-  const detailsId = `processing-${items[0]?.id ?? "active"}`;
+  // Only the running card has a live elapsed time to show. A settled one
+  // used to render `now - turnStartedAtMs` off a `now` its own timer had
+  // stopped updating, i.e. a number that was simply wrong; the turn's real
+  // duration belongs to the footer under the whole response.
+  const elapsedMs = active && turnStartedAtMs ? now - turnStartedAtMs : 0;
+  const stepCount = items.length;
 
   return (
     <section
@@ -108,12 +95,16 @@ export const ProcessingCard = memo(function ProcessingCard({
           <Brain size={14} />
         </span>
         <span className={styles.title}>
-          {requiresPermission ? "Permission required" : active ? "Processing" : "Processed"}
+          {requiresPermission ? "Permission required" : active ? "Working" : "Worked"}
         </span>
         <span className={styles.summary}>{summary || "Preparing next step"}</span>
         <span className={styles.metrics}>
-          {durationMs > 0 && <span>{formatDuration(durationMs)}</span>}
-          {usage && <span>{usage}</span>}
+          {elapsedMs > 0 && <span>{formatDuration(elapsedMs)}</span>}
+          {!active && stepCount > 0 && (
+            <span>
+              {stepCount} {stepCount === 1 ? "step" : "steps"}
+            </span>
+          )}
         </span>
         <CaretDown className={styles.caret} size={12} data-expanded={expanded || undefined} />
       </button>
@@ -129,9 +120,13 @@ export const ProcessingCard = memo(function ProcessingCard({
           )}
           {items.map((item) => {
             if (item.kind === "thinking")
-              return <ThinkingBlock key={item.id} text={item.text} nested />;
+              return (
+                <ThinkingBlock key={item.id} text={item.text} elapsedMs={item.elapsedMs} nested />
+              );
             if (item.kind === "toolCall")
-              return <ToolCallCard key={item.id} runId={runId} item={item} nested />;
+              return (
+                <ToolCallCard key={item.id} runId={runId} item={item} nested running={active} />
+              );
             return <RawDetail key={item.id} item={item} />;
           })}
         </div>

@@ -56,6 +56,10 @@
   background: color-mix(in srgb, var(--red) 16%, transparent);
   color: var(--red);
 }
+.statusPill[data-status="awaiting"] {
+  background: color-mix(in srgb, var(--yellow) 16%, transparent);
+  color: var(--yellow);
+}
 
 .statusDot {
   width: 0.4375rem;
@@ -66,6 +70,40 @@
 }
 .statusDot[data-active="true"] {
   animation: mo-pulse-glow 1.6s ease-out infinite;
+}
+
+/* How much of the model's window the last turn used. Only rendered where
+   the CLI reports a real window — see `capabilities.reportsContextWindow`. */
+.contextMeter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: var(--space-3);
+  color: var(--text-mute);
+  font: var(--text-2xs) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.contextBar {
+  display: block;
+  width: 3rem;
+  height: 0.3125rem;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-3);
+}
+
+.contextBar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: width var(--duration-base) ease-out;
+}
+
+.contextBar[data-heavy] > span {
+  background: var(--yellow);
 }
 
 .headerActions {
@@ -89,6 +127,15 @@
 .stopButton:hover {
   border-color: var(--border-2);
   color: var(--text);
+}
+
+/* Positioning context for overlays that must stay put while the
+   conversation scrolls underneath them. */
+.transcriptViewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .transcript {
@@ -142,6 +189,33 @@
 
 .transcriptRow[data-last] {
   padding-bottom: var(--space-10);
+}
+
+/* Only appears once the user has scrolled away from the bottom — the
+   transcript deliberately stops auto-following then, and without this
+   there was no way back except scrolling by hand. */
+.jumpToBottom {
+  composes: scaleIn from "../../styles/motion.module.css";
+  position: absolute;
+  bottom: var(--space-8);
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  transform: translateX(-50%);
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.jumpToBottom:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .workingRow {
@@ -215,6 +289,34 @@
   white-space: pre-wrap;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Revealed on hover over your own message, for rewriting it and re-running
+   from that point. Absolutely positioned so it doesn't reflow the bubble. */
+.editMessage {
+  position: absolute;
+  top: calc(-1 * var(--space-3));
+  right: calc(-1 * var(--space-3));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-2);
+  color: var(--text-mute);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease-out;
+}
+.userText:hover .editMessage,
+.editMessage:focus-visible {
+  opacity: 1;
+}
+.editMessage:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .assistantMessage {
@@ -512,11 +614,36 @@
 
 .errorBanner {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
   padding: var(--space-5) var(--space-8);
   color: var(--red);
   background: color-mix(in srgb, var(--red) 8%, transparent);
   border-bottom: var(--border-width) solid var(--border);
   font-size: var(--text-sm);
+}
+
+.errorText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A failure used to be a dead end: no way to retry, no way to dismiss. */
+.errorAction {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border: var(--border-width) solid color-mix(in srgb, var(--red) 35%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--red);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.errorAction:hover {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
 .inlineError {

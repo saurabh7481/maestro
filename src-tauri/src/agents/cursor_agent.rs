@@ -60,6 +60,12 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     let mut cmd = Command::new(ctx.binary_path);
     cmd.arg("-p").arg(text);
     cmd.args(["--output-format", "stream-json", "--trust"]);
+    if ctx.stream_deltas {
+        // Changes `assistant` lines from finished blocks into fragments —
+        // `parse_line` has to be told the same thing, since the two look
+        // identical on the wire.
+        cmd.arg("--stream-partial-output");
+    }
     if let Some(id) = ctx.resume_session_id {
         cmd.arg("--resume").arg(id);
     }
@@ -164,7 +170,11 @@ fn result_content(name: &str, result: &Value) -> (String, bool, Option<u32>, Opt
     }
 }
 
-pub fn parse_line(line: &str, cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Option<String>) {
+pub fn parse_line(
+    line: &str,
+    cache: &mut ToolUseCache,
+    stream_deltas: bool,
+) -> (Vec<AgentEvent>, Option<String>) {
     let Ok(value) = serde_json::from_str::<Value>(line) else {
         return (
             vec![AgentEvent::Error {
@@ -225,9 +235,20 @@ pub fn parse_line(line: &str, cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Opt
                     if text.is_empty() {
                         return None;
                     }
-                    Some(AgentEvent::Message {
-                        role: "assistant".to_string(),
-                        text: text.to_string(),
+                    // Under `--stream-partial-output` these lines are
+                    // fragments, not finished blocks — verified live: a
+                    // one-sentence reply arrived as 11 `assistant` events
+                    // and no consolidated one, with the full text only on
+                    // the final `result`.
+                    Some(if stream_deltas {
+                        AgentEvent::MessageDelta {
+                            text: text.to_string(),
+                        }
+                    } else {
+                        AgentEvent::Message {
+                            role: "assistant".to_string(),
+                            text: text.to_string(),
+                        }
                     })
                 })
                 .collect();
@@ -328,6 +349,8 @@ pub fn parse_line(line: &str, cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Opt
                         .get("usage")
                         .and_then(|u| u.get("cacheWriteTokens"))
                         .and_then(|n| n.as_u64()),
+                    // Not reported by this CLI.
+                    context_window: None,
                     result_text: value
                         .get("result")
                         .and_then(|s| s.as_str())
@@ -381,7 +404,7 @@ mod tests {
 
             let line = std::mem::take(&mut buffer);
             buffered_segments = 0;
-            let (mut line_events, _) = parse_line(&line, &mut cache);
+            let (mut line_events, _) = parse_line(&line, &mut cache, false);
             events.append(&mut line_events);
         }
         events
@@ -447,10 +470,32 @@ mod tests {
         assert_eq!(result.1, &Some(0));
     }
 
+    /// With `--stream-partial-output` an `assistant` line is a fragment,
+    /// not a finished block — the same shape means two different things,
+    /// so the parser has to be told which run it is reading. Captured
+    /// live: a one-sentence reply arrived as 11 of these.
+    #[test]
+    fn assistant_lines_become_deltas_only_when_streaming() {
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The"}]},"session_id":"s"}"#;
+
+        let mut cache = HashMap::new();
+        let (streamed, _) = parse_line(line, &mut cache, true);
+        assert!(
+            matches!(streamed.as_slice(), [AgentEvent::MessageDelta { text }] if text == "The")
+        );
+
+        let mut cache = HashMap::new();
+        let (whole, _) = parse_line(line, &mut cache, false);
+        assert!(
+            matches!(whole.as_slice(), [AgentEvent::Message { text, .. }] if text == "The"),
+            "without the flag these are complete blocks, not fragments"
+        );
+    }
+
     #[test]
     fn malformed_line_becomes_an_error_event_not_a_panic() {
         let mut cache = HashMap::new();
-        let (events, session_id) = parse_line("{not valid json", &mut cache);
+        let (events, session_id) = parse_line("{not valid json", &mut cache, false);
         assert!(session_id.is_none());
         assert!(matches!(events.as_slice(), [AgentEvent::Error { .. }]));
     }

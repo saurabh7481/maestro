@@ -19,7 +19,16 @@ import styles from "./AgentMarkdown.module.css";
  * the whole conversation (docs/PERFORMANCE_AUDIT.md §1.3). `text` is the
  * only prop and transcript items are immutable, so the default shallow
  * comparison is exactly right. */
-export const AgentMarkdown = memo(function AgentMarkdown({ text }: { text: string }) {
+export const AgentMarkdown = memo(function AgentMarkdown({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  /** Still being typed out by the model. Adds a caret and holds back the
+   * copy button — copying half a sentence is rarely what anyone wants,
+   * and the button appearing mid-stream invites exactly that. */
+  streaming?: boolean;
+}) {
   const rendered = useMarkdownHtml(text);
   // `null` only while the markdown chunk loads on the session's first
   // message — show the same text unformatted rather than an empty block,
@@ -40,13 +49,15 @@ export const AgentMarkdown = memo(function AgentMarkdown({ text }: { text: strin
   }
 
   return (
-    <div className={styles.wrap}>
+    <div className={styles.wrap} data-streaming={streaming || undefined}>
       <div className={styles.body} dangerouslySetInnerHTML={{ __html: html }} />
-      <Tooltip label={copied ? "Copied!" : "Copy markdown"} side="left">
-        <button type="button" className={styles.copyButton} onClick={() => void copy()}>
-          {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-        </button>
-      </Tooltip>
+      {!streaming && (
+        <Tooltip label={copied ? "Copied!" : "Copy markdown"} side="left">
+          <button type="button" className={styles.copyButton} onClick={() => void copy()}>
+            {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 });

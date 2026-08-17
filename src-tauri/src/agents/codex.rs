@@ -18,16 +18,26 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     if let Some(id) = ctx.resume_session_id {
         cmd.arg("resume").arg(id);
     }
-    if ctx.permission_mode == PermissionMode::Auto {
-        // Unverified flag name — Codex's exact non-interactive
-        // full-auto flag wasn't confirmed against a real binary (see
-        // module doc). If wrong, this fails loudly (a real CLI error
-        // surfaced via stderr), not silently.
-        cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+    // `codex exec --help` (0.147.0) documents both of these, so each mode
+    // maps to a real gate rather than a decorative one. `Plan` used to
+    // fall through to `Manual` with no flag at all, which made the
+    // composer's read-only mode a lie for this CLI.
+    match ctx.permission_mode {
+        PermissionMode::Auto => {
+            cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+        }
+        // Read-only: the agent can look but not touch, which is exactly
+        // what Plan promises.
+        PermissionMode::Plan => {
+            cmd.args(["--sandbox", "read-only"]);
+        }
+        // Edits confined to the worktree, no network and nothing outside
+        // it. `codex exec` has no interactive approval to route back here,
+        // so this sandbox *is* the gate for Manual.
+        PermissionMode::Manual => {
+            cmd.args(["--sandbox", "workspace-write"]);
+        }
     }
-    // `PermissionMode::Plan` has no confirmed Codex equivalent (see
-    // module doc) — falls through and behaves like `Manual` rather than
-    // guessing at a flag.
     if let Some(model) = ctx.model {
         cmd.arg("--model").arg(model);
     }
@@ -149,6 +159,7 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                     .and_then(|u| u.get("cached_input_tokens"))
                     .and_then(|n| n.as_u64()),
                 cache_write_tokens: None,
+                context_window: None,
                 result_text: None,
             }],
             None,
@@ -305,10 +316,41 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                     output_tokens: None,
                     cache_read_tokens: None,
                     cache_write_tokens: None,
+                    context_window: None,
                     result_text: msg
                         .get("last_agent_message")
                         .and_then(|s| s.as_str())
                         .map(str::to_string),
+                }],
+                None,
+            )
+        }
+        // A turn that failed emits this *instead of* `turn.completed`, so
+        // without it the run never gets a `TurnResult` and the UI sits on
+        // "working" until the process exits, then blames a crash. Observed
+        // live: hitting the usage limit produces `error` immediately
+        // followed by `turn.failed`.
+        "turn.failed" => {
+            let message = value
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .or_else(|| msg.get("message"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("The Codex turn failed.")
+                .to_string();
+            (
+                vec![AgentEvent::TurnResult {
+                    session_id: String::new(),
+                    is_error: true,
+                    total_cost_usd: None,
+                    duration_ms: 0,
+                    num_turns: 1,
+                    input_tokens: None,
+                    output_tokens: None,
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    context_window: None,
+                    result_text: Some(message),
                 }],
                 None,
             )
@@ -366,5 +408,66 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    /// Captured from a real `codex exec --json` run that hit the account's
+    /// usage limit. `turn.failed` replaces `turn.completed`, so treating it
+    /// as an unknown event left the turn looking like it was still running.
+    #[test]
+    fn turn_failed_ends_the_turn_with_the_reason() {
+        let mut cache = ToolUseCache::new();
+        let (events, _) = parse_line(
+            r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#,
+            &mut cache,
+        );
+        let [AgentEvent::TurnResult {
+            is_error,
+            result_text,
+            ..
+        }] = events.as_slice()
+        else {
+            panic!("expected a single TurnResult, got {events:?}");
+        };
+        assert!(is_error);
+        assert_eq!(result_text.as_deref(), Some("You've hit your usage limit."));
+    }
+
+    #[test]
+    fn each_permission_mode_maps_to_a_real_sandbox_flag() {
+        fn args_for(mode: PermissionMode) -> Vec<String> {
+            let ctx = TurnCtx {
+                binary_path: "codex",
+                worktree_root: "/tmp",
+                resume_session_id: None,
+                fork_session: false,
+                allowed_tools: &[],
+                model: None,
+                effort: None,
+                fast: false,
+                permission_mode: mode,
+                stream_deltas: false,
+            };
+            build_turn(&ctx, "hi")
+                .command
+                .as_std()
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        }
+
+        assert!(args_for(PermissionMode::Plan)
+            .windows(2)
+            .any(|w| w == ["--sandbox".to_string(), "read-only".to_string()]));
+        assert!(args_for(PermissionMode::Manual)
+            .windows(2)
+            .any(|w| w == ["--sandbox".to_string(), "workspace-write".to_string()]));
+        assert!(args_for(PermissionMode::Auto)
+            .iter()
+            .any(|a| a == "--dangerously-bypass-approvals-and-sandbox"));
+        // Plan must not also carry the bypass flag — that would be the
+        // exact "read-only mode that can still write" bug this guards.
+        assert!(!args_for(PermissionMode::Plan)
+            .iter()
+            .any(|a| a.starts_with("--dangerously")));
     }
 }

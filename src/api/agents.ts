@@ -5,6 +5,7 @@ import type {
   ModelOption,
   PermissionDecision,
   PermissionMode,
+  PermissionOutcome,
   ResumableSession,
   SlashCommandOption,
   TranscriptTurn,
@@ -57,15 +58,36 @@ export const agentsApi = {
   sendAgentMessage: (runId: string, text: string) =>
     invoke<void>("send_agent_message", { runId, text }),
   respondToPermission: (runId: string, decision: PermissionDecision) =>
-    invoke<void>("respond_to_permission", { runId, decision }),
+    invoke<PermissionOutcome>("respond_to_permission", { runId, decision }),
   setPermissionMode: (runId: string, mode: PermissionMode) =>
     invoke<void>("set_permission_mode", { runId, mode }),
+  /** Branches the CLI session on the next turn, so editing an earlier
+   * message leaves the original conversation intact. Only has an effect
+   * where `capabilities.forkSession` is true. */
+  forkAgentSession: (runId: string) => invoke<void>("fork_agent_session", { runId }),
   setAgentConfiguration: (
     runId: string,
     model: string | null,
     effort: string | null,
     fast: boolean,
   ) => invoke<void>("set_agent_configuration", { runId, model, effort, fast }),
+  /** Persisted rendering of a conversation — see `agents/transcripts.rs`
+   * for why the CLI's own session history isn't a substitute. */
+  saveAgentTranscript: (
+    runId: string,
+    worktreeId: string,
+    agent: AgentKind,
+    cliSessionId: string | null,
+    items: string,
+  ) => invoke<void>("save_agent_transcript", { runId, worktreeId, agent, cliSessionId, items }),
+  loadAgentTranscript: (runId: string) =>
+    invoke<{ items: string; cliSessionId: string | null } | null>("load_agent_transcript", {
+      runId,
+    }),
+  deleteAgentTranscript: (runId: string) => invoke<void>("delete_agent_transcript", { runId }),
+  pruneAgentTranscripts: (keepRunIds: string[]) =>
+    invoke<number>("prune_agent_transcripts", { keepRunIds }),
+
   interruptAgent: (runId: string) => invoke<void>("interrupt_agent", { runId }),
   killAgent: (runId: string) => invoke<void>("kill_agent", { runId }),
   killAgentRunsForWorktree: (worktreeId: string) =>

@@ -1,17 +1,24 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  ArrowClockwise,
+  ArrowDown,
   ArrowsClockwise,
   ClockCounterClockwise,
   FolderSimple,
   GearSix,
   MagnifyingGlass,
+  PencilSimple,
   Stop,
   WarningCircle,
+  X,
 } from "@phosphor-icons/react";
 import { agentsApi } from "../../api/agents";
 import { gitApi } from "../../api/git";
-import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
+import {
+  useAgentAvailabilityStore,
+  useAgentCapabilities,
+} from "../../state/agentAvailabilityStore";
 import { useAgentSessionStore } from "../../state/agentSessionStore";
 import type { TranscriptItem } from "../../state/agentSessionStore";
 import type { Tab } from "../../state/tabsStore";
@@ -24,7 +31,10 @@ import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { FileChangeReceipt } from "./FileChangeReceipt";
 import { ProcessingCard } from "./ProcessingCard";
-import { buildResponseBlocks } from "./processingBlocks";
+import { TurnFooter } from "./TurnFooter";
+import { PlanCard } from "./PlanCard";
+import { buildResponseBlocks, turnCompletion } from "./processingBlocks";
+import { contextUsage } from "./turnMetrics";
 import styles from "./AgentTab.module.css";
 
 type Group =
@@ -124,6 +134,10 @@ const TranscriptGroup = memo(function TranscriptGroup({
   worktreeRoot,
   active,
   turnStartedAtMs,
+  totalCostUsd,
+  onEdit,
+  planExitTool,
+  onApprovePlan,
 }: {
   group: Group;
   kind: AgentKind;
@@ -133,18 +147,39 @@ const TranscriptGroup = memo(function TranscriptGroup({
   worktreeRoot?: string;
   active: boolean;
   turnStartedAtMs: number | null;
+  totalCostUsd: number | null;
+  /** Absent while a turn is running — rewinding mid-answer would race the
+   * turn that is still writing to the transcript. */
+  onEdit?: (itemId: string) => void;
+  /** `capabilities.planExitTool`, or null where the provider has none. */
+  planExitTool?: string | null;
+  onApprovePlan?: () => void;
 }) {
   if (group.role === "user") {
     return (
       <div className={`${styles.row} ${styles.userRow}`} data-newest={isNewest || undefined}>
         <div className={styles.userMessage}>
           <div className={`${styles.roleLabel} ${styles.userRoleLabel}`}>You</div>
-          <div className={styles.userText}>{group.text}</div>
+          <div className={styles.userText}>
+            {group.text}
+            {onEdit && (
+              <button
+                type="button"
+                className={styles.editMessage}
+                onClick={() => onEdit(group.key)}
+                title="Edit this message and re-run from here"
+                aria-label="Edit this message"
+              >
+                <PencilSimple size={12} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
   }
-  const blocks = buildResponseBlocks(group.items, active);
+  const blocks = buildResponseBlocks(group.items, active, planExitTool);
+  const completion = turnCompletion(group.items);
   return (
     <div className={`${styles.row} ${styles.assistantRow}`} data-newest={isNewest || undefined}>
       <div className={`${styles.avatar} mo-gradient-mark`}>
@@ -155,7 +190,13 @@ const TranscriptGroup = memo(function TranscriptGroup({
         <div className={styles.assistantGroup}>
           {blocks.map((block) => {
             if (block.kind === "text") {
-              return <AgentMarkdown key={block.item.id} text={block.item.text} />;
+              return (
+                <AgentMarkdown
+                  key={block.item.id}
+                  text={block.item.text}
+                  streaming={block.item.streaming}
+                />
+              );
             }
             if (block.kind === "error") {
               return (
@@ -164,27 +205,35 @@ const TranscriptGroup = memo(function TranscriptGroup({
                 </div>
               );
             }
+            if (block.kind === "plan") {
+              return (
+                <PlanCard
+                  key={block.item.id}
+                  item={block.item}
+                  canApprove={!!onApprovePlan && !active}
+                  onApprove={() => onApprovePlan?.()}
+                />
+              );
+            }
             return (
               <ProcessingCard
                 key={block.key}
                 runId={runId}
                 items={block.items}
                 active={block.active}
-                completion={block.completion}
                 turnStartedAtMs={turnStartedAtMs}
               />
             );
           })}
-          {group.items.some((item) => item.kind === "turnComplete") &&
-            worktreeId &&
-            worktreeRoot && (
-              <FileChangeReceipt
-                receiptId={group.key}
-                items={group.items}
-                worktreeId={worktreeId}
-                worktreeRoot={worktreeRoot}
-              />
-            )}
+          {completion && worktreeId && worktreeRoot && (
+            <FileChangeReceipt
+              receiptId={group.key}
+              items={group.items}
+              worktreeId={worktreeId}
+              worktreeRoot={worktreeRoot}
+            />
+          )}
+          {completion && <TurnFooter completion={completion} totalCostUsd={totalCostUsd} />}
         </div>
       </div>
     </div>
@@ -360,6 +409,10 @@ function Transcript({
   worktreeId,
   worktreeRoot,
   turnStartedAtMs,
+  totalCostUsd,
+  onEdit,
+  planExitTool,
+  onApprovePlan,
 }: {
   groups: Group[];
   kind: AgentKind;
@@ -369,6 +422,10 @@ function Transcript({
   worktreeId?: string;
   worktreeRoot?: string;
   turnStartedAtMs: number | null;
+  totalCostUsd: number | null;
+  onEdit?: (itemId: string) => void;
+  planExitTool?: string | null;
+  onApprovePlan?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Whether the user is following the bottom of the conversation. Held in
@@ -376,6 +433,11 @@ function Transcript({
    * it state would re-render the transcript on every scroll event. */
   const pinnedRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  /** Mirrors `pinnedRef` for rendering only. Kept as a separate piece of
+   * state, and set only when the value actually flips, so scrolling still
+   * doesn't re-render the transcript on every frame — the reason
+   * `pinnedRef` is a ref in the first place. */
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const virtualizer = useVirtualizer({
     count: groups.length,
@@ -392,8 +454,18 @@ function Transcript({
     const element = scrollRef.current;
     if (!element) return;
     lastScrollTopRef.current = element.scrollTop;
-    pinnedRef.current =
+    const pinned =
       element.scrollHeight - element.scrollTop - element.clientHeight < PIN_THRESHOLD_PX;
+    pinnedRef.current = pinned;
+    setShowJumpToBottom((shown) => (shown === !pinned ? shown : !pinned));
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+    pinnedRef.current = true;
+    setShowJumpToBottom(false);
   }, []);
 
   // Follow the bottom only while the user is actually there. `behavior:
@@ -423,10 +495,12 @@ function Transcript({
 
   if (groups.length === 0) {
     return (
-      <div className={styles.transcript} ref={scrollRef}>
-        <div className={styles.empty}>
-          <AgentBrandIcon kind={kind} size={26} color="var(--accent)" />
-          <span>Send a message to start working with {AGENT_DISPLAY_NAME[kind]}.</span>
+      <div className={styles.transcriptViewport}>
+        <div className={styles.transcript} ref={scrollRef}>
+          <div className={styles.empty}>
+            <AgentBrandIcon kind={kind} size={26} color="var(--accent)" />
+            <span>Send a message to start working with {AGENT_DISPLAY_NAME[kind]}.</span>
+          </div>
         </div>
       </div>
     );
@@ -435,61 +509,72 @@ function Transcript({
   const lastIndex = groups.length - 1;
 
   return (
-    <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
-      <div className={styles.transcriptSizer} style={{ height: totalSize }}>
-        <div
-          className={styles.transcriptWindow}
-          style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
-        >
-          {virtualItems.map((virtualItem) => {
-            const group = groups[virtualItem.index];
-            return (
-              <div
-                key={virtualItem.key}
-                data-index={virtualItem.index}
-                ref={virtualizer.measureElement}
-                className={styles.transcriptRow}
-                // The transcript's vertical breathing room lives on the
-                // first and last rows rather than as padding on the scroll
-                // container: padding there would offset every item from the
-                // virtualizer's coordinate space, which is what
-                // `scrollMargin` exists to correct. Folding it into the
-                // measured rows keeps one source of truth for offsets.
-                data-first={virtualItem.index === 0 || undefined}
-                data-last={virtualItem.index === lastIndex || undefined}
-              >
-                <TranscriptGroup
-                  group={group}
-                  kind={kind}
-                  runId={runId}
-                  isNewest={virtualItem.index === lastIndex}
-                  worktreeId={worktreeId}
-                  worktreeRoot={worktreeRoot}
-                  active={working && virtualItem.index === lastIndex && group.role === "assistant"}
-                  turnStartedAtMs={turnStartedAtMs}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {working && groups[lastIndex]?.role === "user" && (
-        <div className={styles.workingRow}>
-          <div className={`${styles.row} ${styles.assistantRow}`}>
-            <div className={`${styles.avatar} mo-gradient-mark`}>
-              <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
-            </div>
-            <div className={styles.assistantMessage}>
-              <ProcessingCard
-                runId={runId}
-                items={[]}
-                active
-                completion={null}
-                turnStartedAtMs={turnStartedAtMs}
-              />
-            </div>
+    // The scroll container is wrapped rather than positioned itself: an
+    // overlay placed inside a scrolling element scrolls away with the
+    // content, which is precisely what "jump to latest" must not do.
+    <div className={styles.transcriptViewport}>
+      <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
+        <div className={styles.transcriptSizer} style={{ height: totalSize }}>
+          <div
+            className={styles.transcriptWindow}
+            style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+          >
+            {virtualItems.map((virtualItem) => {
+              const group = groups[virtualItem.index];
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  className={styles.transcriptRow}
+                  // The transcript's vertical breathing room lives on the
+                  // first and last rows rather than as padding on the scroll
+                  // container: padding there would offset every item from the
+                  // virtualizer's coordinate space, which is what
+                  // `scrollMargin` exists to correct. Folding it into the
+                  // measured rows keeps one source of truth for offsets.
+                  data-first={virtualItem.index === 0 || undefined}
+                  data-last={virtualItem.index === lastIndex || undefined}
+                >
+                  <TranscriptGroup
+                    group={group}
+                    kind={kind}
+                    runId={runId}
+                    isNewest={virtualItem.index === lastIndex}
+                    worktreeId={worktreeId}
+                    worktreeRoot={worktreeRoot}
+                    active={
+                      working && virtualItem.index === lastIndex && group.role === "assistant"
+                    }
+                    turnStartedAtMs={turnStartedAtMs}
+                    totalCostUsd={totalCostUsd}
+                    onEdit={onEdit}
+                    planExitTool={planExitTool}
+                    onApprovePlan={onApprovePlan}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
+        {working && groups[lastIndex]?.role === "user" && (
+          <div className={styles.workingRow}>
+            <div className={`${styles.row} ${styles.assistantRow}`}>
+              <div className={`${styles.avatar} mo-gradient-mark`}>
+                <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
+              </div>
+              <div className={styles.assistantMessage}>
+                <ProcessingCard runId={runId} items={[]} active turnStartedAtMs={turnStartedAtMs} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {showJumpToBottom && (
+        <button type="button" className={styles.jumpToBottom} onClick={jumpToBottom}>
+          <ArrowDown size={13} />
+          Jump to latest
+        </button>
       )}
     </div>
   );
@@ -508,14 +593,35 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const setTurnBaseline = useAgentSessionStore((s) => s.setTurnBaseline);
   const setRunError = useAgentSessionStore((s) => s.setRunError);
   const setStoredPermissionMode = useAgentSessionStore((s) => s.setPermissionMode);
+  const clearRunError = useAgentSessionStore((s) => s.clearRunError);
+  const hydrateRun = useAgentSessionStore((s) => s.hydrateRun);
+  const beginEditing = useAgentSessionStore((s) => s.beginEditing);
+  const truncateFrom = useAgentSessionStore((s) => s.truncateFrom);
+  const capabilities = useAgentCapabilities(kind);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const permissionMode: PermissionMode = tabState?.permissionMode ?? "manual";
   const working = tabState?.status === "working";
+  // The turn is over and the process is gone — the run is just holding for
+  // an Approve/Deny. The composer stays usable so the user can redirect the
+  // agent instead of being forced to answer the card.
+  const awaitingPermission = tabState?.status === "awaitingPermission";
 
   useEffect(() => {
     openRun(runId);
   }, [runId, openRun]);
+
+  // Bring back the conversation this tab had before the app was last
+  // closed. The child processes don't survive a quit (they're killed on
+  // `ExitRequested`), so without this a restored agent tab came back
+  // completely blank, which reads as lost work rather than a restart.
+  useEffect(() => {
+    void hydrateRun(runId, {
+      kind,
+      worktreeId: tab.worktreeId ?? "",
+      worktreeRoot: tab.worktreeRoot ?? "",
+    });
+  }, [runId, kind, tab.worktreeId, tab.worktreeRoot, hydrateRun]);
 
   const items = useMemo(() => tabState?.items ?? [], [tabState?.items]);
   const groups = useStableGroups(items);
@@ -565,6 +671,111 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
       setRunError(runId, `Agent could not continue: ${String(error)}`);
     }
   }
+
+  // Flush one queued message as soon as the agent is free. Deliberately
+  // one per idle transition rather than a loop: each send puts the run
+  // back into `working`, so the next one flushes on the next transition,
+  // and the user keeps the chance to remove the rest in between.
+  //
+  // `awaitingPermission` and `error` are *not* idle for this purpose — a
+  // queued follow-up must not silently answer a permission prompt or
+  // charge into a failed run.
+  /** The prompt the failed turn was answering, for the error banner's
+   * Retry. Reading it back off the transcript avoids keeping a second,
+   * separately-stale copy of the same string. */
+  const lastUserMessage = useMemo(() => {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item.kind === "user") return item.text;
+    }
+    return null;
+  }, [items]);
+
+  // Only shown where the provider actually reports a window — otherwise a
+  // percentage would have an invented denominator.
+  const context = capabilities.reportsContextWindow
+    ? contextUsage(
+        {
+          inputTokens: tabState?.lastResult?.inputTokens ?? null,
+          outputTokens: tabState?.lastResult?.outputTokens ?? null,
+          cacheReadTokens: tabState?.lastResult?.cacheReadTokens ?? null,
+          cacheWriteTokens: tabState?.lastResult?.cacheWriteTokens ?? null,
+        },
+        tabState?.lastResult?.contextWindow ?? null,
+      )
+    : null;
+
+  const idle = tabState?.status === "idle";
+  const hasQueued = (tabState?.queued.length ?? 0) > 0;
+  const sendRef = useRef(handleSend);
+  // Assigned in an effect, not during render: writing a ref while
+  // rendering is unsafe under concurrent rendering (react-hooks/refs), and
+  // this component already documents that trap for `cursorPos` in the
+  // composer.
+  useEffect(() => {
+    sendRef.current = handleSend;
+  });
+
+  useEffect(() => {
+    if (!idle || !hasQueued) return;
+    const next = useAgentSessionStore.getState().takeQueuedMessage(runId);
+    // The model/effort/fast arguments only matter for the *first* message
+    // of a session (`startAgentSession`); a queued one is by definition a
+    // follow-up, and `sendAgentMessage` takes its configuration from the
+    // run entry the composer already syncs via `setAgentConfiguration`.
+    if (next !== null) void sendRef.current(next, null, null, false);
+  }, [idle, hasQueued, runId]);
+
+  /** Rewinds to an earlier message and re-runs from there with new text.
+   *
+   * Two halves, and both matter: the transcript is truncated locally, and
+   * — where the CLI can branch a session — the next turn forks, so the
+   * original conversation survives on disk instead of being rewritten.
+   * Where it can't, the local history still rewinds but the model's own
+   * context doesn't; the composer says so rather than implying a rewind
+   * that didn't happen. */
+  async function handleReplace(
+    itemId: string,
+    text: string,
+    model: string | null,
+    effort: string | null,
+    fast: boolean,
+  ) {
+    truncateFrom(runId, itemId);
+    if (tabState?.started && capabilities.forkSession) {
+      try {
+        await agentsApi.forkAgentSession(runId);
+      } catch {
+        // Not fatal: without the fork the edit still runs, it just
+        // continues the existing session instead of branching it.
+      }
+    }
+    await handleSend(text, model, effort, fast);
+  }
+
+  /** Accepts the plan: leaves read-only mode and tells the agent to carry
+   * it out. Lands in Manual rather than Auto deliberately — approving a
+   * *plan* is not the same as approving every action it will take, and
+   * Manual is the mode that still asks (where the CLI can). */
+  async function handleApprovePlan() {
+    if (permissionMode === "plan") changePermissionMode("manual");
+    await handleSend("Approved — please implement the plan above.", null, null, false);
+  }
+
+  // Esc stops the agent, matching every one of these CLIs' own
+  // interactive mode. Scoped to the active tab so a background run isn't
+  // cancelled by an Esc meant for something else, and `capture: false`
+  // lets menus/dialogs handle their own Esc first.
+  useEffect(() => {
+    if (!active || !working) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      void agentsApi.interruptAgent(runId);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, working, runId]);
 
   function changePermissionMode(next: PermissionMode) {
     setStoredPermissionMode(runId, next);
@@ -622,9 +833,25 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
             {tabState?.lastResult?.sessionId.slice(0, 8) ?? "new session"}
           </div>
         </div>
-        <div className={styles.statusPill} data-status={errored ? "error" : undefined}>
-          {!errored && <span className={styles.statusDot} data-active={working} />}
-          {errored ? "error" : working ? "working" : "idle"}
+        {context && (
+          <div
+            className={styles.contextMeter}
+            title={`${context.used.toLocaleString()} of ${context.window.toLocaleString()} tokens used in the last turn`}
+          >
+            <span className={styles.contextBar} data-heavy={context.percent >= 75 || undefined}>
+              <span style={{ width: `${context.percent}%` }} />
+            </span>
+            {context.percent}% context
+          </div>
+        )}
+        <div
+          className={styles.statusPill}
+          data-status={errored ? "error" : awaitingPermission ? "awaiting" : undefined}
+        >
+          {!errored && !awaitingPermission && (
+            <span className={styles.statusDot} data-active={working} />
+          )}
+          {errored ? "error" : awaitingPermission ? "needs approval" : working ? "working" : "idle"}
         </div>
         <div className={styles.headerActions}>
           {working && (
@@ -665,7 +892,29 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
       )}
 
       {errored && tabState?.errorMessage && (
-        <div className={styles.errorBanner}>{tabState.errorMessage}</div>
+        <div className={styles.errorBanner} role="alert">
+          <span className={styles.errorText}>{tabState.errorMessage}</span>
+          {lastUserMessage && (
+            <button
+              type="button"
+              className={styles.errorAction}
+              // Re-sends the message the failed turn was working on, so a
+              // transient crash doesn't cost the user their prompt.
+              onClick={() => void handleSend(lastUserMessage, null, null, false)}
+            >
+              <ArrowClockwise size={13} />
+              Retry
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.errorAction}
+            onClick={() => clearRunError(runId)}
+            aria-label="Dismiss error"
+          >
+            <X size={13} />
+          </button>
+        </div>
       )}
 
       <Transcript
@@ -677,6 +926,10 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         worktreeId={tab.worktreeId}
         worktreeRoot={tab.worktreeRoot}
         turnStartedAtMs={tabState?.turnStartedAtMs ?? null}
+        totalCostUsd={tabState?.lastResult?.totalCostUsd ?? null}
+        onEdit={working ? undefined : (itemId) => beginEditing(runId, itemId)}
+        planExitTool={capabilities.planExitTool}
+        onApprovePlan={handleApprovePlan}
       />
 
       <AgentComposer
@@ -688,6 +941,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         permissionMode={permissionMode}
         onPermissionModeChange={changePermissionMode}
         onSend={handleSend}
+        onReplace={handleReplace}
       />
     </div>
   );

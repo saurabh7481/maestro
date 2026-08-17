@@ -44,6 +44,80 @@
   color: var(--text-dim);
 }
 
+/* Rewriting an earlier message. Spells out what sending will discard,
+   because it discards more than the message being edited. */
+.editingBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  font-size: var(--text-xs);
+}
+
+.editingLabel {
+  flex: none;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.editingText {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  line-height: var(--leading-normal);
+}
+
+/* Messages typed while the agent was busy, waiting their turn. Shown
+   above the input so it's obvious they haven't been sent yet. */
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.queuedItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: var(--border-width) dashed var(--border-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-3) 60%, transparent);
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+
+.queuedLabel {
+  flex: none;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.queuedText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .attachError {
   margin-bottom: var(--space-5);
   padding: var(--space-3) var(--space-5);
@@ -229,6 +303,17 @@
 .modeItemDescription {
   font-size: var(--text-xs);
   color: var(--text-mute);
+  line-height: var(--leading-normal);
+  white-space: normal;
+}
+
+/* Where a mode can't mean for this CLI quite what its label promises. */
+.modeItemCaveat {
+  margin-top: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 2px solid color-mix(in srgb, var(--yellow) 50%, transparent);
+  color: var(--yellow);
+  font-size: var(--text-2xs);
   line-height: var(--leading-normal);
   white-space: normal;
 }

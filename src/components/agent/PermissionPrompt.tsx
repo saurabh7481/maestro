@@ -2,14 +2,16 @@ import { Check, X } from "@phosphor-icons/react";
 import { agentsApi } from "../../api/agents";
 import { useAgentSessionStore } from "../../state/agentSessionStore";
 import type { PermissionState } from "../../state/agentSessionStore";
+import { useTabsStore } from "../../state/tabsStore";
+import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
 import styles from "./PermissionPrompt.module.css";
 
-/** Approve/deny card for a tool call the CLI auto-denied/blocked because
- * it wasn't pre-authorized. There's no live approve/deny wire protocol in
- * any of the three CLIs (see `agents/claude.rs`/`cursor_agent.rs`/
- * `codex.rs`'s module docs) — "Approve" restarts the session with wider
- * trust, which is why this triggers another `respondToPermission` call
- * rather than something lighter-weight. */
+/** Approve/deny card for a tool call the CLI blocked because it wasn't
+ * pre-authorized. None of the three CLIs has a live approve/deny wire
+ * protocol (see `agents/claude.rs`'s module doc), so the backend stops the
+ * turn at the request instead and the run parks on `awaitingPermission`.
+ * "Approve" resumes the same session with wider trust — a real turn, hence
+ * the spinner; "Deny" runs nothing, because the turn already stopped. */
 export function PermissionPrompt({
   runId,
   toolCallId,
@@ -23,8 +25,19 @@ export function PermissionPrompt({
 }) {
   const setStatus = useAgentSessionStore((s) => s.setToolCallPermissionStatus);
   const setWorking = useAgentSessionStore((s) => s.setWorking);
+  const setIdle = useAgentSessionStore((s) => s.setIdle);
   const setRunError = useAgentSessionStore((s) => s.setRunError);
+  const setPermissionMode = useAgentSessionStore((s) => s.setPermissionMode);
   const working = useAgentSessionStore((s) => s.byRunId[runId]?.status === "working");
+  // The run id *is* the tab id, so the tab carries which CLI this is.
+  const kind = useTabsStore((s) => s.tabs.find((tab) => tab.id === runId)?.agentKind);
+  const capabilities = useAgentCapabilities(kind ?? "claudeCode");
+  // A CLI that can't prompt per call has no way to allow just this one
+  // action, so the backend's only lever is to stop gating the run
+  // entirely (`manager.rs::respond_to_permission`). Say that *before* the
+  // click — an "Approve" that silently means "and everything after this"
+  // is exactly the surprise a permission prompt exists to prevent.
+  const escalates = !!kind && capabilities.manualGate !== "prompt";
 
   if (permission.status !== "pending") {
     return (
@@ -41,13 +54,21 @@ export function PermissionPrompt({
     // its final result. Starting the retry during that gap creates two
     // concurrent turns for one run and races session/cancel bookkeeping.
     if (working) return;
-    setStatus(runId, toolCallId, decision === "approve" ? "approved" : "denied");
-    setWorking(runId);
+    const approving = decision === "approve";
+    setStatus(runId, toolCallId, approving ? "approved" : "denied");
+    // Only an approval resumes the agent. A denial ends the turn where it
+    // stopped, so showing a spinner for it would be a lie.
+    if (approving) setWorking(runId);
+    else setIdle(runId);
     try {
-      await agentsApi.respondToPermission(
+      const outcome = await agentsApi.respondToPermission(
         runId,
-        decision === "approve" ? { decision: "approve", toolName } : { decision: "deny" },
+        approving ? { decision: "approve", toolName } : { decision: "deny" },
       );
+      // Approving on a CLI with no per-invocation allow-list turns gating
+      // off for the rest of the run. Reflect that in the mode picker
+      // instead of leaving it claiming "Manual" while nothing is gated.
+      if (outcome?.escalatedToAuto) setPermissionMode(runId, "auto");
     } catch (error) {
       setRunError(runId, `Could not continue after the permission decision: ${String(error)}`);
     }
@@ -77,6 +98,12 @@ export function PermissionPrompt({
           Deny
         </button>
       </div>
+      {escalates && (
+        <span className={styles.escalation}>
+          This CLI can’t approve one action on its own — approving turns off permission prompts for
+          the rest of this tab.
+        </span>
+      )}
       {working && <span className={styles.waiting}>Finishing current step…</span>}
     </div>
   );

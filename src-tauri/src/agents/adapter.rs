@@ -54,6 +54,11 @@ pub struct TurnCtx<'a> {
     pub effort: Option<&'a str>,
     pub fast: bool,
     pub permission_mode: PermissionMode,
+    /// Whether to ask this CLI for token-level output. Driven by
+    /// `capabilities.rs` rather than decided per adapter, so a provider
+    /// that gains streaming later only has to flip its declaration.
+    /// Adapters whose declared `Streaming` is `Blocks` ignore it.
+    pub stream_deltas: bool,
 }
 
 pub struct TurnSpawn {
@@ -73,14 +78,20 @@ pub fn build_turn(kind: AgentKind, ctx: &TurnCtx, text: &str) -> TurnSpawn {
     }
 }
 
+/// `stream_deltas` must match what `build_turn` was given: at least one
+/// CLI (Cursor) changes the *meaning* of an existing event rather than
+/// adding a new one — with partial output on, each `assistant` line is a
+/// fragment instead of a finished block — so the parser cannot tell the
+/// two apart from the line alone.
 pub fn parse_line(
     kind: AgentKind,
     line: &str,
     cache: &mut ToolUseCache,
+    stream_deltas: bool,
 ) -> (Vec<AgentEvent>, Option<String>) {
     match kind {
-        AgentKind::ClaudeCode => claude::parse_line(line, cache),
-        AgentKind::CursorAgent => cursor_agent::parse_line(line, cache),
+        AgentKind::ClaudeCode => claude::parse_line(line, cache, stream_deltas),
+        AgentKind::CursorAgent => cursor_agent::parse_line(line, cache, stream_deltas),
         AgentKind::Codex => codex::parse_line(line, cache),
     }
 }

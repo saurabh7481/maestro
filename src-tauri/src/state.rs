@@ -45,6 +45,12 @@ pub struct AgentRunEntry {
     /// Defaults to `Manual` (gated, off-by-default opt-out per
     /// docs/CHECKLIST.md) — see `agents::adapter::PermissionMode`.
     pub permission_mode: PermissionMode,
+    /// Latched for the whole of `run_turn`, from before the spawn until
+    /// after the child is reaped. `cancel_tx`/`pid` can't serve this role:
+    /// both are cleared by an interrupt while the child is still winding
+    /// down, which left a window where a second turn could start on top of
+    /// the first.
+    pub turn_active: bool,
     /// `Some` only while a turn's child process is actually running.
     pub cancel_tx: Option<Sender<AgentCancelKind>>,
     /// The current turn's child pid, tracked for the Process Manager

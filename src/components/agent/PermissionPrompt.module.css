@@ -72,6 +72,14 @@
   font-size: var(--text-xs);
 }
 
+/* What "Approve" really costs on a CLI that can't grant one action. */
+.escalation {
+  width: 100%;
+  color: var(--yellow);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
 .approve:disabled,
 .deny:disabled {
   cursor: wait;

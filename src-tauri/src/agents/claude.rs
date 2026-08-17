@@ -23,8 +23,23 @@
 //! This is why `manager.rs::run_turn` spawns fresh per turn (`--resume`
 //! chains them) instead of keeping one process's stdin open across turns
 //! — the CLI's own on-disk session persistence carries continuity.
-//! "Approve"/"Deny" (`manager.rs::respond_to_permission`) are both just
-//! another turn: Approve widens `allowed_tools` first, Deny doesn't.
+//!
+//! ## Why Manual mode stops the turn (re-verified against 2.1.224)
+//!
+//! Still no `--permission-prompt-tool` on this build; `--permission-mode`
+//! takes only `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`.
+//! So the auto-denial above isn't a question the CLI waits on — left
+//! alone it carries straight on and finishes the turn, which is why
+//! "Manual" used to look like it asked for approval and then ignored the
+//! answer.
+//!
+//! `run_turn` therefore SIGINTs the child the moment a `PermissionDenied`
+//! is parsed in `Manual` mode. Verified end to end against this binary:
+//! the interrupted turn exits 0, and re-spawning with `--resume <id>` plus
+//! the tool added to `--allowedTools` runs the previously-blocked action
+//! for real, under the same `session_id`. "Approve" is that re-spawn
+//! (`manager.rs::respond_to_permission`); "Deny" runs nothing at all,
+//! since the turn is already stopped.
 //!
 //! Fixture lines captured during the spike live under
 //! `src-tauri/tests/fixtures/claude/`.
@@ -51,6 +66,12 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
         "stream-json",
         "--verbose",
     ]);
+    if ctx.stream_deltas {
+        // Adds `stream_event` lines carrying per-token deltas. The
+        // consolidated `assistant` message still arrives afterwards, which
+        // `parse_line` relies on to finalize the streamed text.
+        cmd.arg("--include-partial-messages");
+    }
     match ctx.permission_mode {
         PermissionMode::Auto => {
             cmd.args(["--permission-mode", "bypassPermissions"]);
@@ -131,11 +152,15 @@ fn edit_diff(input: &Value) -> Option<(String, u32, u32)> {
 pub fn parse_line(
     line: &str,
     tool_use_cache: &mut ToolUseCache,
+    stream_deltas: bool,
 ) -> (Vec<AgentEvent>, Option<String>) {
     const KNOWN_NOISE: &[(&str, &str)] = &[
         ("system", "hook_started"),
         ("system", "hook_response"),
         ("system", "thinking_tokens"),
+        // Progress chatter ("requesting", ...) observed live on 2.1.224.
+        // Without this it rendered as an "Unrecognized event" card.
+        ("system", "status"),
         ("rate_limit_event", ""),
     ];
 
@@ -152,6 +177,28 @@ pub fn parse_line(
     let subtype = value.get("subtype").and_then(|t| t.as_str()).unwrap_or("");
 
     match event_type {
+        // Per-token output, present only under `--include-partial-messages`.
+        // Every other `stream_event` shape (message_start/_delta/_stop,
+        // content_block_start/_stop) is scaffolding the transcript doesn't
+        // need — consumed silently rather than forwarded as `Raw`, which
+        // would bury the conversation under one card per token.
+        "stream_event" => {
+            if !stream_deltas {
+                return (Vec::new(), None);
+            }
+            let delta = value.get("event").and_then(|e| e.get("delta"));
+            let is_text =
+                delta.and_then(|d| d.get("type")).and_then(|t| t.as_str()) == Some("text_delta");
+            // `thinking_delta` is deliberately skipped: the collapsed
+            // thinking block still arrives whole on the `assistant`
+            // message, so streaming it too would duplicate it.
+            match delta.filter(|_| is_text).and_then(|d| d.get("text")) {
+                Some(Value::String(text)) if !text.is_empty() => {
+                    (vec![AgentEvent::MessageDelta { text: text.clone() }], None)
+                }
+                _ => (Vec::new(), None),
+            }
+        }
         "system" if subtype == "init" => {
             let session_id = value
                 .get("session_id")
@@ -325,6 +372,16 @@ pub fn parse_line(
                         .get("usage")
                         .and_then(|u| u.get("cache_creation_input_tokens"))
                         .and_then(|n| n.as_u64()),
+                    // `modelUsage` is keyed by model id, and a turn uses
+                    // exactly one model, so the single entry's window is
+                    // the one that applies. Taking "the first value"
+                    // rather than guessing at the key name.
+                    context_window: value
+                        .get("modelUsage")
+                        .and_then(|m| m.as_object())
+                        .and_then(|m| m.values().next())
+                        .and_then(|m| m.get("contextWindow"))
+                        .and_then(|n| n.as_u64()),
                     result_text: value
                         .get("result")
                         .and_then(|s| s.as_str())
@@ -364,7 +421,7 @@ mod tests {
             if line.trim().is_empty() {
                 continue;
             }
-            let (mut line_events, _) = parse_line(line, &mut cache);
+            let (mut line_events, _) = parse_line(line, &mut cache, false);
             events.append(&mut line_events);
         }
         events
@@ -420,7 +477,7 @@ mod tests {
     #[test]
     fn malformed_line_becomes_an_error_event_not_a_panic() {
         let mut cache = HashMap::new();
-        let (events, session_id) = parse_line("{not valid json", &mut cache);
+        let (events, session_id) = parse_line("{not valid json", &mut cache, false);
         assert!(session_id.is_none());
         assert!(matches!(events.as_slice(), [AgentEvent::Error { .. }]));
     }
@@ -431,8 +488,83 @@ mod tests {
         let (events, _) = parse_line(
             r#"{"type":"totally_new_event_type","foo":"bar"}"#,
             &mut cache,
+            false,
         );
         assert!(matches!(events.as_slice(), [AgentEvent::Raw { .. }]));
+    }
+
+    /// Lines captured from a real `--include-partial-messages` run.
+    /// Replays a real captured `--include-partial-messages` transcript and
+    /// asserts the streamed text reconstructs to exactly what the
+    /// consolidated block says — the property the whole delta path rests on.
+    #[test]
+    fn streamed_deltas_reconstruct_the_final_text() {
+        let captured = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/claude/05_partial_messages.jsonl"
+        ))
+        .expect("capture fixture");
+
+        let mut cache = HashMap::new();
+        let mut streamed = String::new();
+        let mut finished: Option<String> = None;
+        for line in captured.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let (events, _) = parse_line(line, &mut cache, true);
+            for event in events {
+                match event {
+                    AgentEvent::MessageDelta { text } => streamed.push_str(&text),
+                    AgentEvent::Message { text, .. } => finished = Some(text),
+                    _ => {}
+                }
+            }
+        }
+        assert!(!streamed.is_empty(), "expected deltas from the capture");
+        assert_eq!(Some(streamed), finished);
+    }
+
+    #[test]
+    fn partial_messages_stream_text_deltas() {
+        let mut cache = HashMap::new();
+        let (events, _) = parse_line(
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"The"}},"session_id":"s"}"#,
+            &mut cache,
+            true,
+        );
+        assert!(matches!(events.as_slice(), [AgentEvent::MessageDelta { text }] if text == "The"));
+    }
+
+    #[test]
+    fn stream_scaffolding_is_not_shown_as_unrecognized() {
+        let mut cache = HashMap::new();
+        // One "Unrecognized event" card per token would be worse than no
+        // streaming at all.
+        for line in [
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+            // Thinking streams too, but the whole block still arrives on
+            // the `assistant` message — forwarding both would duplicate it.
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}}}"#,
+            r#"{"type":"system","subtype":"status","status":"requesting"}"#,
+        ] {
+            let (events, _) = parse_line(line, &mut cache, true);
+            assert!(events.is_empty(), "expected no events for {line}");
+        }
+    }
+
+    #[test]
+    fn deltas_are_ignored_when_streaming_was_not_requested() {
+        let mut cache = HashMap::new();
+        let (events, _) = parse_line(
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"The"}}}"#,
+            &mut cache,
+            false,
+        );
+        assert!(events.is_empty());
     }
 
     #[test]

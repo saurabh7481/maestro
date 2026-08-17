@@ -3,6 +3,7 @@ import { useWorkspaceStore } from "../state/workspaceStore";
 import { useTabsStore } from "../state/tabsStore";
 import { useSatelliteStore } from "../state/satelliteStore";
 import { restoreSatelliteWindows } from "../components/chrome/satelliteWindows";
+import { agentsApi } from "../api/agents";
 import { loadSessionPrefs, saveSessionPrefs } from "./persistence";
 import type { SessionPrefs } from "./persistence";
 
@@ -80,6 +81,19 @@ export function useSessionPersistence(): void {
             activeTabId: null,
           });
         }
+
+        // Stored agent transcripts outlive their tabs if the app ever
+        // exits without `closeRun` running (a crash, or a tab whose
+        // worktree was dropped just above). Sweeping them against the tabs
+        // that actually survived keeps that table bounded by what the user
+        // really has, rather than growing forever.
+        const survivingAgentRunIds = [
+          ...restorableTabs,
+          ...(prefs.satellites ?? []).flatMap((record) => record.tabs),
+        ]
+          .filter((tab) => tab.type === "agent")
+          .map((tab) => tab.id);
+        void agentsApi.pruneAgentTranscripts(survivingAgentRunIds).catch(() => {});
 
         // Detached windows are reopened with the tabs they had. The
         // processes behind those tabs did *not* survive the quit (they're

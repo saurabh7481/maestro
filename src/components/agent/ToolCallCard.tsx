@@ -72,17 +72,24 @@ export const ToolCallCard = memo(function ToolCallCard({
   runId,
   item,
   nested = false,
+  running = true,
 }: {
   runId: string;
   item: ToolCallItem;
   nested?: boolean;
+  /** Whether the turn this call belongs to is still going. A call whose
+   * result never arrived — the turn was interrupted, paused for
+   * permission, or crashed — otherwise span its spinner forever, claiming
+   * work was still happening long after the process had exited. */
+  running?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const visual = TOOL_ICON[item.name] ?? { icon: Wrench, color: "var(--text-dim)" };
   const ToolIcon = visual.icon;
   const summary = summaryFor(item.name, item.input);
   const isEditLike = item.name === "Edit" || item.name === "Write";
-  const pending = !item.result && !item.permission;
+  const unfinished = !item.result && !item.permission;
+  const pending = unfinished && running;
   const denied = item.permission?.status === "pending" || item.permission?.status === "denied";
 
   const hasBody = !!item.result?.content;
@@ -122,6 +129,9 @@ export const ToolCallCard = memo(function ToolCallCard({
               </>
             )}
           {denied && <span className={styles.needsPermission}>needs permission</span>}
+          {unfinished && !running && !denied && (
+            <span className={styles.interrupted}>didn’t finish</span>
+          )}
           {hasBody && (expanded ? <CaretDown size={11} /> : <CaretRight size={11} />)}
         </span>
       </div>

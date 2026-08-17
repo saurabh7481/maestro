@@ -6,6 +6,7 @@
 //! `commands/hooks.rs::run_worktree_hook`'s spawn/stream/cancel shape.
 
 use crate::agents::adapter::{self, PermissionMode, ToolUseCache, TurnCtx};
+use crate::agents::capabilities::Streaming;
 use crate::agents::events::AgentEvent;
 use crate::agents::registry::AgentKind;
 use crate::state::{AgentCancelKind, AgentRunEntry, AppState};
@@ -15,6 +16,61 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub fn agent_event_channel(run_id: &str) -> String {
     format!("agent://{run_id}/event")
+}
+
+/// How long streamed text is allowed to pool before being sent to the UI.
+/// Roughly a few display frames: fast enough to read as typing, slow
+/// enough that a long response costs tens of updates rather than
+/// thousands.
+const DELTA_FLUSH_INTERVAL: Duration = Duration::from_millis(60);
+
+/// Emits whatever streamed text has pooled, if any, and clears the buffer.
+/// Must be called before emitting any non-delta event so the transcript
+/// keeps the order the model produced things in.
+fn flush_delta(app: &AppHandle, channel: &str, pending: &mut String) {
+    if pending.is_empty() {
+        return;
+    }
+    let _ = app.emit(
+        channel,
+        &AgentEvent::MessageDelta {
+            text: std::mem::take(pending),
+        },
+    );
+}
+
+/// Releases a run's "a turn is in flight" latch on a path that gives up
+/// before the normal end-of-turn bookkeeping runs. Without this an early
+/// return would leave the run permanently refusing new turns.
+fn clear_turn_active(state: &State<'_, AppState>, run_id: &str) {
+    if let Ok(mut runs) = state.agent_runs.lock() {
+        if let Some(entry) = runs.get_mut(run_id) {
+            entry.turn_active = false;
+        }
+    }
+}
+
+/// Asks a turn's child to stop the way a terminal Ctrl-C would, falling
+/// back to an outright kill if it doesn't go. SIGINT (not SIGKILL) is what
+/// lets the CLI flush its session file, which is what makes the next
+/// `--resume` land on the same conversation — verified live for both the
+/// Stop button and the permission pause.
+async fn interrupt_child(child: &mut tokio::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGINT,
+        );
+        if tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .is_err()
+        {
+            let _ = child.kill().await;
+        }
+        return;
+    }
+    let _ = child.kill().await;
 }
 
 /// Runs one turn: spawns a fresh CLI process (resuming the run's session
@@ -42,6 +98,17 @@ async fn run_turn(
     ) = {
         let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
         let entry = runs.get_mut(&run_id).ok_or("no such agent run")?;
+        // One CLI process per run, always. Every caller that starts a turn
+        // (`send_agent_message`, `respond_to_permission`) used to spawn
+        // unconditionally, so a second turn begun while one was in flight
+        // overwrote `cancel_tx`/`pid` — orphaning the first child as
+        // unkillable and interleaving two event streams on one channel.
+        if entry.turn_active {
+            return Err(
+                "This agent is already running a turn — wait for it to finish.".to_string(),
+            );
+        }
+        entry.turn_active = true;
         let fork_session = entry.pending_fork;
         entry.pending_fork = false;
         (
@@ -58,6 +125,10 @@ async fn run_turn(
         )
     };
 
+    // Declared once per provider, never branched on by kind here.
+    let stream_deltas =
+        crate::agents::capabilities::capabilities_for(kind).streaming == Streaming::Deltas;
+
     let ctx = TurnCtx {
         binary_path: &binary_path,
         worktree_root: &worktree_root,
@@ -68,13 +139,23 @@ async fn run_turn(
         effort: effort.as_deref(),
         fast,
         permission_mode,
+        stream_deltas,
     };
     let spawn = adapter::build_turn(kind, &ctx, &text);
     let mut command = spawn.command;
 
-    let mut child = command
+    // Every early return from here on has to clear `turn_active` again, or
+    // the run is wedged into "already running a turn" forever.
+    let spawned = command
         .spawn()
-        .map_err(|e| format!("failed to start {}: {e}", kind.display_name()))?;
+        .map_err(|e| format!("failed to start {}: {e}", kind.display_name()));
+    let mut child = match spawned {
+        Ok(child) => child,
+        Err(message) => {
+            clear_turn_active(&state, &run_id);
+            return Err(message);
+        }
+    };
 
     if let Some(payload) = spawn.stdin_payload {
         if let Some(mut stdin) = child.stdin.take() {
@@ -84,21 +165,31 @@ async fn run_turn(
         }
     }
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| format!("failed to capture {} stdout", kind.display_name()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| format!("failed to capture {} stderr", kind.display_name()))?;
+    let (stdout, stderr) = match (child.stdout.take(), child.stderr.take()) {
+        (Some(stdout), Some(stderr)) => (stdout, stderr),
+        _ => {
+            clear_turn_active(&state, &run_id);
+            let _ = child.kill().await;
+            return Err(format!("failed to capture {} output", kind.display_name()));
+        }
+    };
     let channel = agent_event_channel(&run_id);
+
+    // A tool needing approval is reported mid-stream, so the decision to
+    // stop the turn has to travel from the stdout reader back to the task
+    // that owns the child. Carries the tool id so the pause event can name
+    // the call the user is being asked about.
+    let (pause_tx, mut pause_rx) = tokio::sync::oneshot::channel::<String>();
+    let pause_on_permission = permission_mode == PermissionMode::Manual;
 
     let stdout_app = app.clone();
     let stdout_channel = channel.clone();
     let stdout_task = tokio::spawn(async move {
+        let mut pause_tx = Some(pause_tx);
         let mut tool_use_cache: ToolUseCache = ToolUseCache::new();
         let mut learned_session_id = None;
+        let mut pending_delta = String::new();
+        let mut last_delta_flush = std::time::Instant::now();
         let mut lines = BufReader::new(stdout).lines();
         // Not strictly one-JSON-object-per-line in practice: observed
         // live that `cursor-agent` can emit a `call_id` containing a raw
@@ -130,7 +221,8 @@ async fn run_turn(
 
             let line = std::mem::take(&mut buffer);
             buffered_segments = 0;
-            let (events, session_id) = adapter::parse_line(kind, &line, &mut tool_use_cache);
+            let (events, session_id) =
+                adapter::parse_line(kind, &line, &mut tool_use_cache, stream_deltas);
             if session_id.is_some() {
                 learned_session_id = session_id;
             }
@@ -142,9 +234,46 @@ async fn run_turn(
                         }
                     }
                 }
+
+                // Coalesce text deltas. A streaming CLI emits one per
+                // token, and forwarding each straight through would mean an
+                // IPC round-trip and a full transcript re-render per token
+                // — the thing that makes naive streaming *slower* than no
+                // streaming. Batching to a display-rate cadence keeps the
+                // typing effect while bounding the work.
+                if let AgentEvent::MessageDelta { text } = &event {
+                    pending_delta.push_str(text);
+                    if last_delta_flush.elapsed() >= DELTA_FLUSH_INTERVAL {
+                        flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+                        last_delta_flush = std::time::Instant::now();
+                    }
+                    continue;
+                }
+                // Anything else has to come *after* the text it follows.
+                flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+                last_delta_flush = std::time::Instant::now();
+
                 let _ = stdout_app.emit(&stdout_channel, &event);
+                // Stop the turn at the point of the request rather than
+                // letting the CLI barrel on past its own inline denial.
+                // None of these CLIs has a live approve/deny round-trip
+                // (verified against claude 2.1.224 — no
+                // `--permission-prompt-tool`), so pausing here is what
+                // turns "Manual" into a gate the user's answer actually
+                // decides. Approving replays the action on the next turn
+                // via `--resume` + a widened allow-list.
+                if pause_on_permission {
+                    if let AgentEvent::PermissionDenied { tool_use_id, .. } = &event {
+                        if let Some(tx) = pause_tx.take() {
+                            let _ = tx.send(tool_use_id.clone());
+                        }
+                    }
+                }
             }
         }
+        // Whatever the last flush didn't cover — a reply that ends on text
+        // would otherwise lose its final fragment.
+        flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
         learned_session_id
     });
 
@@ -172,24 +301,13 @@ async fn run_turn(
         }
     }
 
+    let mut paused_for: Option<String> = None;
     let exit_code = tokio::select! {
         status = child.wait() => status.ok().and_then(|s| s.code()),
         cancel = &mut cancel_rx => {
             match cancel {
                 Ok(AgentCancelKind::Soft) => {
-                    #[cfg(unix)]
-                    if let Some(pid) = child.id() {
-                        let _ = nix::sys::signal::kill(
-                            nix::unistd::Pid::from_raw(pid as i32),
-                            nix::sys::signal::Signal::SIGINT,
-                        );
-                        let grace = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-                        if grace.is_err() {
-                            let _ = child.kill().await;
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    { let _ = child.kill().await; }
+                    interrupt_child(&mut child).await;
                     None
                 }
                 _ => {
@@ -198,7 +316,30 @@ async fn run_turn(
                 }
             }
         }
+        tool_use_id = &mut pause_rx => {
+            match tool_use_id {
+                // Same SIGINT-then-grace path the Stop button uses, which
+                // is what keeps the session resumable: verified live that
+                // a claude turn interrupted at the denial exits 0 and
+                // `--resume` picks the same session id back up.
+                Ok(id) => {
+                    interrupt_child(&mut child).await;
+                    paused_for = Some(id);
+                    None
+                }
+                // The reader finished without ever asking for permission,
+                // so the sender was simply dropped. That races `child.wait()`
+                // — stdout hits EOF exactly as the process exits — and
+                // treating it as a pause would both interrupt an
+                // already-finished turn and throw away its real exit code.
+                Err(_) => child.wait().await.ok().and_then(|s| s.code()),
+            }
+        }
     };
+
+    if let Some(tool_use_id) = paused_for {
+        let _ = app.emit(&channel, &AgentEvent::AwaitingPermission { tool_use_id });
+    }
 
     let learned_session_id = stdout_task.await.unwrap_or(None);
     {
@@ -206,6 +347,7 @@ async fn run_turn(
         if let Some(entry) = runs.get_mut(&run_id) {
             entry.cancel_tx = None;
             entry.pid = None;
+            entry.turn_active = false;
             if learned_session_id.is_some() {
                 entry.session_id = learned_session_id;
             }
@@ -272,6 +414,7 @@ pub async fn start_agent_session(
                     .map(|s| s.to_string())
                     .collect(),
                 permission_mode,
+                turn_active: false,
                 cancel_tx: None,
                 pid: None,
                 started_at_ms: crate::processes::now_ms(),
@@ -317,6 +460,7 @@ pub async fn resume_agent_session(
                 .map(|s| s.to_string())
                 .collect(),
             permission_mode: PermissionMode::default(),
+            turn_active: false,
             cancel_tx: None,
             pid: None,
             started_at_ms: crate::processes::now_ms(),
@@ -333,6 +477,21 @@ pub async fn send_agent_message(
     text: String,
 ) -> Result<(), String> {
     run_turn(app, state, run_id, text).await
+}
+
+/// Reports what an approval actually cost the run's trust, so the UI can
+/// say so instead of quietly widening permissions behind the user's back.
+/// `escalated_to_auto` is the honest bad news for Cursor/Codex: neither
+/// has a per-invocation allow-list, so the only way to let one blocked
+/// action through is to stop gating that run altogether.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionOutcome {
+    pub escalated_to_auto: bool,
+    /// Whether this decision started another turn. `false` for a denial —
+    /// the turn was already stopped at the request, so there is nothing to
+    /// resume and nothing to pay for.
+    pub resumed: bool,
 }
 
 /// There's no one-time-only approval available for any of the three CLIs
@@ -364,29 +523,66 @@ pub async fn respond_to_permission(
     state: State<'_, AppState>,
     run_id: String,
     decision: PermissionDecision,
-) -> Result<(), String> {
-    let nudge = match &decision {
+) -> Result<PermissionOutcome, String> {
+    let (tool_name, escalated_to_auto) = match &decision {
         PermissionDecision::Approve { tool_name } => {
             let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
-            if let Some(entry) = runs.get_mut(&run_id) {
-                match entry.kind {
-                    AgentKind::ClaudeCode => {
-                        if !entry.allowed_tools.iter().any(|t| t == tool_name) {
-                            entry.allowed_tools.push(tool_name.clone());
-                        }
+            let entry = runs.get_mut(&run_id).ok_or("no such agent run")?;
+            let escalated = match entry.kind {
+                AgentKind::ClaudeCode => {
+                    if !entry.allowed_tools.iter().any(|t| t == tool_name) {
+                        entry.allowed_tools.push(tool_name.clone());
                     }
-                    AgentKind::CursorAgent | AgentKind::Codex => {
-                        entry.permission_mode = PermissionMode::Auto;
-                    }
+                    false
                 }
-            }
-            format!("Permission granted for the {tool_name} action you just attempted — please proceed with it now.")
+                AgentKind::CursorAgent | AgentKind::Codex => {
+                    let already_auto = entry.permission_mode == PermissionMode::Auto;
+                    entry.permission_mode = PermissionMode::Auto;
+                    !already_auto
+                }
+            };
+            (tool_name.clone(), escalated)
         }
+        // A denial has nothing to run. The turn was already stopped at the
+        // request (see `run_turn`'s pause branch), and the CLI's own
+        // session history already records the tool as denied — so spending
+        // a whole extra turn, and the tokens for it, just to tell the model
+        // "no" bought nothing.
         PermissionDecision::Deny => {
-            "Permission denied for that action. Please continue without it, or suggest an alternative approach.".to_string()
+            return Ok(PermissionOutcome {
+                escalated_to_auto: false,
+                resumed: false,
+            })
         }
     };
-    run_turn(app, state, run_id, nudge).await
+
+    let nudge = format!(
+        "Permission granted for the {tool_name} action you just attempted — please proceed with it now."
+    );
+    run_turn(app, state, run_id, nudge).await?;
+    Ok(PermissionOutcome {
+        escalated_to_auto,
+        resumed: true,
+    })
+}
+
+/// Marks the run so its *next* turn branches the CLI session instead of
+/// continuing it (`--fork-session` and friends — see each adapter's
+/// `build_turn`). This is what lets a user edit an earlier message and
+/// re-run from that point without destroying the original conversation:
+/// the old session stays on disk exactly as it was, and the edited history
+/// continues under a new id.
+///
+/// Only meaningful for a CLI whose `capabilities.fork_session` is true;
+/// for the others the flag is simply never consumed, so calling this is
+/// harmless but pointless — the frontend gates on the capability instead
+/// of relying on that.
+#[tauri::command]
+pub async fn fork_agent_session(state: State<'_, AppState>, run_id: String) -> Result<(), String> {
+    let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
+    let entry = runs.get_mut(&run_id).ok_or("no such agent run")?;
+    entry.pending_fork = true;
+    Ok(())
 }
 
 /// Explicit, off-by-default-to-`Manual` opt-in (docs/CHECKLIST.md) —
