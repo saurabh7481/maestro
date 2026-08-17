@@ -4,6 +4,7 @@ use crate::git::{
     WorkingStatus,
 };
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 
@@ -95,11 +96,38 @@ pub async fn unstage_all(
     Ok(())
 }
 
-/// Discards a change to `rel_path`. For a tracked file this is `git
+/// Discards changes to `rel_paths`. For a tracked file this is `git
 /// restore`; for an untracked file (which `git restore` no-ops on, since
 /// there's nothing checked-in to restore from) this deletes it directly,
 /// reusing `fs_ops::safe_join`'s path-containment guard rather than a new
-/// one.
+/// one. Untracked *directories* never appear here — `working_status` runs
+/// with `--untracked-files=all`, so every untracked entry is a real file.
+///
+/// `working_status` is consulted once for the whole batch rather than per
+/// path, and the tracked remainder restored in a single `git restore`.
+async fn discard_rel_paths(root: &Path, rel_paths: &[String]) -> Result<(), String> {
+    let status = git::working_status(root).await?;
+    let untracked: HashSet<&str> = status
+        .entries
+        .iter()
+        .filter(|e| matches!(e.unstaged, Some(StatusKind::Untracked)))
+        .map(|e| e.path.as_str())
+        .collect();
+
+    let mut tracked: Vec<String> = Vec::new();
+    for rel_path in rel_paths {
+        if untracked.contains(rel_path.as_str()) {
+            let path = fs_ops::safe_join(root, rel_path)?;
+            tokio::fs::remove_file(&path)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
+            tracked.push(rel_path.clone());
+        }
+    }
+    git::discard_unstaged_paths(root, &tracked).await
+}
+
 #[tauri::command]
 pub async fn discard_change(
     app: AppHandle,
@@ -108,20 +136,29 @@ pub async fn discard_change(
     rel_path: String,
 ) -> Result<(), String> {
     let root = PathBuf::from(worktree_root);
-    let status = git::working_status(&root).await?;
-    let is_untracked = status
-        .entries
-        .iter()
-        .any(|e| e.path == rel_path && matches!(e.unstaged, Some(StatusKind::Untracked)));
+    discard_rel_paths(&root, std::slice::from_ref(&rel_path)).await?;
+    emit_scm_status(&app, &worktree_id, &root).await;
+    Ok(())
+}
 
-    if is_untracked {
-        let path = fs_ops::safe_join(&root, &rel_path)?;
-        tokio::fs::remove_file(&path)
-            .await
-            .map_err(|e| e.to_string())?;
-    } else {
-        git::discard_unstaged(&root, &rel_path).await?;
+/// Bulk form of `discard_change`, behind Source Control's "Discard all
+/// changes". The caller passes the paths it is actually showing rather
+/// than this doing a blanket `git restore . && git clean -fd`: conflicted
+/// entries must not be swept up (`git restore` refuses a path that needs
+/// merge, which would fail the whole batch), and neither must anything the
+/// SCM view isn't listing.
+#[tauri::command]
+pub async fn discard_paths(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    rel_paths: Vec<String>,
+) -> Result<(), String> {
+    if rel_paths.is_empty() {
+        return Ok(());
     }
+    let root = PathBuf::from(worktree_root);
+    discard_rel_paths(&root, &rel_paths).await?;
     emit_scm_status(&app, &worktree_id, &root).await;
     Ok(())
 }

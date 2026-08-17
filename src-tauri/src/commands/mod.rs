@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod aider;
 pub mod attachments;
 pub mod files;
 pub mod git;

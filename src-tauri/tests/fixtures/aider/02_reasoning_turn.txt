@@ -1,0 +1,23 @@
+Aider v0.86.2
+Model: openrouter/deepseek/deepseek-r1 with diff edit format, prompt cache,
+reasoning high
+Git repo: .git with 4,550 files
+Warning: For large repos, consider using --subtree-only and .aiderignore
+See: https://aider.chat/docs/faq.html#can-i-use-aider-in-a-large-mono-repo
+
+--------------
+► **THINKING**
+
+We need to respond with a list of files likely to need changes.
+But they asked "what is this codebase?" so a plain answer is better.
+
+------------
+► **ANSWER**
+
+This repository is a monorepo containing several front-end applications.
+
+- **apps/admin** - the admin dashboard UI.
+- **apps/web** - the public-facing web UI.
+
+Tokens: 3.4k sent, 512 received.
+Cost: $0.0021 message, $0.0021 session.

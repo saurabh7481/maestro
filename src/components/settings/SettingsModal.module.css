@@ -315,3 +315,102 @@
   font-size: var(--text-sm);
   color: var(--text-mute);
 }
+
+/* --- Aider provider configuration ------------------------------------- */
+
+/* The provider name doubles as the card's expand/collapse control, so it
+   is a button but must not look like one. */
+.providerToggle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.providerToggle:hover .agentCardName {
+  color: var(--accent);
+}
+
+.providerHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.providerFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.providerDocsLink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.providerDocsLink:hover {
+  color: var(--accent);
+}
+
+/* Aider's providers sit inside Aider's own card, so they get a divider
+   and an inset rather than the full section chrome a top-level group has. */
+.providerSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.providerSectionLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+/* Nested provider cards must not read as the same level as the agent card
+   containing them. */
+.providerSection .agentCard {
+  background: var(--bg-2);
+  padding: var(--space-5);
+}
+
+/* Warnings that need to read as warnings — a conflicting provider, or a
+   machine with no keychain — rather than as ordinary supporting text. */
+.agentDetail[data-tone="warn"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--warn-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--warn-bg, var(--bg-2));
+  color: var(--text);
+}
+
+.agentDetail code {
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}

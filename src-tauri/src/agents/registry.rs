@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::process::Command;
 
-/// The three CLIs Maestro knows how to wrap. Detection/auth-state is
+/// The CLIs Maestro knows how to wrap. Detection/auth-state is
 /// centralized here so it can be reused by every feature that needs to
 /// know "is an agent CLI available right now" — not just the agent tabs
 /// (see `commands/agents.rs::generate_commit_message`).
@@ -13,14 +13,16 @@ pub enum AgentKind {
     ClaudeCode,
     Codex,
     CursorAgent,
+    Aider,
 }
 
 impl AgentKind {
-    pub fn all() -> [AgentKind; 3] {
+    pub fn all() -> [AgentKind; 4] {
         [
             AgentKind::ClaudeCode,
             AgentKind::Codex,
             AgentKind::CursorAgent,
+            AgentKind::Aider,
         ]
     }
 
@@ -31,6 +33,7 @@ impl AgentKind {
             AgentKind::ClaudeCode => "claude",
             AgentKind::Codex => "codex",
             AgentKind::CursorAgent => "cursor-agent",
+            AgentKind::Aider => "aider",
         }
     }
 
@@ -39,6 +42,7 @@ impl AgentKind {
             AgentKind::ClaudeCode => "Claude Code",
             AgentKind::Codex => "Codex CLI",
             AgentKind::CursorAgent => "Cursor Agent",
+            AgentKind::Aider => "Aider",
         }
     }
 
@@ -48,6 +52,7 @@ impl AgentKind {
             AgentKind::ClaudeCode => "claude-code",
             AgentKind::Codex => "codex",
             AgentKind::CursorAgent => "cursor-agent",
+            AgentKind::Aider => "aider",
         }
     }
 }
@@ -66,6 +71,31 @@ pub enum AuthState {
     Error,
 }
 
+/// What the user can actually *do* about a CLI that isn't signed in.
+///
+/// Declared here, next to the auth probe that produces it, so the settings
+/// pane can render a working button without knowing which CLI it is
+/// looking at. Before this existed the pane could only say "Needs login"
+/// and leave the user to work out the rest.
+///
+/// Note what is deliberately absent: an `OpenUrl` variant for the three
+/// CLIs. None of them can be signed in by visiting a page — `claude auth
+/// login` and `cursor-agent login` open their own browser flow and then
+/// write a token the *CLI* owns, so a button that opened
+/// `claude.ai/login` would look like it worked and change nothing. The
+/// honest affordance is to run the command, so that is what this offers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AuthRemedy {
+    /// Run this in a terminal; the CLI takes it from there, opening a
+    /// browser itself where its flow needs one.
+    RunCommand { command: String, label: String },
+    /// Nothing to log into — this CLI needs an LLM provider configured
+    /// instead (Aider). The provider editor lives in the same card, so the
+    /// button only has to bring it into view.
+    ConfigureProvider { label: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliStatus {
@@ -79,6 +109,13 @@ pub struct CliStatus {
     /// per docs/CHECKLIST.md's "actionable message... not a silent
     /// failure" requirement.
     pub auth_detail: Option<String>,
+    /// How to fix a not-signed-in state, when there is something to do
+    /// about it. `None` once authenticated.
+    pub auth_remedy: Option<AuthRemedy>,
+    /// Short label for the status pill. Overrides the UI's generic wording
+    /// where "Needs login" would be wrong — Aider has no login at all, so
+    /// saying so was actively misleading.
+    pub auth_label: Option<String>,
     pub checked_at: String,
     /// What this CLI supports — see `capabilities.rs`. Carried on the
     /// detection result rather than fetched separately so every existing
@@ -138,21 +175,58 @@ pub async fn detect(kind: AgentKind, binary_override: Option<String>) -> CliStat
             binary_path: binary_path.clone(),
             auth_state: AuthState::Unknown,
             auth_detail: Some(format!("`{binary_path}` was not found on PATH.")),
+            auth_remedy: None,
+            auth_label: None,
             checked_at,
             capabilities: capabilities_for(kind),
         };
     }
 
     let (auth_state, auth_detail) = probe_auth(kind, &binary_path).await;
+    let needs_action = auth_state != AuthState::Authenticated;
     CliStatus {
         kind,
         installed,
         version,
+        auth_remedy: needs_action.then(|| remedy_for(kind, &binary_path)),
+        auth_label: needs_action.then(|| pill_label_for(kind).to_string()),
         binary_path,
         auth_state,
         auth_detail,
         checked_at,
         capabilities: capabilities_for(kind),
+    }
+}
+
+/// The one action that resolves a not-signed-in state for each CLI.
+fn remedy_for(kind: AgentKind, binary_path: &str) -> AuthRemedy {
+    match kind {
+        // Each of these opens its own browser flow and stores a token the
+        // CLI owns — there is no page Maestro could open on its behalf.
+        AgentKind::ClaudeCode => AuthRemedy::RunCommand {
+            command: format!("{binary_path} auth login"),
+            label: "Sign in".to_string(),
+        },
+        AgentKind::CursorAgent => AuthRemedy::RunCommand {
+            command: format!("{binary_path} login"),
+            label: "Sign in".to_string(),
+        },
+        AgentKind::Codex => AuthRemedy::RunCommand {
+            command: format!("{binary_path} login"),
+            label: "Sign in".to_string(),
+        },
+        AgentKind::Aider => AuthRemedy::ConfigureProvider {
+            label: "Add a provider".to_string(),
+        },
+    }
+}
+
+/// What the status pill should say. "Needs login" is right for a CLI with
+/// an account, and wrong for Aider, which has none.
+fn pill_label_for(kind: AgentKind) -> &'static str {
+    match kind {
+        AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex => "Needs login",
+        AgentKind::Aider => "Needs provider",
     }
 }
 
@@ -230,6 +304,16 @@ async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<St
                 ),
             }
         }
+        // Aider has no auth of its own — it is a client for whichever
+        // provider the user has credentials for. "Is it authenticated" is
+        // therefore "has a provider been configured in Maestro", which is
+        // a question about the settings database, not about the binary.
+        // `detect` fills this in via `aider_auth_state` because only the
+        // caller holds the connection.
+        AgentKind::Aider => (
+            AuthState::NotAuthenticated,
+            Some("No LLM provider configured yet.".to_string()),
+        ),
     }
 }
 

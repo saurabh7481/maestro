@@ -115,6 +115,12 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       useTerminalSessionStore.getState().markStarted(tab.id);
       terminalApi
         .spawn(tab.id, worktreeRoot, term.rows, term.cols)
+        .then(() => {
+          // Only on a genuinely new shell — a tab being re-mounted after a
+          // pane switch has `started` set and must not re-run the command.
+          if (!tab.initialCommand) return;
+          return terminalApi.write(tab.id, `${tab.initialCommand}\n`);
+        })
         .catch((err: unknown) => setSpawnError(String(err)));
     }
 
@@ -156,7 +162,10 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       resizeObserver.disconnect();
       term.dispose();
     };
-  }, [tab.id, worktreeRoot]);
+    // `initialCommand` is fixed for a tab's lifetime, so it never actually
+    // retriggers this — and the `started` guard above would stop a re-run
+    // from spawning a second shell or replaying the command anyway.
+  }, [tab.id, worktreeRoot, tab.initialCommand]);
 
   // Coming back from `display: none` restores a non-zero size, which the
   // ResizeObserver above does report — but the window may also have been

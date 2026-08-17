@@ -276,5 +276,9 @@ pub async fn list_slash_commands(
         AgentKind::ClaudeCode => list_for_claude(&worktree_root).await,
         AgentKind::CursorAgent => list_for_cursor(),
         AgentKind::Codex => Vec::new(),
+        // Aider's slash commands (/add, /ask, /undo, ...) are
+        // interpreted inside its own REPL and aren't reachable from
+        // the `--message` one-shot invocation Maestro uses.
+        AgentKind::Aider => Vec::new(),
     })
 }

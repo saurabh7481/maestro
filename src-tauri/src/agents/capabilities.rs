@@ -182,6 +182,49 @@ pub fn capabilities_for(kind: AgentKind) -> AgentCapabilities {
             effort_label: "Reasoning".to_string(),
             plan_exit_tool: None,
         },
+        // Verified against aider 0.86.2, including a live turn driven
+        // against a local OpenAI-compatible server.
+        AgentKind::Aider => AgentCapabilities {
+            // Aider emits no JSON, but with `--no-pretty --stream` it
+            // writes the reply progressively rather than in one block —
+            // timestamped line arrival during a live run confirmed text
+            // landing in step with the model's output. The granularity is
+            // per line rather than per token, which is a difference the
+            // user sees as slightly chunkier typing, not as a stall.
+            streaming: Streaming::Deltas,
+            // Aider's confirmations are interactive stdin prompts with no
+            // machine-readable form, and it has no sandbox. Maestro cannot
+            // honestly claim to gate anything.
+            manual_gate: ManualGate::ExternalConfig,
+            manual_gate_detail: Some(
+                "Aider can't ask Maestro for approval — its prompts are interactive only. Edits land in this worktree for you to review before committing."
+                    .to_string(),
+            ),
+            // `--chat-mode ask` is a real read-only mode, not Manual under
+            // another name. Confirmed from the accepted-values list.
+            plan_mode: true,
+            // Aider has no `--resume` and no session ids. Maestro supplies
+            // both by owning the `--chat-history-file` (see `aider/mod.rs`)
+            // — measured working: replaying history raised an identical
+            // prompt's cost from 774 to 916 tokens.
+            resume: true,
+            // Branching that history is a file copy.
+            fork_session: true,
+            // "Tokens: 776 sent, 28 received." after every round trip.
+            reports_usage: true,
+            // "Cost: $X message, $Y session." — present whenever LiteLLM
+            // knows the model's pricing, absent for local models, where the
+            // adapter reports `None` rather than a misleading $0.00.
+            reports_cost: true,
+            // Never reported.
+            reports_context_window: false,
+            // `--model` and `--reasoning-effort` are independent flags.
+            separate_option_flags: true,
+            effort_label: "Reasoning".to_string(),
+            // No structured signal marks the end of planning in `ask` mode;
+            // it simply answers in prose.
+            plan_exit_tool: None,
+        },
     }
 }
 

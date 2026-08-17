@@ -89,6 +89,8 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     TurnSpawn {
         command: cmd,
         stdin_payload: None,
+        // This CLI names its own sessions.
+        assigned_session_id: None,
     }
 }
 

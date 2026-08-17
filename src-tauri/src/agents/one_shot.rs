@@ -50,6 +50,28 @@ fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
             // stdout if the expected shape isn't there.
             command.args(["exec", "--json", prompt]);
         }
+        AgentKind::Aider => {
+            // `--chat-mode ask` is Aider's read-only mode, which is what
+            // this call wants: a text answer with no edits. The rest of
+            // the flags mirror `aider/mod.rs`'s turn invocation — most
+            // importantly `--no-git`, without which Aider will initialise
+            // a repo and edit `.gitignore` in whatever directory it runs
+            // in (confirmed against 0.86.2).
+            command
+                .args([
+                    "--no-git",
+                    "--no-pretty",
+                    "--no-stream",
+                    "--no-check-update",
+                    "--no-analytics",
+                    "--no-show-model-warnings",
+                    "--yes-always",
+                    "--chat-mode",
+                    "ask",
+                    "--message",
+                ])
+                .arg(prompt);
+        }
     }
     command.stdin(Stdio::null());
     command
@@ -88,6 +110,24 @@ fn extract_result_text(kind: AgentKind, stdout: &[u8]) -> Result<String, String>
                 }
             }
             let trimmed = text.trim();
+            if trimmed.is_empty() {
+                Err(format!("{} produced no output", kind.display_name()))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        AgentKind::Aider => {
+            // No structured output exists, so the answer is the prose with
+            // Aider's own chrome stripped off — the same banner and usage
+            // lines `aider::parse_line` drops from a turn's transcript.
+            // Reusing that classifier keeps the two in step.
+            let body: Vec<&str> = text
+                .lines()
+                .map(str::trim_end)
+                .filter(|line| !crate::agents::aider::is_noise(line))
+                .collect();
+            let joined = body.join("\n");
+            let trimmed = joined.trim();
             if trimmed.is_empty() {
                 Err(format!("{} produced no output", kind.display_name()))
             } else {

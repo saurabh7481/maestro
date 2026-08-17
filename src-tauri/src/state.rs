@@ -77,6 +77,10 @@ pub struct HookRunEntry {
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    /// Maestro's own data directory. Agent-owned session state
+    /// lives here — currently Aider's chat-history files, which
+    /// stand in for the session ids that CLI doesn't have.
+    pub app_data_dir: std::path::PathBuf,
     /// In-flight hook runs, keyed by worktree id — carrying a one-shot
     /// cancel signal so `cancel_worktree_hook` can stop one without
     /// needing to hand the running `Child` itself across the command

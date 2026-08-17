@@ -86,7 +86,6 @@ async fn run_turn(
 ) -> Result<(), String> {
     let (
         kind,
-        binary_path,
         worktree_root,
         resume_session_id,
         allowed_tools,
@@ -113,7 +112,6 @@ async fn run_turn(
         entry.pending_fork = false;
         (
             entry.kind,
-            entry.kind.default_binary().to_string(),
             entry.worktree_root.clone(),
             entry.session_id.clone(),
             entry.allowed_tools.clone(),
@@ -125,10 +123,35 @@ async fn run_turn(
         )
     };
 
+    // Read outside the `agent_runs` lock, both because it takes the
+    // database lock and because holding two at once invites a deadlock.
+    //
+    // Settings' per-CLI binary path override applies to turns too, not
+    // just to detection and one-shots. It used to be ignored here — turns
+    // always spawned `kind.default_binary()` — so a CLI installed off the
+    // app's PATH would detect correctly in Settings and then fail to
+    // spawn. That hits Aider hardest, since it is normally installed into
+    // a pipx/uv virtualenv a GUI process never sees.
+    let (binary_path, extra_env) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let binary_path = crate::commands::agents::binary_path_for(&conn, kind)?;
+        // Aider has no auth of its own; the selected model's provider
+        // credentials travel as environment rather than argv, which would
+        // publish them to every process on the machine via /proc.
+        let extra_env = match kind {
+            AgentKind::Aider => {
+                crate::agents::aider::credentials::env_for_model(&conn, model.as_deref())
+            }
+            _ => Vec::new(),
+        };
+        (binary_path, extra_env)
+    };
+
     // Declared once per provider, never branched on by kind here.
     let stream_deltas =
         crate::agents::capabilities::capabilities_for(kind).streaming == Streaming::Deltas;
 
+    let session_dir = crate::agents::aider::session_dir(&state.app_data_dir);
     let ctx = TurnCtx {
         binary_path: &binary_path,
         worktree_root: &worktree_root,
@@ -140,8 +163,13 @@ async fn run_turn(
         fast,
         permission_mode,
         stream_deltas,
+        extra_env: &extra_env,
+        session_dir: &session_dir,
     };
+    let turn_started = std::time::Instant::now();
     let spawn = adapter::build_turn(kind, &ctx, &text);
+    // A CLI with no session concept of its own gets one from its adapter.
+    let assigned_session_id = spawn.assigned_session_id.clone();
     let mut command = spawn.command;
 
     // Every early return from here on has to clear `turn_active` again, or
@@ -184,10 +212,26 @@ async fn run_turn(
 
     let stdout_app = app.clone();
     let stdout_channel = channel.clone();
+    // Stopping a turn is a normal thing a user does, but from inside the
+    // reader tasks it looks exactly like the child dying mid-stream. This
+    // flag is set *before* the signal goes out, so both readers can tell
+    // the two apart: Aider (a Python program) turns SIGINT into a
+    // KeyboardInterrupt traceback on stderr, which is shutdown noise
+    // rather than something the user needs to read.
+    let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stdout_interrupted = interrupted.clone();
+    let stderr_interrupted = interrupted.clone();
+
+    let json_lines = adapter::uses_json_lines(kind);
+    let finish_session_id = assigned_session_id
+        .clone()
+        .or_else(|| resume_session_id.clone());
     let stdout_task = tokio::spawn(async move {
         let mut pause_tx = Some(pause_tx);
         let mut tool_use_cache: ToolUseCache = ToolUseCache::new();
-        let mut learned_session_id = None;
+        // An adapter-minted id counts as learned from the first line, so a
+        // CLI without sessions of its own still gets one recorded on the run.
+        let mut learned_session_id = assigned_session_id;
         let mut pending_delta = String::new();
         let mut last_delta_flush = std::time::Instant::now();
         let mut lines = BufReader::new(stdout).lines();
@@ -214,9 +258,15 @@ async fn run_turn(
             buffer.push_str(&raw_line);
             buffered_segments += 1;
 
-            let looks_complete = serde_json::from_str::<serde_json::Value>(&buffer).is_ok();
-            if !looks_complete && buffered_segments < 4 {
-                continue;
+            // Only meaningful for CLIs that emit JSON. Aider's output is
+            // prose, which never parses as JSON, so applying this would
+            // batch four lines of the model's reply together and rejoin
+            // them with a literal `\n` — mangling every response.
+            if json_lines {
+                let looks_complete = serde_json::from_str::<serde_json::Value>(&buffer).is_ok();
+                if !looks_complete && buffered_segments < 4 {
+                    continue;
+                }
             }
 
             let line = std::mem::take(&mut buffer);
@@ -274,6 +324,19 @@ async fn run_turn(
         // Whatever the last flush didn't cover — a reply that ends on text
         // would otherwise lose its final fragment.
         flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+
+        // Adapters whose CLI prints no end-of-turn record get to build one
+        // here from what they accumulated. Empty for the three CLIs whose
+        // final JSON line already carries the result.
+        for event in adapter::finish(
+            kind,
+            &tool_use_cache,
+            finish_session_id.as_deref(),
+            turn_started.elapsed().as_millis() as u64,
+            stdout_interrupted.load(std::sync::atomic::Ordering::SeqCst),
+        ) {
+            let _ = stdout_app.emit(&stdout_channel, &event);
+        }
         learned_session_id
     });
 
@@ -281,11 +344,23 @@ async fn run_turn(
     let stderr_channel = channel.clone();
     tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
+        let mut stderr_cache: ToolUseCache = ToolUseCache::new();
         while let Ok(Some(line)) = lines.next_line().await {
             if line.trim().is_empty() {
                 continue;
             }
-            let _ = stderr_app.emit(&stderr_channel, &AgentEvent::Error { message: line });
+            // Once the user has asked to stop, everything the child says on
+            // its way out is teardown noise — for Aider, a multi-page
+            // KeyboardInterrupt traceback.
+            if stderr_interrupted.load(std::sync::atomic::Ordering::SeqCst) {
+                continue;
+            }
+            // Not every CLI treats stderr as purely an error channel —
+            // the adapter decides what a line means (see
+            // `adapter::parse_stderr_line`).
+            for event in adapter::parse_stderr_line(kind, &line, &mut stderr_cache) {
+                let _ = stderr_app.emit(&stderr_channel, &event);
+            }
         }
     });
 
@@ -305,6 +380,7 @@ async fn run_turn(
     let exit_code = tokio::select! {
         status = child.wait() => status.ok().and_then(|s| s.code()),
         cancel = &mut cancel_rx => {
+            interrupted.store(true, std::sync::atomic::Ordering::SeqCst);
             match cancel {
                 Ok(AgentCancelKind::Soft) => {
                     interrupt_child(&mut child).await;
@@ -323,6 +399,9 @@ async fn run_turn(
                 // a claude turn interrupted at the denial exits 0 and
                 // `--resume` picks the same session id back up.
                 Ok(id) => {
+                    // Also a deliberate stop, just one Maestro asked for
+                    // rather than the user.
+                    interrupted.store(true, std::sync::atomic::Ordering::SeqCst);
                     interrupt_child(&mut child).await;
                     paused_for = Some(id);
                     None
@@ -535,7 +614,7 @@ pub async fn respond_to_permission(
                     }
                     false
                 }
-                AgentKind::CursorAgent | AgentKind::Codex => {
+                AgentKind::CursorAgent | AgentKind::Codex | AgentKind::Aider => {
                     let already_auto = entry.permission_mode == PermissionMode::Auto;
                     entry.permission_mode = PermissionMode::Auto;
                     !already_auto

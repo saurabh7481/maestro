@@ -680,6 +680,9 @@ async fn find_global_session_file(
                 }
             }
         }
+        // Aider keeps no global session store — Maestro owns its chat
+        // history files, so there is nothing to search for here.
+        AgentKind::Aider => {}
         AgentKind::Codex => {
             for path in codex_session_files(home).await {
                 if path
@@ -727,7 +730,7 @@ pub async fn read_transcript(
                 .join(session_id);
             jsonl_files(&base).await.into_iter().next()
         }
-        AgentKind::Codex => None,
+        AgentKind::Codex | AgentKind::Aider => None,
     };
     let path = match direct {
         Some(path) => Some(path),
@@ -737,6 +740,11 @@ pub async fn read_transcript(
         (AgentKind::ClaudeCode, Some(path)) => read_claude_transcript(&path).await,
         (AgentKind::CursorAgent, Some(path)) => read_cursor_transcript(&path).await,
         (AgentKind::Codex, Some(path)) => read_codex_transcript(&path).await,
+        // Aider's history file is markdown prose written for humans, not a
+        // turn-structured log, so it can't be replayed into the
+        // user/assistant pairs this returns. It is still what gives Aider
+        // working resume — it is replayed to *Aider*, not to Maestro.
+        (AgentKind::Aider, Some(_)) => Vec::new(),
         (_, None) => Vec::new(),
     }
 }
@@ -762,6 +770,7 @@ async fn list_for_worktree(kind: AgentKind, worktree_root: &str) -> Vec<Resumabl
                 .collect(),
             Err(_) => Vec::new(),
         },
+        AgentKind::Aider => Vec::new(),
     }
 }
 
@@ -773,6 +782,7 @@ pub async fn list_all_resumable_sessions(kind: AgentKind) -> Result<Vec<Resumabl
         AgentKind::ClaudeCode => list_all_claude_sessions(home).await,
         AgentKind::CursorAgent => list_all_cursor_sessions(home).await,
         AgentKind::Codex => list_all_codex_sessions(home).await,
+        AgentKind::Aider => Vec::new(),
     };
     sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
     Ok(sessions)

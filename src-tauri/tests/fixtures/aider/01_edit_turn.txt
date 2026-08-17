@@ -1,0 +1,32 @@
+Warning: Input is not a terminal (fd=0).
+
+Aider v0.86.2
+Model: openai/mock-model with whole edit format
+Git repo: .git with 1 files
+Repo-map: using 1024 tokens, auto refresh
+
+Here is the change you asked for.
+
+hello.py
+```python
+def greet():
+    print("hi there")
+```
+
+Done.
+ 
+Tokens: 776 sent, 28 received.
+
+hello.py
+Here is the change you asked for.
+
+hello.py
+```python
+def greet():
+    print("hi there")
+```
+
+Done.
+ 
+Tokens: 793 sent, 28 received.
+Applied edit to hello.py

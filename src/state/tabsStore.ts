@@ -26,6 +26,10 @@ export interface Tab {
    * `ensureTab`'s existing dedup-by-`id` logic. */
   filePath?: string;
   worktreeRoot?: string;
+  /** Terminal tabs only — a command typed into the shell once it's ready.
+   * Used by Settings' "Sign in" button, since every CLI's login is a
+   * command rather than a URL. */
+  initialCommand?: string;
   /** Diff tabs only — which side of the working tree (or a specific
    * commit) this diff shows. Combined with `filePath`/`commitHash` in
    * `diffTabId()` so the same file can have distinct open tabs per mode. */

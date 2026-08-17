@@ -27,6 +27,8 @@ export const gitApi = {
     invoke<void>("unstage_all", { worktreeId, worktreeRoot }),
   discardChange: (worktreeId: string, worktreeRoot: string, relPath: string) =>
     invoke<void>("discard_change", { worktreeId, worktreeRoot, relPath }),
+  discardPaths: (worktreeId: string, worktreeRoot: string, relPaths: string[]) =>
+    invoke<void>("discard_paths", { worktreeId, worktreeRoot, relPaths }),
 
   commitChanges: (worktreeId: string, worktreeRoot: string, message: string) =>
     invoke<string>("commit_changes", { worktreeId, worktreeRoot, message }),

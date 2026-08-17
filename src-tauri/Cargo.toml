@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.3.0"
+version = "0.4.0"
 description = "Cross-platform GUI Agentic Development Environment wrapping Claude Code, Codex CLI, and Cursor Agent, organized around git projects and worktrees."
 authors = ["Maestro contributors"]
 edition = "2021"
@@ -42,6 +42,14 @@ log = "0.4.33"
 # Only the `system` half — Maestro reports on processes it spawned, and
 # never touches sysinfo's disk/network/component collectors.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+# Aider's provider catalogs (OpenRouter's public model list, local Ollama/
+# LM Studio endpoints). No other CLI needs HTTP — they all enumerate models
+# through their own binary.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots", "http2"] }
+# Provider API keys go to the OS keychain, never to the `settings` table —
+# that's a plaintext SQLite k/v store. See `agents/aider/credentials.rs`
+# for the fallback when no keychain backend is available.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 [dev-dependencies]
 tempfile = "3"

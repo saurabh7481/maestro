@@ -425,7 +425,9 @@ function ScmView() {
   const unstagePaths = useScmStore((s) => s.unstagePaths);
   const unstageAll = useScmStore((s) => s.unstageAll);
   const discardChange = useScmStore((s) => s.discardChange);
+  const discardPaths = useScmStore((s) => s.discardPaths);
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
+  const [discardAllOpen, setDiscardAllOpen] = useState(false);
   const [conflictedCollapsed, setConflictedCollapsed] = useState(false);
   const [stagedCollapsed, setStagedCollapsed] = useState(false);
   const [changesCollapsed, setChangesCollapsed] = useState(false);
@@ -505,17 +507,30 @@ function ScmView() {
           onToggle={() => setChangesCollapsed((c) => !c)}
           bulkAction={
             changes.length > 0 && (
-              <IconButton
-                icon={Plus}
-                label="Stage all"
-                size="sm"
-                iconSize={13}
-                className={styles.bulkAction}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void stageAll();
-                }}
-              />
+              <>
+                <IconButton
+                  icon={ArrowCounterClockwise}
+                  label="Discard all changes"
+                  size="sm"
+                  iconSize={13}
+                  className={styles.bulkAction}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDiscardAllOpen(true);
+                  }}
+                />
+                <IconButton
+                  icon={Plus}
+                  label="Stage all"
+                  size="sm"
+                  iconSize={13}
+                  className={styles.bulkAction}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void stageAll();
+                  }}
+                />
+              </>
             )
           }
         />
@@ -641,6 +656,23 @@ function ScmView() {
         onConfirm={() => {
           if (discardTarget) void discardChange(discardTarget);
           setDiscardTarget(null);
+        }}
+      />
+
+      {/* Deliberately scoped to the `Changes` section only — staged work
+          is left alone (Unstage all is its own button), as are conflicted
+          paths, which `git restore` refuses while they need merge. */}
+      <AlertDialog
+        open={discardAllOpen}
+        onOpenChange={setDiscardAllOpen}
+        title="Discard all changes?"
+        description={`This permanently discards unstaged changes to ${changes.length} ${
+          changes.length === 1 ? "file" : "files"
+        }, deleting any untracked ones. This can't be undone.`}
+        confirmLabel="Discard all"
+        onConfirm={() => {
+          void discardPaths(changes.map((entry) => entry.path));
+          setDiscardAllOpen(false);
         }}
       />
     </div>

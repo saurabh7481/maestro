@@ -42,6 +42,16 @@ const AGENT_OPTIONS: AgentOption[] = [
     subtitle: "cursor · agent",
     shortcut: "⌘3",
   },
+  {
+    kind: "aider",
+    iconTone: "outline",
+    color: "var(--yellow, var(--accent-2))",
+    // Aider is the only wrapped CLI with no model of its own — which
+    // provider it talks to is the user's choice, so the subtitle names the
+    // arrangement rather than a vendor.
+    subtitle: "bring your own model",
+    shortcut: "⌘4",
+  },
 ];
 
 /** The `+` at the end of a pane's tab strip. Takes the pane it belongs to

@@ -38,6 +38,7 @@ interface ScmState {
   unstagePaths: (relPaths: string[]) => Promise<void>;
   unstageAll: () => Promise<void>;
   discardChange: (relPath: string) => Promise<void>;
+  discardPaths: (relPaths: string[]) => Promise<void>;
   commit: (message: string) => Promise<void>;
   push: () => Promise<void>;
   pull: () => Promise<void>;
@@ -191,6 +192,17 @@ export const useScmStore = create<ScmState>((set, get) => ({
     if (!worktreeId || !worktreeRoot) return;
     try {
       await gitApi.discardChange(worktreeId, worktreeRoot, relPath);
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
+  },
+
+  discardPaths: async (relPaths) => {
+    const { worktreeId, worktreeRoot } = get();
+    if (!worktreeId || !worktreeRoot || relPaths.length === 0) return;
+    try {
+      await gitApi.discardPaths(worktreeId, worktreeRoot, relPaths);
     } catch (error) {
       set({ error: String(error) });
       throw error;

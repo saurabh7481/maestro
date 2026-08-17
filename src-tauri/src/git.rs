@@ -461,13 +461,19 @@ pub async fn unstage_all(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Discards an unstaged change to a *tracked* file. `git restore` is a
+/// Discards unstaged changes to *tracked* files, in one `git restore` for
+/// the whole set rather than a process per path — "Discard all changes"
+/// over a large working tree stays a single round trip. `git restore` is a
 /// no-op for untracked paths (there's nothing checked-in to restore from)
-/// — the command layer checks `working_status` first and falls back to
-/// deleting the file directly for an `Untracked` entry, reusing
-/// `fs_ops::safe_join` rather than this function.
-pub async fn discard_unstaged(dir: &Path, rel_path: &str) -> Result<(), String> {
-    run_git(dir, &["restore", "--", rel_path]).await?;
+/// — the command layer checks `working_status` first and deletes those
+/// directly, reusing `fs_ops::safe_join` rather than this function.
+pub async fn discard_unstaged_paths(dir: &Path, rel_paths: &[String]) -> Result<(), String> {
+    if rel_paths.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["restore", "--"];
+    args.extend(rel_paths.iter().map(|s| s.as_str()));
+    run_git(dir, &args).await?;
     Ok(())
 }
 
@@ -1320,8 +1326,36 @@ mod tests {
     async fn discard_unstaged_reverts_tracked_file() {
         let dir = init_repo().await;
         std::fs::write(dir.path().join("README.md"), "changed").unwrap();
-        discard_unstaged(dir.path(), "README.md").await.unwrap();
+        discard_unstaged_paths(dir.path(), &["README.md".to_string()])
+            .await
+            .unwrap();
         assert!(!is_dirty(dir.path()).await);
+    }
+
+    #[tokio::test]
+    async fn discard_unstaged_paths_reverts_every_listed_file() {
+        let dir = init_repo().await;
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        stage_all(dir.path()).await.unwrap();
+        commit(dir.path(), "add a and b").await.unwrap();
+
+        std::fs::write(dir.path().join("a.txt"), "a changed").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b changed").unwrap();
+        discard_unstaged_paths(dir.path(), &["a.txt".to_string(), "b.txt".to_string()])
+            .await
+            .unwrap();
+
+        assert!(!is_dirty(dir.path()).await);
+    }
+
+    #[tokio::test]
+    async fn discard_unstaged_paths_is_a_noop_for_an_empty_list() {
+        let dir = init_repo().await;
+        std::fs::write(dir.path().join("README.md"), "changed").unwrap();
+        discard_unstaged_paths(dir.path(), &[]).await.unwrap();
+        // Nothing was named, so nothing is reverted.
+        assert!(is_dirty(dir.path()).await);
     }
 
     #[tokio::test]

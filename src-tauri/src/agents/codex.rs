@@ -57,6 +57,8 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     TurnSpawn {
         command: cmd,
         stdin_payload: None,
+        // This CLI names its own sessions.
+        assigned_session_id: None,
     }
 }
 
@@ -446,6 +448,8 @@ mod tests {
                 fast: false,
                 permission_mode: mode,
                 stream_deltas: false,
+                extra_env: &[],
+                session_dir: std::path::Path::new("/tmp"),
             };
             build_turn(&ctx, "hi")
                 .command

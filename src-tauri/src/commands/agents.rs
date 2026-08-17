@@ -13,6 +13,15 @@ fn settings_key(kind: AgentKind) -> String {
     format!("agent.{}.binary_path", kind.slug())
 }
 
+/// The binary a given CLI should actually be spawned as: the user's
+/// override if they set one, otherwise the default name resolved via PATH.
+///
+/// Every spawn site goes through this — detection, one-shots, and turns —
+/// so that a path configured in Settings means the same thing everywhere.
+pub fn binary_path_for(conn: &rusqlite::Connection, kind: AgentKind) -> Result<String, String> {
+    Ok(read_binary_override(conn, kind)?.unwrap_or_else(|| kind.default_binary().to_string()))
+}
+
 fn read_binary_override(
     conn: &rusqlite::Connection,
     kind: AgentKind,
@@ -54,7 +63,18 @@ pub async fn detect_agent_cli(
         read_binary_override(&conn, kind)?
     };
 
-    let status = registry::detect(kind, binary_override).await;
+    let mut status = registry::detect(kind, binary_override).await;
+    // Aider's "auth" is a question about Maestro's own settings rather
+    // than about the binary — it has no login of its own, so being ready
+    // means having a provider configured. `registry::detect` can't answer
+    // that (it holds no database connection), so it leaves a placeholder
+    // and the real answer is filled in here.
+    if kind == AgentKind::Aider && status.installed {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let (auth_state, detail) = aider_auth_state(&conn);
+        status.auth_state = auth_state;
+        status.auth_detail = detail;
+    }
     {
         let mut cache = state.agent_status_cache.lock().map_err(|e| e.to_string())?;
         cache.insert(kind, status.clone());
@@ -62,18 +82,45 @@ pub async fn detect_agent_cli(
     Ok(status)
 }
 
+/// Whether Aider has somewhere to send a request.
+///
+/// Reports the *names* of what's configured rather than a bare
+/// "authenticated", because with Aider that is the genuinely useful fact:
+/// a user with an OpenRouter key and a DeepSeek key needs to know which
+/// models they can actually reach.
+fn aider_auth_state(conn: &rusqlite::Connection) -> (registry::AuthState, Option<String>) {
+    use crate::agents::aider::credentials;
+    let ready: Vec<&str> = credentials::enabled_providers(conn)
+        .into_iter()
+        .filter(|provider| credentials::is_configured(conn, provider))
+        .map(|provider| provider.display_name)
+        .collect();
+
+    if ready.is_empty() {
+        return (
+            registry::AuthState::NotAuthenticated,
+            Some("No LLM provider configured yet — add one in Settings → Agents.".to_string()),
+        );
+    }
+    (
+        registry::AuthState::Authenticated,
+        Some(format!("Connected to {}", ready.join(", "))),
+    )
+}
+
 #[tauri::command]
 pub async fn detect_all_agent_clis(
     state: State<'_, AppState>,
     force: bool,
 ) -> Result<Vec<CliStatus>, String> {
-    let [claude_kind, codex_kind, cursor_kind] = AgentKind::all();
-    let (claude, codex, cursor) = tokio::join!(
+    let [claude_kind, codex_kind, cursor_kind, aider_kind] = AgentKind::all();
+    let (claude, codex, cursor, aider) = tokio::join!(
         detect_agent_cli(state.clone(), claude_kind, force),
         detect_agent_cli(state.clone(), codex_kind, force),
         detect_agent_cli(state.clone(), cursor_kind, force),
+        detect_agent_cli(state.clone(), aider_kind, force),
     );
-    Ok(vec![claude?, codex?, cursor?])
+    Ok(vec![claude?, codex?, cursor?, aider?])
 }
 
 #[tauri::command]
@@ -110,7 +157,11 @@ pub async fn set_agent_binary_path(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize)]
+// `Deserialize` as well as `Serialize` because Aider's OpenRouter catalog
+// is cached to disk between launches as a list of these (see
+// `agents/aider/catalog.rs`) — 414 models is not worth re-fetching on
+// every mount of the model picker.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelOption {
     pub id: String,
@@ -121,7 +172,7 @@ pub struct ModelOption {
     pub variants: Vec<ModelVariant>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelVariant {
     pub id: String,
@@ -270,6 +321,13 @@ pub async fn list_agent_models(
             let text = String::from_utf8_lossy(&output.stdout);
             let mut families: BTreeMap<String, ModelOption> = BTreeMap::new();
             for line in text.lines() {
+                // `cursor-agent` colours `--list-models` even when its
+                // stdout is a pipe, so the raw line reads
+                // `\x1b[36mauto\x1b[39m \x1b[2m- Auto\x1b[22m`. The
+                // separator this splits on is then never literally " - "
+                // and every model was silently dropped, leaving the picker
+                // empty. Strip the escapes before parsing.
+                let line = crate::agents::strip_ansi(line);
                 let line = line.trim();
                 let Some((id, label)) = line.split_once(" - ") else {
                     continue;
@@ -352,6 +410,40 @@ pub async fn list_agent_models(
                     })
                 })
                 .collect();
+            Ok(models)
+        }
+        // Aider's list is the union of every configured provider's
+        // catalog. Nothing is offered for a provider the user hasn't set
+        // up, because selecting it would only produce an auth error at the
+        // first turn.
+        AgentKind::Aider => {
+            use crate::agents::aider::{catalog, credentials};
+
+            let (binary_path, providers, envs) = {
+                let conn = state.db.lock().map_err(|e| e.to_string())?;
+                let binary_path = read_binary_override(&conn, kind)?
+                    .unwrap_or_else(|| kind.default_binary().to_string());
+                let providers = credentials::enabled_providers(&conn);
+                let envs: Vec<_> = providers
+                    .iter()
+                    .map(|provider| credentials::resolve_env(&conn, provider).unwrap_or_default())
+                    .collect();
+                (binary_path, providers, envs)
+            };
+
+            let app_data_dir = state.app_data_dir.clone();
+            let mut models = Vec::new();
+            for (provider, env) in providers.iter().zip(envs.iter()) {
+                // One unreachable provider — a stopped Ollama server, say —
+                // must not blank the whole picker, so failures are skipped
+                // rather than propagated.
+                match catalog::list_models(provider, env, &binary_path, &app_data_dir).await {
+                    Ok(found) => models.extend(found),
+                    Err(message) => {
+                        log::warn!("aider: couldn't list {} models: {message}", provider.id)
+                    }
+                }
+            }
             Ok(models)
         }
     }

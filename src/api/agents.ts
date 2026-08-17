@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentKind,
+  AiderProviderStatus,
   CliStatus,
   ModelOption,
   PermissionDecision,
@@ -19,6 +20,16 @@ export const agentsApi = {
   detectAllAgentClis: (force = false) => invoke<CliStatus[]>("detect_all_agent_clis", { force }),
   setAgentBinaryPath: (kind: AgentKind, path: string | null) =>
     invoke<void>("set_agent_binary_path", { kind, path }),
+
+  /** Aider's LLM providers. Unlike the other CLIs, Aider has no login of
+   * its own — these are what make it usable at all. */
+  listAiderProviders: () => invoke<AiderProviderStatus[]>("list_aider_providers"),
+  saveAiderProvider: (providerId: string, values: Record<string, string>, enabled: boolean) =>
+    invoke<void>("save_aider_provider", { request: { providerId, values, enabled } }),
+  forgetAiderProvider: (providerId: string) =>
+    invoke<void>("forget_aider_provider", { providerId }),
+  /** `null` when secrets can be stored; otherwise why they can't. */
+  aiderKeychainStatus: () => invoke<string | null>("aider_keychain_status"),
 
   generateCommitMessage: (kind: AgentKind, worktreeRoot: string) =>
     invoke<string>("generate_commit_message", { kind, worktreeRoot }),

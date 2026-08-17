@@ -67,6 +67,7 @@ pub fn run() {
             let conn = db::open(&app_data_dir)?;
             app.manage(AppState {
                 db: Mutex::new(conn),
+                app_data_dir: app_data_dir.clone(),
                 hook_runs: Mutex::new(HashMap::new()),
                 watchers: Mutex::new(HashMap::new()),
                 agent_status_cache: Mutex::new(HashMap::new()),
@@ -110,6 +111,7 @@ pub fn run() {
             commands::git::unstage_paths,
             commands::git::unstage_all,
             commands::git::discard_change,
+            commands::git::discard_paths,
             commands::git::commit_changes,
             commands::git::push_changes,
             commands::git::pull_changes,
@@ -136,6 +138,10 @@ pub fn run() {
             commands::agents::set_agent_binary_path,
             commands::agents::generate_commit_message,
             commands::agents::list_agent_models,
+            commands::aider::list_aider_providers,
+            commands::aider::save_aider_provider,
+            commands::aider::forget_aider_provider,
+            commands::aider::aider_keychain_status,
             commands::lsp::get_global_lsp_settings,
             commands::lsp::set_global_lsp_settings,
             commands::lsp::get_project_lsp_settings,

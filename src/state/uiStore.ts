@@ -42,6 +42,7 @@ interface UiState {
   setLeftSidebarWidth: (widthRem: number) => void;
   setRightSidebarWidth: (widthRem: number) => void;
   setSidebarView: (view: SidebarView) => void;
+  toggleSidebarView: (view: SidebarView) => void;
   openSettings: () => void;
   closeSettings: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -75,7 +76,21 @@ export const useUiStore = create<UiState>((set) => ({
   toggleRightSidebar: () => set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen })),
   setLeftSidebarWidth: (leftSidebarWidth) => set({ leftSidebarWidth }),
   setRightSidebarWidth: (rightSidebarWidth) => set({ rightSidebarWidth }),
-  setSidebarView: (sidebarView) => set({ sidebarView, settingsOpen: false }),
+  // "Show Source Control" has to actually show it: switching the view
+  // while the panel is collapsed used to change what would render behind
+  // a panel that stayed hidden, so the command appeared to do nothing.
+  setSidebarView: (sidebarView) =>
+    set({ sidebarView, rightSidebarOpen: true, settingsOpen: false }),
+  // The activity rail's own semantics, VS Code style: a different icon
+  // reveals that view, the icon already showing collapses the panel. Only
+  // the top toggle used to do anything when the panel was open, so every
+  // other icon was a dead click once you were already on its view.
+  toggleSidebarView: (view) =>
+    set((s) => ({
+      sidebarView: view,
+      rightSidebarOpen: s.sidebarView === view ? !s.rightSidebarOpen : true,
+      settingsOpen: false,
+    })),
   openSettings: () =>
     set({ settingsOpen: true, newTabMenuPaneId: null, commandPaletteOpen: false }),
   closeSettings: () => set({ settingsOpen: false }),

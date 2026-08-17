@@ -28,7 +28,7 @@ interface RailItem {
 
 export function ActivityRail() {
   const sidebarView = useUiStore((s) => s.sidebarView);
-  const setSidebarView = useUiStore((s) => s.setSidebarView);
+  const toggleSidebarView = useUiStore((s) => s.toggleSidebarView);
   const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
   const toggleRightSidebar = useUiStore((s) => s.toggleRightSidebar);
   const openSettings = useUiStore((s) => s.openSettings);
@@ -71,20 +71,26 @@ export function ActivityRail() {
 
       <div className={styles.divider} />
 
-      {RAIL_ITEMS.map((item) => (
-        <div key={item.id} className={styles.item}>
-          <span className={styles.indicator} data-active={sidebarView === item.id} />
-          <IconButton
-            icon={item.icon}
-            label={item.label}
-            size="lg"
-            iconSize={20}
-            active={sidebarView === item.id}
-            badge={item.badge}
-            onClick={() => setSidebarView(item.id)}
-          />
-        </div>
-      ))}
+      {/* The active marker tracks what's *showing*, not what's merely
+          selected — a lit icon next to a collapsed panel read as a
+          broken toggle. */}
+      {RAIL_ITEMS.map((item) => {
+        const showing = rightSidebarOpen && sidebarView === item.id;
+        return (
+          <div key={item.id} className={styles.item}>
+            <span className={styles.indicator} data-active={showing} />
+            <IconButton
+              icon={item.icon}
+              label={showing ? `Hide ${item.label}` : item.label}
+              size="lg"
+              iconSize={20}
+              active={showing}
+              badge={item.badge}
+              onClick={() => toggleSidebarView(item.id)}
+            />
+          </div>
+        );
+      })}
 
       <div className={styles.spacer} />
 

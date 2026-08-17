@@ -161,7 +161,10 @@ const TranscriptGroup = memo(function TranscriptGroup({
         <div className={styles.userMessage}>
           <div className={`${styles.roleLabel} ${styles.userRoleLabel}`}>You</div>
           <div className={styles.userText}>
-            {group.text}
+            {/* Trimmed, and in its own inline wrapper: `pre-wrap` renders a
+                trailing newline as a real line, whose selection highlight
+                painted an empty band across the bubble's full width. */}
+            <span className={styles.userTextBody}>{group.text.trim()}</span>
             {onEdit && (
               <button
                 type="button"
@@ -433,6 +436,17 @@ function Transcript({
    * it state would re-render the transcript on every scroll event. */
   const pinnedRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  /** The `scrollTop` this component last assigned, so the `scroll` event
+   * it provokes can be told apart from a real one. Without this, a turn
+   * that streams in faster than rows are measured unpinned itself: the
+   * event from our own `scrollTop = scrollHeight` was delivered *after*
+   * the next chunk had already grown the sizer, so the handler measured a
+   * gap to the bottom that the user never created and concluded they had
+   * scrolled away — auto-follow then stopped for the rest of the turn. */
+  const scrolledToRef = useRef(-1);
+  /** The window of rendered rows, watched for height changes — see the
+   * `ResizeObserver` below. */
+  const contentRef = useRef<HTMLDivElement>(null);
   /** Mirrors `pinnedRef` for rendering only. Kept as a separate piece of
    * state, and set only when the value actually flips, so scrolling still
    * doesn't re-render the transcript on every frame — the reason
@@ -453,9 +467,19 @@ function Transcript({
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    lastScrollTopRef.current = element.scrollTop;
-    const pinned =
-      element.scrollHeight - element.scrollTop - element.clientHeight < PIN_THRESHOLD_PX;
+    const top = element.scrollTop;
+    const previousTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = top;
+    // Our own scroll — leave the pin alone (see `scrolledToRef`). Only
+    // what the user does to the scrollbar decides whether they're
+    // following the conversation.
+    if (Math.abs(top - scrolledToRef.current) < 1) return;
+    scrolledToRef.current = -1;
+    // Moving *toward* the bottom never unpins: that's either the smooth
+    // "jump to latest" animation still in flight or someone catching up,
+    // and neither means "I'm reading scrollback".
+    const nearBottom = element.scrollHeight - top - element.clientHeight < PIN_THRESHOLD_PX;
+    const pinned = nearBottom || (top > previousTop && pinnedRef.current);
     pinnedRef.current = pinned;
     setShowJumpToBottom((shown) => (shown === !pinned ? shown : !pinned));
   }, []);
@@ -468,19 +492,47 @@ function Transcript({
     setShowJumpToBottom(false);
   }, []);
 
-  // Follow the bottom only while the user is actually there. `behavior:
-  // "smooth"` used to run here on every appended item, so a streaming turn
-  // queued overlapping scroll animations — jank, and it fought anyone
-  // trying to read back through the conversation. `totalSize` is a
-  // dependency because rows are measured after they render, so the real
-  // bottom moves for a frame or two after each append.
-  useLayoutEffect(() => {
-    if (!active || !pinnedRef.current) return;
+  // Follow the bottom, but only while the user is actually there.
+  // `behavior: "smooth"` used to be used here on every appended item, so a
+  // streaming turn queued overlapping scroll animations — jank, and it
+  // fought anyone trying to read back through the conversation.
+  const followBottom = useCallback(() => {
     const element = scrollRef.current;
-    if (!element) return;
+    // A hidden tab is `display: none`, where every metric reads 0 —
+    // "following" a background transcript would just park it at 0 and
+    // clobber the position the activation effect below restores.
+    if (!element || !pinnedRef.current || element.clientHeight === 0) return;
     element.scrollTop = element.scrollHeight;
     lastScrollTopRef.current = element.scrollTop;
-  }, [groups.length, totalSize, working, active]);
+    scrolledToRef.current = element.scrollTop;
+  }, []);
+
+  // Once per render that could have moved the bottom. `totalSize` is a
+  // dependency because rows are measured after they render, so the real
+  // bottom moves for a frame or two after each append; `lastGroup` is one
+  // too, because a streaming answer grows the *final* group in place, which
+  // leaves `groups.length` untouched.
+  const lastGroup = groups[groups.length - 1];
+  useLayoutEffect(() => {
+    if (!active) return;
+    followBottom();
+  }, [groups.length, lastGroup, totalSize, working, active, followBottom]);
+
+  // …and again whenever the rendered rows actually change height, which is
+  // the moment that matters and is *not* the moment React re-renders: the
+  // effect above runs while the virtualizer still reports the previous
+  // measurements, so between an append and its measurement the transcript
+  // sat one chunk behind — visibly, for a fast-streaming turn.
+  // `isEmpty` is a dependency only because the empty transcript renders a
+  // different tree, with no window element to observe.
+  const isEmpty = groups.length === 0;
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(followBottom);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [followBottom, isEmpty]);
 
   // A hidden tab is `display: none` (see `TabHost`), which zeroes the
   // scroll container's own scrollTop. Restore the position — or the
@@ -491,9 +543,10 @@ function Transcript({
     const element = scrollRef.current;
     if (!element) return;
     element.scrollTop = pinnedRef.current ? element.scrollHeight : lastScrollTopRef.current;
+    scrolledToRef.current = element.scrollTop;
   }, [active]);
 
-  if (groups.length === 0) {
+  if (isEmpty) {
     return (
       <div className={styles.transcriptViewport}>
         <div className={styles.transcript} ref={scrollRef}>
@@ -517,6 +570,7 @@ function Transcript({
         <div className={styles.transcriptSizer} style={{ height: totalSize }}>
           <div
             className={styles.transcriptWindow}
+            ref={contentRef}
             style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
           >
             {virtualItems.map((virtualItem) => {

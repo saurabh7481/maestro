@@ -156,6 +156,18 @@
     var(--bg);
 }
 
+/* The global `--sel` is a ~25%-alpha accent tint. Over the plain editor
+   background that's fine, but inside the user bubble it lands on that
+   bubble's own accent-tinted gradient — same hue, barely more luminous —
+   so selected text read as a smudge rather than as selected. Raising the
+   tint is enough; going opaque is not the answer, since a solid block over
+   a `fit-content` bubble just paints a second, square-cornered box inside
+   the rounded one. The foreground is deliberately left alone so code keeps
+   its syntax colors under a selection. */
+.transcript ::selection {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 /* Holds the virtualizer's full scroll height so the scrollbar reflects the
  * whole conversation, not just the handful of rows currently in the DOM. */
 .transcriptSizer {
@@ -255,6 +267,10 @@
   letter-spacing: var(--tracking-wider);
   line-height: 1;
   text-transform: uppercase;
+  /* Chrome decoration, not conversation: dragging a selection across a
+     few messages shouldn't put "YOU"/"CLAUDE" in the clipboard. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .userRoleLabel {
@@ -284,11 +300,24 @@
     0 8px 24px rgba(0, 0, 0, 0.14),
     inset -2px 0 0 color-mix(in srgb, var(--accent) 46%, transparent);
   color: var(--text);
-  line-height: var(--leading-relaxed);
+  /* Snugger than the `--leading-relaxed` this used to carry. A selection
+     highlight fills the whole line box, so at 1.7 a one-line message got a
+     band half again as tall as the words in it — a fat rectangle sitting
+     inside the bubble's rounded one. At 1.5 the band hugs the text, and
+     wrapped messages still read comfortably. */
+  line-height: var(--leading-normal);
   overflow-wrap: break-word;
   white-space: pre-wrap;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* The message text alone, so a selection ends where the words do rather
+   than running out to the bubble's content edge, and so the hover-revealed
+   edit button below is never part of the selected range. */
+.userTextBody {
+  display: inline;
+  white-space: pre-wrap;
 }
 
 /* Revealed on hover over your own message, for rewriting it and re-running
@@ -309,6 +338,8 @@
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--duration-fast) ease-out;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .userText:hover .editMessage,
 .editMessage:focus-visible {

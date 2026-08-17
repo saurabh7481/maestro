@@ -1,14 +1,15 @@
 /** Mirrors `src-tauri/src/agents/registry.rs`'s `AgentKind` 1:1 (its
  * `#[serde(rename_all = "camelCase")]` renames the fieldless variants to
  * these exact strings). */
-export type AgentKind = "claudeCode" | "codex" | "cursorAgent";
+export type AgentKind = "claudeCode" | "codex" | "cursorAgent" | "aider";
 
-export const AGENT_KINDS: AgentKind[] = ["claudeCode", "codex", "cursorAgent"];
+export const AGENT_KINDS: AgentKind[] = ["claudeCode", "codex", "cursorAgent", "aider"];
 
 export const AGENT_DISPLAY_NAME: Record<AgentKind, string> = {
   claudeCode: "Claude Code",
   codex: "Codex CLI",
   cursorAgent: "Cursor Agent",
+  aider: "Aider",
 };
 
 /** Mirrors `registry.rs`'s `AuthState`. `unknown` means installed but
@@ -52,6 +53,19 @@ export interface AgentCapabilities {
   planExitTool: string | null;
 }
 
+/** Mirrors `registry.rs`'s `AuthRemedy` — the one action that fixes a
+ * not-signed-in CLI, declared by the backend so the settings pane can
+ * render a working button without knowing which CLI it is looking at.
+ *
+ * There is deliberately no "open a URL" variant for the CLIs: none of them
+ * can be signed in by visiting a page, so such a button would look like it
+ * worked and change nothing. */
+export type AuthRemedy =
+  /** Run this in a terminal; the CLI opens its own browser flow. */
+  | { kind: "runCommand"; command: string; label: string }
+  /** Nothing to log into — needs an LLM provider configured (Aider). */
+  | { kind: "configureProvider"; label: string };
+
 /** Mirrors `registry.rs`'s `CliStatus`. */
 export interface CliStatus {
   kind: AgentKind;
@@ -61,6 +75,11 @@ export interface CliStatus {
   authState: AuthState;
   /** Wherever possible this is the CLI's own output, not Maestro copy. */
   authDetail: string | null;
+  /** What to do about a not-signed-in state. `null` once authenticated. */
+  authRemedy: AuthRemedy | null;
+  /** Pill wording from the backend, where the generic "Needs login" would
+   * be wrong — Aider has no login, so it says "Needs provider". */
+  authLabel: string | null;
   checkedAt: string;
   capabilities: AgentCapabilities;
 }
@@ -199,4 +218,55 @@ export interface ResumableSession {
 export interface TranscriptTurn {
   role: "user" | "assistant";
   text: string;
+}
+
+/** Mirrors `agents/aider/providers.rs`'s `FieldKind`. `secret` values live
+ * in the OS keychain and are never sent back to the UI — only whether one
+ * is stored (`hasSecret`). */
+export type ProviderFieldKind = "secret" | "plain";
+
+/** Mirrors `agents/aider/providers.rs`'s `Catalog`. Determines how (and
+ * whether) the model picker can enumerate this provider's models. */
+export type ProviderCatalog =
+  | { kind: "publicHttp"; url: string }
+  | { kind: "localHttp"; baseField: string; path: string; shape: string }
+  | { kind: "litellmDb" }
+  /** No enumerable list — the user types the model id, guided by `hint`. */
+  | { kind: "manual"; hint: string };
+
+/** Mirrors `commands/aider.rs`'s `ProviderFieldStatus`. */
+export interface ProviderField {
+  envVar: string;
+  label: string;
+  kind: ProviderFieldKind;
+  required: boolean;
+  placeholder: string | null;
+  /** Present only for `plain` fields. Secrets are never returned. */
+  value: string | null;
+  /** Whether a secret is stored. Always false for `plain` fields. */
+  hasSecret: boolean;
+}
+
+/** Mirrors `commands/aider.rs`'s `ProviderStatus`.
+ *
+ * The settings pane renders whatever a provider declares rather than
+ * knowing any provider by name, so adding one in `providers.rs` needs no
+ * change here. */
+export interface AiderProviderStatus {
+  id: string;
+  displayName: string;
+  modelPrefix: string;
+  docsUrl: string;
+  /** The provider's own key console, for the "Get API key" button. `null`
+   * for local servers and custom endpoints, which have no such page. */
+  consoleUrl: string | null;
+  note: string | null;
+  fields: ProviderField[];
+  catalog: ProviderCatalog;
+  enabled: boolean;
+  /** Every required field has a value. */
+  configured: boolean;
+  /** Provider ids that can't be enabled alongside this one because they
+   * share environment variables. */
+  conflictsWith: string[];
 }
