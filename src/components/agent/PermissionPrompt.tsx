@@ -4,6 +4,7 @@ import { useAgentSessionStore } from "../../state/agentSessionStore";
 import type { PermissionState } from "../../state/agentSessionStore";
 import { useTabsStore } from "../../state/tabsStore";
 import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
+import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import styles from "./PermissionPrompt.module.css";
 
 /** Approve/deny card for a tool call the CLI blocked because it wasn't
@@ -11,7 +12,11 @@ import styles from "./PermissionPrompt.module.css";
  * protocol (see `agents/claude.rs`'s module doc), so the backend stops the
  * turn at the request instead and the run parks on `awaitingPermission`.
  * "Approve" resumes the same session with wider trust — a real turn, hence
- * the spinner; "Deny" runs nothing, because the turn already stopped. */
+ * the spinner; "Deny" runs nothing, because the turn already stopped.
+ *
+ * That only holds in `manual` mode. Everywhere else the CLI refuses under
+ * its own rules and keeps working, and `manager.rs` marks the event
+ * `gated: false` so it lands here as `blocked` — reported, not asked. */
 export function PermissionPrompt({
   runId,
   toolCallId,
@@ -38,6 +43,21 @@ export function PermissionPrompt({
   // click — an "Approve" that silently means "and everything after this"
   // is exactly the surprise a permission prompt exists to prevent.
   const escalates = !!kind && capabilities.manualGate !== "prompt";
+
+  // Not a question: the CLI applied its own rules, refused the call, and
+  // carried on with the turn. Say what happened and leave it at that —
+  // offering Approve/Deny here asks the user to answer something that has
+  // already been decided and isn't holding anything up.
+  if (permission.status === "blocked") {
+    return (
+      <div className={styles.prompt} data-variant="blocked">
+        <span className={styles.resolved}>
+          Blocked by {kind ? AGENT_DISPLAY_NAME[kind] : "the CLI"}
+        </span>
+        <span className={styles.message}>{permission.message}</span>
+      </div>
+    );
+  }
 
   if (permission.status !== "pending") {
     return (

@@ -34,7 +34,14 @@ export const EMPTY_ATTACHMENTS: string[] = [];
 export const EMPTY_QUEUE: string[] = [];
 
 export type PermissionState =
-  { status: "pending"; message: string } | { status: "approved" } | { status: "denied" };
+  /** Waiting on the user — the turn has stopped and only an answer restarts it. */
+  | { status: "pending"; message: string }
+  /** The CLI refused the call under its own rules and carried on without
+   * asking. Nothing is waiting for the user, so this renders as an
+   * explanation rather than an Approve/Deny card. */
+  | { status: "blocked"; message: string }
+  | { status: "approved" }
+  | { status: "denied" };
 
 export type TranscriptItem =
   | { id: string; kind: "user"; text: string }
@@ -801,7 +808,13 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                 ...tab,
                 items: items.map((item) =>
                   item.kind === "toolCall" && item.toolCallId === event.toolUseId
-                    ? { ...item, permission: { status: "pending", message: event.message } }
+                    ? {
+                        ...item,
+                        permission: {
+                          status: event.gated ? "pending" : "blocked",
+                          message: event.message,
+                        },
+                      }
                     : item,
                 ),
               },

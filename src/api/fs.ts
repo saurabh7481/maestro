@@ -38,8 +38,13 @@ export const fsApi = {
    * worktree-relative path. */
   savePastedAttachment: (worktreeRoot: string, fileName: string, base64Content: string) =>
     invoke<string>("save_pasted_attachment", { worktreeRoot, fileName, base64Content }),
-  /** Same staging, for a file pasted by reference (a file manager's
-   * `text/uri-list` clipboard entry) rather than by bytes. */
+  /** Same staging, for a file that already exists on disk — pasted by
+   * reference (a file manager's `text/uri-list` clipboard entry) or
+   * chosen through `pickAttachmentFiles`. */
   copyFileIntoAttachments: (worktreeRoot: string, sourcePath: string) =>
     invoke<string>("copy_file_into_attachments", { worktreeRoot, sourcePath }),
+  /** Opens the OS file picker for context from outside the worktree.
+   * Returns absolute paths (empty when cancelled) to hand to
+   * `copyFileIntoAttachments`. */
+  pickAttachmentFiles: () => invoke<string[]>("pick_attachment_files"),
 };

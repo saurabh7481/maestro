@@ -234,6 +234,7 @@ pub fn parse_line(
                     tool_use_id,
                     tool_input,
                     message,
+                    gated: false, // `run_turn` decides, see events.rs
                 }],
                 None,
             )
@@ -464,8 +465,9 @@ mod tests {
                 AgentEvent::PermissionDenied {
                     tool_name,
                     tool_input,
+                    gated,
                     ..
-                } => Some((tool_name, tool_input)),
+                } => Some((tool_name, tool_input, gated)),
                 _ => None,
             })
             .expect("expected a PermissionDenied event");
@@ -474,6 +476,11 @@ mod tests {
             denial.1.get("file_path").is_some(),
             "tool_input should be correlated from the preceding tool_use block"
         );
+        // Whether a refusal is a *question* depends on the run's permission
+        // mode, which an adapter cannot see. `run_turn` sets this on the way
+        // out; an adapter asserting it here would let a provider promise a
+        // pause that never happens.
+        assert!(!denial.2, "adapters must not decide gating");
     }
 
     #[test]

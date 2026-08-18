@@ -90,7 +90,13 @@ export const ToolCallCard = memo(function ToolCallCard({
   const isEditLike = item.name === "Edit" || item.name === "Write";
   const unfinished = !item.result && !item.permission;
   const pending = unfinished && running;
-  const denied = item.permission?.status === "pending" || item.permission?.status === "denied";
+  const permission = item.permission?.status;
+  const denied = permission === "pending" || permission === "denied" || permission === "blocked";
+  // "needs permission" is only true while an answer would change anything.
+  // A call the CLI blocked on its own is finished business, and labelling
+  // it as a request is what left the user hunting for a prompt to answer.
+  const badge =
+    permission === "pending" ? "needs permission" : permission === "blocked" ? "blocked" : null;
 
   const hasBody = !!item.result?.content;
   const outputTooLong = (item.result?.content.length ?? 0) > 800;
@@ -128,7 +134,7 @@ export const ToolCallCard = memo(function ToolCallCard({
                 <span className={styles.removed}>−{item.result.diffRemoved ?? 0}</span>
               </>
             )}
-          {denied && <span className={styles.needsPermission}>needs permission</span>}
+          {badge && <span className={styles.needsPermission}>{badge}</span>}
           {unfinished && !running && !denied && (
             <span className={styles.interrupted}>didn’t finish</span>
           )}

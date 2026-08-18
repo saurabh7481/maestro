@@ -134,6 +134,11 @@ export type AgentEvent =
       toolUseId: string;
       toolInput: unknown;
       message: string;
+      /** Whether the turn is actually stopping to wait for an answer. Only
+       * `manual` mode gates; otherwise the CLI refused on its own and kept
+       * working, so the transcript reports the refusal instead of offering
+       * an Approve/Deny nothing is waiting on. Set by `manager.rs`. */
+      gated: boolean;
     }
   /** The turn was deliberately stopped so the user can answer a permission
    * request — see `agents/manager.rs`'s pause branch. Distinguishes a

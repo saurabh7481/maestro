@@ -10,6 +10,12 @@
   animation: mo-scale-in var(--duration-normal, 180ms) ease-out;
 }
 
+/* The yellow tint says "this is waiting on you". A call the CLI blocked by
+   itself isn't — it reads as a note on what happened, not a prompt. */
+.prompt[data-variant="blocked"] {
+  background: var(--bg-2);
+}
+
 .message {
   color: var(--text-dim);
   flex: 1;

@@ -437,3 +437,18 @@
   color: var(--text-mute);
   text-align: center;
 }
+
+/* A pinned command rather than one more path in the list — the UI font,
+   not the mono the file rows use, so it doesn't read as a filename. */
+.menuAction {
+  font-family: inherit;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.menuSeparator {
+  flex: none;
+  height: var(--border-width);
+  background: var(--border);
+  margin: var(--space-3) var(--space-4);
+}

@@ -303,6 +303,15 @@ async fn run_turn(
                 flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
                 last_delta_flush = std::time::Instant::now();
 
+                // Only a gated run turns a refusal into a question. Outside
+                // `Manual` — and after the one pause a turn gets — the CLI
+                // refused on its own and kept going, so the transcript has
+                // to report that rather than offer an Approve/Deny nothing
+                // is waiting on (see `AgentEvent::PermissionDenied::gated`).
+                if let AgentEvent::PermissionDenied { gated, .. } = &mut event {
+                    *gated = pause_on_permission && pause_tx.is_some();
+                }
+
                 let _ = stdout_app.emit(&stdout_channel, &event);
                 // Stop the turn at the point of the request rather than
                 // letting the CLI barrel on past its own inline denial.

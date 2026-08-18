@@ -45,6 +45,7 @@ const denied: AgentEvent = {
   toolUseId: "toolu_1",
   toolInput: { file_path: "a.txt" },
   message: "Claude requested permission to write a.txt",
+  gated: true,
 };
 
 beforeEach(() => {
@@ -104,6 +105,18 @@ describe("permission pause lifecycle", () => {
       message: "Claude requested permission to write a.txt",
     });
   });
+
+  // Outside `manual` mode the CLI refuses on its own and carries straight
+  // on. Offering Approve/Deny there asks a question no one is waiting for
+  // — the reported "it asks for permission but continues anyway".
+  it("records an ungated refusal as blocked rather than a question", () => {
+    apply(toolCall, { ...denied, gated: false });
+    const item = state().items.find((entry) => entry.kind === "toolCall");
+    expect(item?.kind === "toolCall" && item.permission).toEqual({
+      status: "blocked",
+      message: "Claude requested permission to write a.txt",
+    });
+  });
 });
 
 describe("streaming text", () => {
@@ -141,8 +154,11 @@ describe("streaming text", () => {
   });
 
   it("starts a new block when something interrupts the prose", () => {
-    // Cursor streams without ever sending a consolidated block, so the
-    // only thing that closes one is the next non-text event.
+    // Aider streams without ever sending a consolidated block, so the only
+    // thing that closes one is the next non-text event. (Cursor was once
+    // believed to behave this way too — it doesn't, and treating its
+    // consolidated re-send as one more delta is what printed its replies
+    // twice; see `cursor_agent.rs::is_consolidated_assistant`.)
     apply(delta("Let me look."), toolCall, delta("Found it."));
     const texts = assistantText();
     expect(texts).toHaveLength(2);

@@ -58,9 +58,7 @@ pub enum AgentEvent {
     /// A tool call the CLI auto-denied because it wasn't pre-authorized
     /// for this run (see the plan's Step 0 findings — there is no live
     /// approve/deny round-trip in this CLI build; permission is granted
-    /// by restarting the session with an updated allow-list). The
-    /// frontend renders this as an Approve/Deny card regardless of the
-    /// underlying mechanism.
+    /// by restarting the session with an updated allow-list).
     #[serde(rename_all = "camelCase")]
     PermissionDenied {
         tool_name: String,
@@ -70,6 +68,15 @@ pub enum AgentEvent {
         /// it.
         tool_input: serde_json::Value,
         message: String,
+        /// Whether Maestro is actually going to stop the turn and wait for
+        /// an answer. Only `Manual` mode gates (see
+        /// `manager.rs::run_turn`'s `pause_on_permission`); in `Auto`/`Plan`
+        /// the CLI refused the call on its own authority and then carried
+        /// straight on, so an Approve/Deny card there would be asking a
+        /// question nothing is waiting for. Adapters leave this `false` —
+        /// `run_turn` is the only thing that knows, and sets it on the way
+        /// out.
+        gated: bool,
     },
     /// The turn was stopped early, on purpose, because a tool needs the
     /// user's approval and the run is in `Manual` mode — see

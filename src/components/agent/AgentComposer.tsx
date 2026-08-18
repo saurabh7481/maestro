@@ -7,6 +7,7 @@ import {
   CaretDown,
   Check,
   Compass,
+  FolderOpen,
   Lightning,
   Paperclip,
   ShieldCheck,
@@ -173,6 +174,7 @@ function SearchableMenu<T>({
   placeholder,
   emptyLabel,
   align = "start",
+  leadingAction,
 }: {
   trigger: ReactNode;
   items: T[];
@@ -186,6 +188,10 @@ function SearchableMenu<T>({
   placeholder: string;
   emptyLabel: string;
   align?: "start" | "end";
+  /** A pinned item above the results, outside `items` so the search box
+   * can't filter it away — the way out of the list is worth keeping
+   * reachable precisely when the list has nothing in it. */
+  leadingAction?: { label: ReactNode; onSelect: () => void };
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -222,6 +228,17 @@ function SearchableMenu<T>({
               }
             }}
           />
+          {leadingAction && (
+            <>
+              <DropdownMenu.Item
+                className={`${styles.mentionItem} ${styles.menuAction}`}
+                onSelect={leadingAction.onSelect}
+              >
+                {leadingAction.label}
+              </DropdownMenu.Item>
+              <div className={styles.menuSeparator} />
+            </>
+          )}
           {items.length === 0 ? (
             <div className={styles.searchEmpty}>{emptyLabel}</div>
           ) : (
@@ -433,9 +450,13 @@ function PermissionModePicker({
 function AttachFileButton({
   worktreeFiles,
   onAttach,
+  onBrowse,
 }: {
   worktreeFiles: string[];
   onAttach: (path: string) => void;
+  /** Opens the OS file picker, for context that isn't in the worktree at
+   * all — a spec PDF, an exported CSV, a screenshot. */
+  onBrowse: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -471,7 +492,20 @@ function AttachFileButton({
         if (!next) setQuery("");
       }}
       placeholder="Search files to attach…"
-      emptyLabel="No matching files"
+      emptyLabel="No matching files in this worktree"
+      leadingAction={{
+        label: (
+          <>
+            <FolderOpen size={13} color="var(--text-dim)" />
+            Browse files…
+          </>
+        ),
+        onSelect: () => {
+          setOpen(false);
+          setQuery("");
+          onBrowse();
+        },
+      }}
     />
   );
 }
@@ -690,6 +724,38 @@ export function AgentComposer({
     if (!worktreeRoot) return;
     const relPath = await fsApi.savePastedAttachment(worktreeRoot, fileName, base64);
     addAttachment(runId, relPath);
+  }
+
+  /** "Browse files…" in the Add context menu. The worktree list above it
+   * can only ever offer what's already in the repo, so a PDF in Downloads
+   * or a CSV exported from a dashboard had no way in short of copying it
+   * into the tree by hand. Picked files take the identical route a file
+   * pasted from a file manager already does — staged into
+   * `.maestro/attachments/` and mentioned as `@path` — rather than a
+   * second, separate attachment protocol. */
+  async function browseForAttachments() {
+    if (!worktreeRoot) return;
+    setAttachError(null);
+    let paths: string[];
+    try {
+      paths = await fsApi.pickAttachmentFiles();
+    } catch (err) {
+      setAttachError(String(err));
+      return;
+    }
+    // Cancelling the dialog is not an error and shouldn't flash a spinner.
+    if (paths.length === 0) return;
+    setAttaching(true);
+    try {
+      for (const path of paths) {
+        const relPath = await fsApi.copyFileIntoAttachments(worktreeRoot, path);
+        addAttachment(runId, relPath);
+      }
+    } catch (err) {
+      setAttachError(String(err));
+    } finally {
+      setAttaching(false);
+    }
   }
 
   /** WebKitGTK doesn't reliably put an actual clipboard image (a
@@ -1001,6 +1067,7 @@ export function AgentComposer({
             <AttachFileButton
               worktreeFiles={worktreeFiles}
               onAttach={(path) => addAttachment(runId, path)}
+              onBrowse={() => void browseForAttachments()}
             />
             {modelOptions.length > 0 && (
               <ModelPicker

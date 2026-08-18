@@ -101,6 +101,7 @@ pub fn run() {
             commands::files::write_file,
             commands::attachments::save_pasted_attachment,
             commands::attachments::copy_file_into_attachments,
+            commands::attachments::pick_attachment_files,
             commands::files::create_entry,
             commands::files::rename_entry,
             commands::files::delete_entry,

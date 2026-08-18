@@ -24,19 +24,23 @@
 //!   not Maestro-tab-scoped) — every turn just runs with `--trust` and
 //!   whatever the user has already configured. With this machine's
 //!   config (`approvalMode: "unrestricted"`), every tool call in the
-//!   spike ran with no gating at all, including file writes — so a
-//!   *live* denial was never actually observed. The "denied" branch in
-//!   `parse_line` below is a documented heuristic (a `tool_call`
-//!   `completed` whose `result` has no `success` key), not confirmed
-//!   against a real denial event — flag for follow-up if it doesn't
-//!   match reality once exercised against a stricter config.
+//!   first spike ran with no gating at all, so a live denial went
+//!   unobserved and the "denied" branch was written as a guess: *any*
+//!   `result` without a `success` key. That guess was wrong in both
+//!   directions, and has since been replaced — a second spike (running
+//!   the CLI against a throwaway `HOME` carrying a `permissions.deny`
+//!   rule) captured the real shape, `{"rejected":{…}}`, see
+//!   `result_content`. Because a refusal is a distinct variant, an
+//!   ordinary failed tool call no longer masquerades as a permission
+//!   request.
 //! - Real event shapes (confirmed): `system/init` (session_id, model,
 //!   `permissionMode`), `thinking` with `subtype: "delta"|"completed"`
 //!   (streamed — accumulated here into one block per turn-segment, not
 //!   one event per delta), `assistant` (`message.content[].text`),
 //!   `tool_call` `started`/`completed` with a single
 //!   `{shellToolCall|editToolCall|...}` key under `tool_call` carrying
-//!   `args` and (on `completed`) `result`, `result` (final,
+//!   `args` and (on `completed`) `result` — a `oneof` whose variant is
+//!   `success`/`rejected`/`error`, `result` (final,
 //!   `subtype:"success"`, `result` text field — same shape `--output-
 //!   format json`'s one-shot object uses, see `one_shot.rs`).
 //!
@@ -117,19 +121,72 @@ fn tool_kind(tool_call: &Value) -> Option<(&'static str, &Value)> {
     Some((name, val))
 }
 
-fn result_content(name: &str, result: &Value) -> (String, bool, Option<u32>, Option<u32>) {
+/// What a `tool_call`/`completed` result says happened.
+enum ToolOutcome {
+    /// Ran (successfully or not) — `is_error` distinguishes the two.
+    Ran {
+        content: String,
+        is_error: bool,
+        diff_added: Option<u32>,
+        diff_removed: Option<u32>,
+    },
+    /// The CLI's own permission layer refused to run it. Nothing Maestro
+    /// sent caused this and nothing Maestro sends can retry it in place.
+    Refused { message: String },
+}
+
+/// `result` is a protobuf `oneof` on the wire, so it arrives as a
+/// single-variant object: `success` on the happy path, `rejected` when
+/// the CLI's permission layer blocked the call, `error` when the tool ran
+/// and failed. Confirmed live on 2026.08.11-e8db854 by adding a
+/// `permissions.deny` rule and watching the refusal come back as
+/// `{"rejected":{"command","workingDirectory","reason","isReadonly"}}` —
+/// which replaces the module doc's earlier guess that *any* missing
+/// `success` key meant a denial. That guess is what made an ordinary
+/// unrecognized result render as an Approve/Deny card reading "Tool call
+/// did not complete successfully.": `reason` is a string but `rejected`
+/// itself is an object, so the old first-key-as-string extraction always
+/// fell through to that placeholder.
+fn result_content(name: &str, result: &Value) -> ToolOutcome {
     let Some(success) = result.get("success") else {
-        // No `success` key — see the module doc: unverified whether this
-        // is really the denial shape, but it's the only structurally
-        // distinct "something's off" signal available.
-        let message = result
-            .as_object()
-            .and_then(|obj| obj.iter().next())
-            .and_then(|(_, v)| v.as_str().map(str::to_string))
-            .unwrap_or_else(|| "Tool call did not complete successfully.".to_string());
-        return (message, true, None, None);
+        // `permissionDenied` is the variant name some tool types use for
+        // the same thing (seen in the CLI's own result-mapping code).
+        if let Some(refusal) = result
+            .get("rejected")
+            .or_else(|| result.get("permissionDenied"))
+        {
+            let reason = refusal
+                .get("reason")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .trim();
+            let message = if reason.is_empty() {
+                format!(
+                    "cursor-agent refused to run this {name} call. Its permission rules live in \
+                     ~/.cursor/cli-config.json (`approvalMode`, `permissions.deny`), which Maestro \
+                     deliberately does not edit."
+                )
+            } else {
+                reason.to_string()
+            };
+            return ToolOutcome::Refused { message };
+        }
+        // Anything else (`error`, or a variant this build doesn't know) is
+        // a failed tool call, not a permission question — surface it as an
+        // error result so it reads as what it is.
+        let content = result
+            .get("error")
+            .and_then(|e| e.get("error").or(Some(e)))
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| serde_json::to_string_pretty(result).unwrap_or_default());
+        return ToolOutcome::Ran {
+            content,
+            is_error: true,
+            diff_added: None,
+            diff_removed: None,
+        };
     };
-    match name {
+    let (content, is_error, diff_added, diff_removed) = match name {
         "Edit" | "Write" => {
             let added = success
                 .get("linesAdded")
@@ -169,7 +226,33 @@ fn result_content(name: &str, result: &Value) -> (String, bool, Option<u32>, Opt
             let content = serde_json::to_string_pretty(success).unwrap_or_default();
             (content, false, None, None)
         }
+    };
+    ToolOutcome::Ran {
+        content,
+        is_error,
+        diff_added,
+        diff_removed,
     }
+}
+
+/// Under `--stream-partial-output` an `assistant` line is *usually* a
+/// fragment — but the CLI also re-sends each finished text segment whole,
+/// and feeding that consolidated copy through as one more fragment is what
+/// made every reply render twice (the reported bug: "I'll pull AD-743
+/// …codebase.I'll pull AD-743 …codebase."). Captured live on
+/// 2026.08.11-e8db854, see `tests/fixtures/cursor/04_partial_output.jsonl`.
+///
+/// The two are structurally distinct: a fragment always carries
+/// `timestamp_ms` and never `model_call_id`, while the consolidated copy
+/// either carries `model_call_id` (a segment that ends because a tool call
+/// follows) or drops `timestamp_ms` (the last segment of the turn). Both
+/// shapes appear in the fixture, which is why neither key alone is enough.
+///
+/// Emitting these as a whole `Message` rather than a delta also lets the
+/// transcript treat the block as authoritative and repair a dropped
+/// fragment — the same contract `claude.rs` relies on.
+fn is_consolidated_assistant(value: &Value) -> bool {
+    value.get("model_call_id").is_some() || value.get("timestamp_ms").is_none()
 }
 
 pub fn parse_line(
@@ -221,6 +304,7 @@ pub fn parse_line(
             _ => (Vec::new(), None),
         },
         "assistant" => {
+            let as_deltas = stream_deltas && !is_consolidated_assistant(&value);
             let blocks = value
                 .get("message")
                 .and_then(|m| m.get("content"))
@@ -237,12 +321,11 @@ pub fn parse_line(
                     if text.is_empty() {
                         return None;
                     }
-                    // Under `--stream-partial-output` these lines are
-                    // fragments, not finished blocks — verified live: a
-                    // one-sentence reply arrived as 11 `assistant` events
-                    // and no consolidated one, with the full text only on
-                    // the final `result`.
-                    Some(if stream_deltas {
+                    // Under `--stream-partial-output` most of these lines
+                    // are fragments rather than finished blocks — but not
+                    // the consolidated re-send that closes each segment,
+                    // see `is_consolidated_assistant`.
+                    Some(if as_deltas {
                         AgentEvent::MessageDelta {
                             text: text.to_string(),
                         }
@@ -285,33 +368,39 @@ pub fn parse_line(
                     let Some(result) = inner.get("result") else {
                         return (Vec::new(), None);
                     };
-                    let (content, is_denial_or_error, diff_added, diff_removed) =
-                        result_content(name, result);
-                    if is_denial_or_error && result.get("success").is_none() {
-                        let tool_input = cache
-                            .get(&call_id)
-                            .map(|(_, i)| i.clone())
-                            .unwrap_or(Value::Null);
-                        return (
-                            vec![AgentEvent::PermissionDenied {
-                                tool_name: name.to_string(),
-                                tool_use_id: call_id,
-                                tool_input,
-                                message: content,
-                            }],
-                            None,
-                        );
-                    }
-                    (
-                        vec![AgentEvent::ToolResult {
-                            tool_use_id: call_id,
+                    match result_content(name, result) {
+                        ToolOutcome::Refused { message } => {
+                            let tool_input = cache
+                                .get(&call_id)
+                                .map(|(_, i)| i.clone())
+                                .unwrap_or(Value::Null);
+                            (
+                                vec![AgentEvent::PermissionDenied {
+                                    tool_name: name.to_string(),
+                                    tool_use_id: call_id,
+                                    tool_input,
+                                    message,
+                                    gated: false, // `run_turn` decides, see events.rs
+                                }],
+                                None,
+                            )
+                        }
+                        ToolOutcome::Ran {
                             content,
-                            is_error: is_denial_or_error,
+                            is_error,
                             diff_added,
                             diff_removed,
-                        }],
-                        None,
-                    )
+                        } => (
+                            vec![AgentEvent::ToolResult {
+                                tool_use_id: call_id,
+                                content,
+                                is_error,
+                                diff_added,
+                                diff_removed,
+                            }],
+                            None,
+                        ),
+                    }
                 }
                 _ => (Vec::new(), None),
             }
@@ -385,6 +474,10 @@ mod tests {
     /// `manager.rs`'s comment). A plain line-split here would make these
     /// tests fail on real data.
     fn parse_all(text: &str) -> Vec<AgentEvent> {
+        parse_all_with(text, false)
+    }
+
+    fn parse_all_with(text: &str, stream_deltas: bool) -> Vec<AgentEvent> {
         let mut cache = HashMap::new();
         let mut events = Vec::new();
         let mut buffer = String::new();
@@ -406,7 +499,7 @@ mod tests {
 
             let line = std::mem::take(&mut buffer);
             buffered_segments = 0;
-            let (mut line_events, _) = parse_line(&line, &mut cache, false);
+            let (mut line_events, _) = parse_line(&line, &mut cache, stream_deltas);
             events.append(&mut line_events);
         }
         events
@@ -472,13 +565,15 @@ mod tests {
         assert_eq!(result.1, &Some(0));
     }
 
-    /// With `--stream-partial-output` an `assistant` line is a fragment,
-    /// not a finished block — the same shape means two different things,
-    /// so the parser has to be told which run it is reading. Captured
-    /// live: a one-sentence reply arrived as 11 of these.
+    /// With `--stream-partial-output` an `assistant` line is *usually* a
+    /// fragment — the same shape means two different things, so the parser
+    /// has to be told which run it is reading. Captured live: a
+    /// one-sentence reply arrived as 11 of these. Note the `timestamp_ms`:
+    /// every fragment carries one, and `is_consolidated_assistant` reads
+    /// it, so a line without it is not a representative fragment.
     #[test]
     fn assistant_lines_become_deltas_only_when_streaming() {
-        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The"}]},"session_id":"s"}"#;
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The"}]},"session_id":"s","timestamp_ms":1787030681469}"#;
 
         let mut cache = HashMap::new();
         let (streamed, _) = parse_line(line, &mut cache, true);
@@ -492,6 +587,122 @@ mod tests {
             matches!(whole.as_slice(), [AgentEvent::Message { text, .. }] if text == "The"),
             "without the flag these are complete blocks, not fragments"
         );
+    }
+
+    /// Both shapes the consolidated re-send arrives in, each captured live:
+    /// mid-turn it keeps `timestamp_ms` and gains `model_call_id`; at the
+    /// end of the turn it simply has neither.
+    #[test]
+    fn either_consolidated_shape_is_recognised_while_streaming() {
+        for line in [
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The end."}]},"session_id":"s","model_call_id":"m-0","timestamp_ms":1787030681470}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The end."}]},"session_id":"s"}"#,
+        ] {
+            let mut cache = HashMap::new();
+            let (events, _) = parse_line(line, &mut cache, true);
+            assert!(
+                matches!(events.as_slice(), [AgentEvent::Message { text, .. }] if text == "The end."),
+                "expected a whole message, got {events:?}"
+            );
+        }
+    }
+
+    /// The reported "every reply is printed twice" bug. Replaying a real
+    /// `--stream-partial-output` capture, the text the transcript ends up
+    /// with must be each segment exactly once — not the fragments plus the
+    /// CLI's consolidated re-send of the same words.
+    #[test]
+    fn consolidated_assistant_blocks_do_not_double_the_reply() {
+        let events = parse_all_with(&fixture("04_partial_output.jsonl"), true);
+        // Mirrors `agentSessionStore`'s rule: deltas append to the open
+        // block, a whole `Message` replaces it.
+        let mut segments: Vec<String> = Vec::new();
+        let mut open = false;
+        for event in &events {
+            match event {
+                AgentEvent::MessageDelta { text } => {
+                    if open {
+                        segments.last_mut().unwrap().push_str(text);
+                    } else {
+                        segments.push(text.clone());
+                        open = true;
+                    }
+                }
+                AgentEvent::Message { text, .. } => {
+                    if open {
+                        *segments.last_mut().unwrap() = text.clone();
+                    } else {
+                        segments.push(text.clone());
+                    }
+                    open = false;
+                }
+                AgentEvent::ToolCall { .. } | AgentEvent::Thinking { .. } => open = false,
+                _ => {}
+            }
+        }
+        assert_eq!(
+            segments,
+            vec![
+                "Checking now.".to_string(),
+                "`sample.txt` contained:\n\n```\nhello\n```".to_string(),
+            ]
+        );
+    }
+
+    /// The consolidated copy is what closes each segment, so it has to
+    /// arrive as a whole `Message` — that is what lets the transcript
+    /// treat it as authoritative instead of appending it.
+    #[test]
+    fn a_segments_last_assistant_line_is_a_whole_message() {
+        let events = parse_all_with(&fixture("04_partial_output.jsonl"), true);
+        let whole: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Message { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            whole,
+            vec![
+                "Checking now.",
+                "`sample.txt` contained:\n\n```\nhello\n```"
+            ]
+        );
+    }
+
+    /// Captured against a `permissions.deny` rule: the refusal really is a
+    /// `rejected` variant, and it must reach the UI as a permission event
+    /// rather than an ordinary error result.
+    #[test]
+    fn a_rejected_shell_call_becomes_a_permission_event() {
+        let events = parse_all(&fixture("05_rejected_shell.jsonl"));
+        let denials: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::PermissionDenied { .. }))
+            .collect();
+        assert!(!denials.is_empty(), "expected the rejection to be surfaced");
+        assert!(matches!(
+            denials[0],
+            AgentEvent::PermissionDenied { tool_name, message, gated, .. }
+                // The CLI leaves `reason` empty, so the message has to
+                // explain itself rather than fall back to a placeholder.
+                if tool_name == "Bash" && message.contains("cli-config.json") && !*gated
+        ));
+    }
+
+    /// The old heuristic treated *any* result without a `success` key as a
+    /// denial, which turned ordinary tool failures into Approve/Deny cards
+    /// captioned "Tool call did not complete successfully."
+    #[test]
+    fn a_failed_tool_call_is_an_error_not_a_permission_request() {
+        let line = r#"{"type":"tool_call","subtype":"completed","call_id":"c1","tool_call":{"shellToolCall":{"args":{"command":"nope"},"result":{"error":{"error":"spawn nope ENOENT"}}}}}"#;
+        let mut cache = HashMap::new();
+        let (events, _) = parse_line(line, &mut cache, false);
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::ToolResult { content, is_error: true, .. }] if content == "spawn nope ENOENT"
+        ));
     }
 
     #[test]
