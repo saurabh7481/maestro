@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowCounterClockwise,
+  ArrowsLeftRight,
   FloppyDisk,
   GearSix,
   GitBranch,
@@ -11,6 +12,8 @@ import {
   Palette,
   Sliders,
   Sparkle,
+  TextAlignLeft,
+  UserFocus,
   Code,
   X,
 } from "@phosphor-icons/react";
@@ -42,6 +45,12 @@ function GeneralPane() {
   const setAutoSaveEnabled = useUiStore((s) => s.setAutoSaveEnabled);
   const minimapEnabled = useUiStore((s) => s.minimapEnabled);
   const setMinimapEnabled = useUiStore((s) => s.setMinimapEnabled);
+  const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
+  const setWordWrapEnabled = useUiStore((s) => s.setWordWrapEnabled);
+  const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
+  const setFormatOnSaveEnabled = useUiStore((s) => s.setFormatOnSaveEnabled);
+  const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
+  const setGitBlameEnabled = useUiStore((s) => s.setGitBlameEnabled);
 
   return (
     <div className={styles.group}>
@@ -56,6 +65,51 @@ function GeneralPane() {
           </div>
         </div>
         <Switch label="Auto save" checked={autoSaveEnabled} onCheckedChange={setAutoSaveEnabled} />
+      </div>
+      <div className={styles.presetRow}>
+        <TextAlignLeft size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Format on save</div>
+          <div className={styles.presetDescription}>
+            Reformat a file right before it's written to disk — the active language server's
+            formatter if one's running, otherwise Prettier for the languages it supports (JS/TS,
+            CSS/SCSS/LESS, JSON, HTML, Markdown, YAML). Off by default.
+          </div>
+        </div>
+        <Switch
+          label="Format on save"
+          checked={formatOnSaveEnabled}
+          onCheckedChange={setFormatOnSaveEnabled}
+        />
+      </div>
+      <div className={styles.presetRow}>
+        <ArrowsLeftRight size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Word wrap</div>
+          <div className={styles.presetDescription}>
+            Wrap long lines to the editor's width instead of scrolling horizontally. Always off
+            for large files regardless of this setting.
+          </div>
+        </div>
+        <Switch
+          label="Word wrap"
+          checked={wordWrapEnabled}
+          onCheckedChange={setWordWrapEnabled}
+        />
+      </div>
+      <div className={styles.presetRow}>
+        <UserFocus size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Inline git blame</div>
+          <div className={styles.presetDescription}>
+            Show who last changed the cursor's current line, as dimmed text at the end of it.
+          </div>
+        </div>
+        <Switch
+          label="Inline git blame"
+          checked={gitBlameEnabled}
+          onCheckedChange={setGitBlameEnabled}
+        />
       </div>
       <div className={styles.presetRow}>
         <MapTrifold size={18} color="var(--accent-2)" />

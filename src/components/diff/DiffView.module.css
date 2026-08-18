@@ -33,6 +33,20 @@
   color: var(--red);
 }
 
+.diffNav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: var(--border-width) solid var(--border);
+}
+
+.changeCount {
+  font-size: var(--text-2xs);
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
 .actions {
   margin-left: auto;
   display: flex;

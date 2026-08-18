@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BlameLine,
   CommitFileEntry,
   CommitSummary,
   DiffContent,
@@ -25,6 +26,26 @@ export const gitApi = {
     invoke<void>("unstage_paths", { worktreeId, worktreeRoot, relPaths }),
   unstageAll: (worktreeId: string, worktreeRoot: string) =>
     invoke<void>("unstage_all", { worktreeId, worktreeRoot }),
+  /** Stages (`unstage: false`) or unstages (`true`) exactly one hunk,
+   * identified by its "new"-side line range — see `git.rs::stage_hunk`
+   * for why that range is enough to find the right hunk without the
+   * frontend needing to track a hunk id/index of its own. */
+  stageHunk: (
+    worktreeId: string,
+    worktreeRoot: string,
+    relPath: string,
+    unstage: boolean,
+    newStart: number,
+    newEnd: number,
+  ) =>
+    invoke<void>("stage_hunk", {
+      worktreeId,
+      worktreeRoot,
+      relPath,
+      unstage,
+      newStart,
+      newEnd,
+    }),
   discardChange: (worktreeId: string, worktreeRoot: string, relPath: string) =>
     invoke<void>("discard_change", { worktreeId, worktreeRoot, relPath }),
   discardPaths: (worktreeId: string, worktreeRoot: string, relPaths: string[]) =>
@@ -49,6 +70,9 @@ export const gitApi = {
       mode,
       commitHash: commitHash ?? null,
     }),
+
+  getBlame: (worktreeRoot: string, relPath: string) =>
+    invoke<BlameLine[]>("get_blame", { worktreeRoot, relPath }),
 
   getCommitLog: (worktreeRoot: string, limit: number, skip: number) =>
     invoke<CommitSummary[]>("get_commit_log", { worktreeRoot, limit, skip }),

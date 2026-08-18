@@ -50,6 +50,18 @@ import "monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js"
 import "monaco-editor/editor/standalone/browser/quickAccess/standaloneGotoLineQuickAccess.js";
 import "monaco-editor/editor/standalone/browser/quickAccess/standaloneGotoSymbolQuickAccess.js";
 import "monaco-editor/editor/standalone/browser/quickAccess/standaloneCommandsQuickAccess.js";
+// Pins the enclosing function/class header at the top of the viewport
+// while scrolling through its body — complements `EditorBreadcrumb`,
+// which only shows the symbol path at the *cursor*, not while scrolling
+// somewhere else in a long one.
+import "monaco-editor/editor/contrib/stickyScroll/browser/stickyScrollContribution.js";
+// Alt+F12 / Shift+F12 ("Peek Definition"/"Peek References") — an inline
+// expando under the current line rather than jumping away, for when you
+// just want a quick look without losing your place. Builds on the same
+// LSP definition/reference providers `goToCommands.js` above already
+// uses for the jump-away versions.
+import "monaco-editor/editor/contrib/peekView/browser/peekView.js";
+import "monaco-editor/editor/contrib/gotoSymbol/browser/peek/referencesController.js";
 
 let configured = false;
 

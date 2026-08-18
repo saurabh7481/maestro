@@ -38,6 +38,29 @@ interface UiState {
    * WebKitGTK (see `MonacoHost.tsx`), so this is opt-in rather than
    * on-by-default like upstream VS Code. See Settings → General. */
   minimapEnabled: boolean;
+  /** On by default, matching the prior hardcoded behavior for anything
+   * under the large-file threshold — `MonacoHost.tsx` still forces this
+   * off for large files regardless, same as it forces minimap off. See
+   * Settings → General. */
+  wordWrapEnabled: boolean;
+  /** How `MonacoDiffHost` lays out a diff — two columns (default,
+   * matching VS Code) or one inline column with +/− lines interleaved.
+   * A per-tab override wouldn't survive switching tabs, so this is a
+   * single app-wide preference like `minimapEnabled`, not per-DiffView
+   * state. See the toggle button in `DiffView.tsx`'s header. */
+  diffSideBySide: boolean;
+  /** Off by default — silently rewriting a file's formatting on every
+   * save is the kind of surprise that erodes trust in autosave, so this
+   * is opt-in even though the formatter itself (LSP if available, else
+   * the bundled Prettier fallback — see `editor/formatOnSave.ts`) is
+   * always registered and available on demand via the command palette.
+   * See Settings → General. */
+  formatOnSaveEnabled: boolean;
+  /** On by default — purely informational (who/when last touched the
+   * cursor's current line, rendered as dimmed end-of-line text), so
+   * there's no correctness risk in defaulting it on the way there is for
+   * `formatOnSaveEnabled`. See Settings → General. */
+  gitBlameEnabled: boolean;
 
   setTheme: (theme: ThemeId) => void;
   setZoom: (zoom: number) => void;
@@ -54,6 +77,10 @@ interface UiState {
   setNewTabMenuOpen: (paneId: string | null) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
   setMinimapEnabled: (enabled: boolean) => void;
+  setWordWrapEnabled: (enabled: boolean) => void;
+  setDiffSideBySide: (enabled: boolean) => void;
+  setFormatOnSaveEnabled: (enabled: boolean) => void;
+  setGitBlameEnabled: (enabled: boolean) => void;
   hydrate: (
     partial: Partial<
       Pick<
@@ -64,6 +91,10 @@ interface UiState {
         | "rightSidebarWidth"
         | "autoSaveEnabled"
         | "minimapEnabled"
+        | "wordWrapEnabled"
+        | "diffSideBySide"
+        | "formatOnSaveEnabled"
+        | "gitBlameEnabled"
       >
     >,
   ) => void;
@@ -83,6 +114,10 @@ export const useUiStore = create<UiState>((set) => ({
   newTabMenuPaneId: null,
   autoSaveEnabled: false,
   minimapEnabled: false,
+  wordWrapEnabled: true,
+  diffSideBySide: true,
+  formatOnSaveEnabled: false,
+  gitBlameEnabled: true,
 
   setTheme: (theme) => set({ theme }),
   setZoom: (zoom) => set({ zoom }),
@@ -115,5 +150,9 @@ export const useUiStore = create<UiState>((set) => ({
   setNewTabMenuOpen: (newTabMenuPaneId) => set({ newTabMenuPaneId }),
   setAutoSaveEnabled: (autoSaveEnabled) => set({ autoSaveEnabled }),
   setMinimapEnabled: (minimapEnabled) => set({ minimapEnabled }),
+  setWordWrapEnabled: (wordWrapEnabled) => set({ wordWrapEnabled }),
+  setDiffSideBySide: (diffSideBySide) => set({ diffSideBySide }),
+  setFormatOnSaveEnabled: (formatOnSaveEnabled) => set({ formatOnSaveEnabled }),
+  setGitBlameEnabled: (gitBlameEnabled) => set({ gitBlameEnabled }),
   hydrate: (partial) => set(partial),
 }));

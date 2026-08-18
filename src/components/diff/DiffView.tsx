@@ -1,10 +1,21 @@
-import { useEffect, useState } from "react";
-import { ArrowCounterClockwise, Folder, GitDiff, Minus, Plus } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowCounterClockwise,
+  CaretDown,
+  CaretUp,
+  Columns,
+  Folder,
+  GitDiff,
+  Minus,
+  Plus,
+  Rows,
+} from "@phosphor-icons/react";
 import { useTabsStore, type Tab } from "../../state/tabsStore";
 import { useScmStore } from "../../state/scmStore";
+import { useUiStore } from "../../state/uiStore";
 import { formatBytes } from "../../editor/formatBytes";
-import { AlertDialog } from "../primitives";
-import { MonacoDiffHost } from "./MonacoDiffHost";
+import { AlertDialog, IconButton, Tooltip } from "../primitives";
+import { MonacoDiffHost, type DiffNavState, type MonacoDiffHostHandle } from "./MonacoDiffHost";
 import type { DiffContent } from "../../types/git";
 import styles from "./DiffView.module.css";
 
@@ -36,6 +47,11 @@ export function DiffView({ tab }: { tab: Tab }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmRevert, setConfirmRevert] = useState(false);
+  const [navState, setNavState] = useState<DiffNavState | null>(null);
+  const [hunkBusy, setHunkBusy] = useState(false);
+  const diffHostRef = useRef<MonacoDiffHostHandle>(null);
+  const diffSideBySide = useUiStore((s) => s.diffSideBySide);
+  const setDiffSideBySide = useUiStore((s) => s.setDiffSideBySide);
 
   // `key={activeTab.id}` at MainContent's call site remounts this
   // component per tab, so `diff`/`error` already start `null` for each new
@@ -55,6 +71,17 @@ export function DiffView({ tab }: { tab: Tab }) {
   }, [getDiff, relPath, mode, tab.commitHash]);
 
   const { name, dir } = splitPath(relPath);
+
+  async function stageCurrentHunk() {
+    setHunkBusy(true);
+    try {
+      await diffHostRef.current?.stageCurrentHunk();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setHunkBusy(false);
+    }
+  }
 
   // The diff this tab shows no longer applies once the underlying file has
   // been staged/unstaged/discarded from within it — simplest correct
@@ -81,8 +108,60 @@ export function DiffView({ tab }: { tab: Tab }) {
         {dir && <span className={styles.dir}>{dir}</span>}
         {diff?.kind === "text" && (
           <>
-            <span className={styles.added}>+{diff.added}</span>
-            <span className={styles.removed}>−{diff.removed}</span>
+            {/* Live from Monaco's own diff computation once it's mounted
+                (reflects in-progress edits/hunk-reverts immediately);
+                falls back to the git-computed stat from `getDiff` before
+                that first report lands. */}
+            <span className={styles.added}>+{navState?.added ?? diff.added}</span>
+            <span className={styles.removed}>−{navState?.removed ?? diff.removed}</span>
+            <div className={styles.diffNav}>
+              <Tooltip label="Previous change">
+                <IconButton
+                  icon={CaretUp}
+                  label="Previous change"
+                  size="sm"
+                  iconSize={13}
+                  disabled={!navState || navState.count === 0}
+                  onClick={() => diffHostRef.current?.goToPreviousChange()}
+                />
+              </Tooltip>
+              <Tooltip label="Next change">
+                <IconButton
+                  icon={CaretDown}
+                  label="Next change"
+                  size="sm"
+                  iconSize={13}
+                  disabled={!navState || navState.count === 0}
+                  onClick={() => diffHostRef.current?.goToNextChange()}
+                />
+              </Tooltip>
+              {navState && navState.count > 0 && (
+                <span className={styles.changeCount}>
+                  {navState.count} {navState.count === 1 ? "change" : "changes"}
+                </span>
+              )}
+              <Tooltip label={diffSideBySide ? "Switch to inline view" : "Switch to side-by-side view"}>
+                <IconButton
+                  icon={diffSideBySide ? Columns : Rows}
+                  label={diffSideBySide ? "Switch to inline view" : "Switch to side-by-side view"}
+                  size="sm"
+                  iconSize={13}
+                  onClick={() => setDiffSideBySide(!diffSideBySide)}
+                />
+              </Tooltip>
+              {mode !== "commit" && (
+                <Tooltip label={mode === "staged" ? "Unstage this hunk" : "Stage this hunk"}>
+                  <IconButton
+                    icon={mode === "staged" ? Minus : Plus}
+                    label={mode === "staged" ? "Unstage this hunk" : "Stage this hunk"}
+                    size="sm"
+                    iconSize={13}
+                    disabled={!navState || navState.count === 0 || hunkBusy}
+                    onClick={() => void stageCurrentHunk()}
+                  />
+                </Tooltip>
+              )}
+            </div>
           </>
         )}
         <div className={styles.actions}>
@@ -151,7 +230,15 @@ export function DiffView({ tab }: { tab: Tab }) {
           </div>
         )}
         {!error && diff?.kind === "text" && (
-          <MonacoDiffHost relPath={relPath} oldText={diff.oldText} newText={diff.newText} />
+          <MonacoDiffHost
+            ref={diffHostRef}
+            relPath={relPath}
+            oldText={diff.oldText}
+            newText={diff.newText}
+            worktreeRoot={tab.worktreeRoot ?? ""}
+            mode={mode}
+            onNavStateChange={setNavState}
+          />
         )}
       </div>
 

@@ -34,6 +34,7 @@ interface ScmState {
   refreshStatus: () => Promise<void>;
 
   stagePaths: (relPaths: string[]) => Promise<void>;
+  stageHunk: (relPath: string, unstage: boolean, newStart: number, newEnd: number) => Promise<void>;
   stageAll: () => Promise<void>;
   unstagePaths: (relPaths: string[]) => Promise<void>;
   unstageAll: () => Promise<void>;
@@ -148,6 +149,17 @@ export const useScmStore = create<ScmState>((set, get) => ({
     if (!worktreeId || !worktreeRoot) return;
     try {
       await gitApi.stagePaths(worktreeId, worktreeRoot, relPaths);
+    } catch (error) {
+      set({ error: String(error) });
+      throw error;
+    }
+  },
+
+  stageHunk: async (relPath, unstage, newStart, newEnd) => {
+    const { worktreeId, worktreeRoot } = get();
+    if (!worktreeId || !worktreeRoot) return;
+    try {
+      await gitApi.stageHunk(worktreeId, worktreeRoot, relPath, unstage, newStart, newEnd);
     } catch (error) {
       set({ error: String(error) });
       throw error;

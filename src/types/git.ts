@@ -43,6 +43,17 @@ export type DiffContent =
   | { kind: "binary"; oldSize: number | null; newSize: number | null }
   | { kind: "directory" };
 
+export interface BlameLine {
+  /** 1-based, matching Monaco's own line numbering. */
+  line: number;
+  /** All-zero for a working-tree line with no commit yet. */
+  hash: string;
+  author: string;
+  /** Unix seconds. */
+  authorTime: number;
+  summary: string;
+}
+
 export interface CommitSummary {
   hash: string;
   shortHash: string;

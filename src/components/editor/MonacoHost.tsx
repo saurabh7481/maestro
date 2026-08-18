@@ -8,14 +8,18 @@ import { useUiStore } from "../../state/uiStore";
 import { useSearchStore } from "../../state/searchStore";
 import { useEditorNavigationStore } from "../../state/editorNavigationStore";
 import { fsApi } from "../../api/fs";
+import { gitApi } from "../../api/git";
 import { getModel, getOrCreateModel } from "../../editor/monacoModelRegistry";
 import { saveFileTab } from "../../editor/saveFile";
 import { lspClientManager } from "../../lsp/clientManager";
 import { documentSymbols } from "../../lsp/providers";
+import { relativeTime } from "../../design/relativeTime";
+import type { BlameLine } from "../../types/git";
 import { EditorBreadcrumb } from "./EditorBreadcrumb";
 import styles from "./MonacoHost.module.css";
 
 const SYMBOL_REFRESH_DELAY_MS = 600;
+const UNCOMMITTED_HASH = "0000000000000000000000000000000000000000";
 
 const LARGE_FILE_BYTES = 2 * 1024 * 1024;
 const AUTO_SAVE_DELAY_MS = 800;
@@ -23,6 +27,12 @@ const AUTO_SAVE_DELAY_MS = 800;
 const MONACO_FONT_FAMILY =
   "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const BASE_FONT_SIZE = 13;
+
+function blameLabel(info: BlameLine): string {
+  if (info.hash === UNCOMMITTED_HASH) return "Uncommitted changes";
+  const when = relativeTime(new Date(info.authorTime * 1000).toISOString());
+  return info.summary ? `${info.author}, ${when} · ${info.summary}` : `${info.author}, ${when}`;
+}
 
 /** One Monaco instance per pane — mounted lazily (see `PaneView.tsx`) the
  * first time that pane shows a file/markdown-source tab, then kept alive
@@ -42,6 +52,12 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   const loadedTabIdRef = useRef<string | null>(null);
   const autoSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const symbolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Blame data for the whole file, keyed by line — cheap to hold in full
+  // (one `git blame` per file open/save) so a cursor move only needs a
+  // map lookup, not a fetch. `blameDecorations` renders just the
+  // cursor's current line, GitLens-style, not the whole file at once.
+  const blameByLine = useRef<Map<number, BlameLine>>(new Map());
+  const blameDecorations = useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
 
   // Breadcrumb state: the active model's outline (refetched on model
   // switch and, debounced, on edits) and where the cursor currently sits
@@ -106,6 +122,53 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       });
   }
 
+  // Paints (or clears) the current-line blame annotation as inline
+  // "ghost" text after the line's last column — only the cursor's line,
+  // not the whole file, both to stay cheap and to avoid the visual noise
+  // of every single line getting an attribution.
+  function renderBlameForLine(line: number | null) {
+    const editor = editorRef.current;
+    const collection = blameDecorations.current;
+    if (!editor || !collection) return;
+    const info = line != null ? blameByLine.current.get(line) : undefined;
+    if (!useUiStore.getState().gitBlameEnabled || !info) {
+      collection.set([]);
+      return;
+    }
+    const model = editor.getModel();
+    if (!model || line == null) return;
+    const column = model.getLineMaxColumn(line);
+    collection.set([
+      {
+        range: new monaco.Range(line, column, line, column),
+        options: {
+          after: { content: `  ${blameLabel(info)}`, inlineClassName: styles.blameAnnotation },
+          showIfCollapsed: false,
+        },
+      },
+    ]);
+  }
+
+  // One `git blame` per file open, plus once more (debounced) per edit
+  // settling — not per keystroke, and not per cursor move (`blameByLine`
+  // already has the full map by then; moving the cursor is just a
+  // lookup via `renderBlameForLine`). Guarded on `forTabId` the same way
+  // `refreshSymbols` is: a slow response after switching tabs away must
+  // not paint blame for a file that isn't showing anymore.
+  function refreshBlame(forTabId: string, worktreeRoot: string, relPath: string) {
+    if (!useUiStore.getState().gitBlameEnabled) return;
+    void gitApi
+      .getBlame(worktreeRoot, relPath)
+      .then((lines) => {
+        if (loadedTabIdRef.current !== forTabId) return;
+        blameByLine.current = new Map(lines.map((l) => [l.line, l]));
+        renderBlameForLine(editorRef.current?.getPosition()?.lineNumber ?? null);
+      })
+      .catch(() => {
+        if (loadedTabIdRef.current === forTabId) blameByLine.current = new Map();
+      });
+  }
+
   // Create the editor once, dispose on unmount (only happens app-wide).
   useEffect(() => {
     if (!containerRef.current) return;
@@ -117,6 +180,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       // Minimap painting is disproportionately expensive in WebKitGTK,
       // hence off by default — Settings → General → Minimap opts back in.
       minimap: { enabled: useUiStore.getState().minimapEnabled },
+      wordWrap: useUiStore.getState().wordWrapEnabled ? "on" : "off",
       // WebKitGTK can retain enormous compositor surfaces for Monaco's
       // promoted text/margin layers. Monaco exposes this specifically for
       // browsers where layer hinting causes high GPU memory usage.
@@ -124,6 +188,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       scrollBeyondLastLine: false,
     });
     editorRef.current = editor;
+    blameDecorations.current = editor.createDecorationsCollection();
     const timers = autoSaveTimers.current;
     let layoutFrame: number | null = null;
     const scheduleLayout = () => {
@@ -142,7 +207,10 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     observer.observe(containerRef.current);
     scheduleLayout();
 
-    const cursorSub = editor.onDidChangeCursorPosition((e) => setCursorPosition(e.position));
+    const cursorSub = editor.onDidChangeCursorPosition((e) => {
+      setCursorPosition(e.position);
+      renderBlameForLine(e.position.lineNumber);
+    });
 
     const changeSub = editor.onDidChangeModelContent(() => {
       const tabId = loadedTabIdRef.current;
@@ -154,6 +222,10 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
         symbolRefreshTimer.current = null;
         const model = editor.getModel();
         if (model && loadedTabIdRef.current === tabId) refreshSymbols(tabId, model);
+        const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+        if (tab?.worktreeRoot && tab?.filePath && loadedTabIdRef.current === tabId) {
+          refreshBlame(tabId, tab.worktreeRoot, tab.filePath);
+        }
       }, SYMBOL_REFRESH_DELAY_MS);
 
       const pending = timers.get(tabId);
@@ -185,6 +257,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       if (symbolRefreshTimer.current) clearTimeout(symbolRefreshTimer.current);
       editor.dispose();
       editorRef.current = null;
+      blameDecorations.current = null;
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
     };
@@ -204,6 +277,32 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   useEffect(() => {
     editorRef.current?.updateOptions({ minimap: { enabled: minimapEnabled } });
   }, [minimapEnabled]);
+
+  const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
+  useEffect(() => {
+    editorRef.current?.updateOptions({ wordWrap: wordWrapEnabled ? "on" : "off" });
+  }, [wordWrapEnabled]);
+
+  const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
+  useEffect(() => {
+    if (!gitBlameEnabled) {
+      blameDecorations.current?.set([]);
+      return;
+    }
+    // Turned back on for an already-open tab that never fetched (it was
+    // off at attach time) — fetch now rather than waiting for the next
+    // edit or tab switch to happen to trigger it.
+    const tabId = loadedTabIdRef.current;
+    const tab = tabId ? useTabsStore.getState().tabs.find((t) => t.id === tabId) : undefined;
+    if (tabId && tab?.worktreeRoot && tab?.filePath) {
+      if (blameByLine.current.size > 0) {
+        renderBlameForLine(editorRef.current?.getPosition()?.lineNumber ?? null);
+      } else {
+        refreshBlame(tabId, tab.worktreeRoot, tab.filePath);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gitBlameEnabled]);
 
   // A pending "jump to this match" from the Search panel (see
   // searchStore.ts's `reveal`) targeting a tab this pane already has
@@ -247,6 +346,8 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       loadedTabIdRef.current = null;
       setSymbols([]);
       setCursorPosition(null);
+      blameByLine.current = new Map();
+      blameDecorations.current?.set([]);
       return;
     }
 
@@ -261,7 +362,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
         // off (see the `minimapEnabled` effect above).
         minimap: { enabled: !isLarge && useUiStore.getState().minimapEnabled },
         folding: !isLarge,
-        wordWrap: isLarge ? "off" : "on",
+        wordWrap: !isLarge && useUiStore.getState().wordWrapEnabled ? "on" : "off",
       });
       editor?.setModel(model);
       editor?.layout();
@@ -270,6 +371,9 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
 
       setCursorPosition(editor?.getPosition() ?? null);
       refreshSymbols(tabId, model);
+      blameByLine.current = new Map();
+      blameDecorations.current?.set([]);
+      refreshBlame(tabId, worktreeRoot, filePath);
 
       applyPendingReveal(tabId);
 

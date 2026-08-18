@@ -56,7 +56,13 @@ function FileDiff({ file, root }: { file: ReviewFile; root: string }) {
         <span>{diff.oldLabel}</span>
         <span>{diff.newLabel}</span>
       </div>
-      <MonacoDiffHost relPath={file.path} oldText={diff.oldText} newText={diff.newText} />
+      <MonacoDiffHost
+        relPath={file.path}
+        oldText={diff.oldText}
+        newText={diff.newText}
+        worktreeRoot={root}
+        mode="commit"
+      />
     </div>
   );
 }

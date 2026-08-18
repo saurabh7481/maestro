@@ -1,6 +1,6 @@
 use crate::fs_ops;
 use crate::git::{
-    self, CommitSummary, ConflictContent, DiffContent, DiffMode, StashEntry, StatusKind,
+    self, BlameLine, CommitSummary, ConflictContent, DiffContent, DiffMode, StashEntry, StatusKind,
     WorkingStatus,
 };
 use serde::Serialize;
@@ -92,6 +92,22 @@ pub async fn unstage_all(
 ) -> Result<(), String> {
     let root = PathBuf::from(worktree_root);
     git::unstage_all(&root).await?;
+    emit_scm_status(&app, &worktree_id, &root).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stage_hunk(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    rel_path: String,
+    unstage: bool,
+    new_start: u32,
+    new_end: u32,
+) -> Result<(), String> {
+    let root = PathBuf::from(worktree_root);
+    git::stage_hunk(&root, &rel_path, unstage, new_start, new_end).await?;
     emit_scm_status(&app, &worktree_id, &root).await;
     Ok(())
 }
@@ -226,6 +242,11 @@ pub async fn get_diff_content(
         commit_hash.as_deref(),
     )
     .await
+}
+
+#[tauri::command]
+pub async fn get_blame(worktree_root: String, rel_path: String) -> Result<Vec<BlameLine>, String> {
+    git::blame(&PathBuf::from(worktree_root), &rel_path).await
 }
 
 #[tauri::command]

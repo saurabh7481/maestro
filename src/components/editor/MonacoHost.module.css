@@ -16,3 +16,14 @@
   min-height: 0;
   min-width: 0;
 }
+
+/* Inline "ghost text" decoration for the cursor's current-line git blame
+   (Settings → General → Inline git blame) — Monaco injects this as a
+   real `<span>` via the decoration's `after.inlineClassName`, so it's a
+   plain global-feeling class despite living in a CSS module. */
+.blameAnnotation {
+  color: var(--text-mute);
+  font-style: italic;
+  opacity: 0.75;
+  pointer-events: none;
+}

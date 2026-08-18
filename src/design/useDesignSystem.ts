@@ -19,6 +19,10 @@ export function useDesignSystem(): void {
   const rightSidebarWidth = useUiStore((s) => s.rightSidebarWidth);
   const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
   const minimapEnabled = useUiStore((s) => s.minimapEnabled);
+  const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
+  const diffSideBySide = useUiStore((s) => s.diffSideBySide);
+  const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
+  const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
   const hydrate = useUiStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -65,8 +69,23 @@ export function useDesignSystem(): void {
       rightSidebarWidth,
       autoSaveEnabled,
       minimapEnabled,
+      wordWrapEnabled,
+      diffSideBySide,
+      formatOnSaveEnabled,
+      gitBlameEnabled,
     });
-  }, [theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled, minimapEnabled]);
+  }, [
+    theme,
+    zoom,
+    leftSidebarWidth,
+    rightSidebarWidth,
+    autoSaveEnabled,
+    minimapEnabled,
+    wordWrapEnabled,
+    diffSideBySide,
+    formatOnSaveEnabled,
+    gitBlameEnabled,
+  ]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
