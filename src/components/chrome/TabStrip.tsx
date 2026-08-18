@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useRef } from "react";
-import { ArrowSquareOut, SplitHorizontal, SplitVertical, X } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  FolderOpen,
+  MagnifyingGlass,
+  SplitHorizontal,
+  SplitVertical,
+  X,
+} from "@phosphor-icons/react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useTabsStore, type Tab } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
 import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentSessionStore } from "../../state/agentSessionStore";
 import { useTerminalSessionStore } from "../../state/terminalSessionStore";
+import { useExplorerStore } from "../../state/explorerStore";
+import { useUiStore } from "../../state/uiStore";
 import { problemSummaryForPath, useProblemsStore } from "../../state/problemsStore";
 import { useTabDragStore } from "../../state/tabDragStore";
 import { agentsApi } from "../../api/agents";
@@ -13,6 +23,7 @@ import { terminalApi } from "../../api/terminal";
 import { disposeEditorModel } from "../../editor/modelBridge";
 import { TAB_VISUALS } from "../../design/tabVisuals";
 import { ICON_SIZE } from "../../design/iconSize";
+import { revealInOsLabel } from "../../design/platform";
 import { NewTabMenu } from "./NewTabMenu";
 import { AgentBrandIcon } from "../agent/AgentBrandIcon";
 import { TabContextMenu } from "./TabContextMenu";
@@ -194,6 +205,23 @@ function TabItem({
             icon: ArrowSquareOut,
             onSelect: () => void detachTabToNewWindow(tab.id),
           },
+          ...(tab.filePath && tab.worktreeRoot
+            ? [
+                {
+                  label: "Reveal in Sidebar",
+                  icon: MagnifyingGlass,
+                  onSelect: () => {
+                    useUiStore.getState().setSidebarView("explorer");
+                    void useExplorerStore.getState().revealPath(tab.filePath!);
+                  },
+                },
+                {
+                  label: revealInOsLabel(),
+                  icon: FolderOpen,
+                  onSelect: () => void revealItemInDir(`${tab.worktreeRoot}/${tab.filePath}`),
+                },
+              ]
+            : []),
         ]}
       >
         <div

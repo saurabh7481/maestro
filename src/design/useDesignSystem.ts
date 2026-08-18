@@ -18,6 +18,7 @@ export function useDesignSystem(): void {
   const leftSidebarWidth = useUiStore((s) => s.leftSidebarWidth);
   const rightSidebarWidth = useUiStore((s) => s.rightSidebarWidth);
   const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
+  const minimapEnabled = useUiStore((s) => s.minimapEnabled);
   const hydrate = useUiStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -57,8 +58,15 @@ export function useDesignSystem(): void {
 
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveUiPrefs({ theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled });
-  }, [theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled]);
+    void saveUiPrefs({
+      theme,
+      zoom,
+      leftSidebarWidth,
+      rightSidebarWidth,
+      autoSaveEnabled,
+      minimapEnabled,
+    });
+  }, [theme, zoom, leftSidebarWidth, rightSidebarWidth, autoSaveEnabled, minimapEnabled]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {

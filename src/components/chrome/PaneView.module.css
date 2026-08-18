@@ -8,23 +8,6 @@
   position: relative;
 }
 
-/* A quiet accent hairline along the top of the focused pane's strip —
-   with two or three panes open, "which one does the next Cmd+P open in"
-   has to be answerable at a glance, and an inactive pane's tab is
-   otherwise styled identically to an active one's. */
-.pane[data-focused="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 2px;
-  background: var(--accent);
-  opacity: 0.55;
-  z-index: 1;
-  pointer-events: none;
-}
-
 .content {
   position: relative;
   flex: 1;

@@ -9,21 +9,52 @@
   align-items: center;
 }
 
+/* Three-column grid rather than a single flex row with a `flex:1` spacer
+   before the search box — that approach centered the search box within
+   whatever space happened to be left, which both drifted with the
+   worktree name's length (see `.breadcrumb`) and, worse, stopped
+   reserving room for `.right`, so it collapsed in against `.left`
+   instead of staying pinned to the window controls' usual edge. A grid
+   with two `1fr` outer columns keeps `.left`/`.right` naturally at the
+   edges and `.searchWrap` exactly centered on the titlebar regardless of
+   how wide either side is. */
 .titlebar {
   height: 2.75rem;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: var(--space-6);
   padding: 0 var(--space-5) 0 var(--space-6);
   background: var(--titlebar);
   border-bottom: var(--border-width) solid var(--border);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  /* Belt-and-suspenders alongside `.breadcrumb`'s own max-width/ellipsis:
+     at narrow window widths WebKitGTK doesn't always shrink the nested
+     flex breadcrumb down to its grid track before painting, which let it
+     visibly spill into `.searchWrap`'s column. Hard-clipping here means
+     that can never happen regardless of shrink math. */
+  overflow: hidden;
+  justify-self: start;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  justify-self: end;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  flex: none;
 }
 
 .mark {
@@ -57,6 +88,11 @@
   cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-out);
   color: var(--text-dim);
+  /* Bounded so a long project/branch name can't push `.left` (and, via
+     the grid, everything else) around — it clips instead (see
+     `.breadcrumbProject` / `.breadcrumbBranch`). */
+  min-width: 0;
+  max-width: 22rem;
 }
 .breadcrumb:hover {
   background: var(--hover);
@@ -66,24 +102,34 @@
 .breadcrumbProject {
   font-weight: var(--font-weight-semibold);
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .breadcrumbBranch {
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* Centered on the titlebar itself (not on whatever space happens to be
+   left between the breadcrumb and the theme picker) so it holds its
+   position regardless of how long the project/worktree name is. */
 .searchWrap {
-  flex: 1;
   display: flex;
   justify-content: center;
-  min-width: 0;
+  justify-self: center;
 }
 
 .search {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  width: min(27.5rem, 46%);
+  width: min(27.5rem, 32vw);
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-lg);
   background: var(--bg-2);

@@ -48,7 +48,6 @@ export function PaneView({ paneId }: { paneId: string }) {
   const activeTab = useTabsStore((s) =>
     activeTabId ? s.tabs.find((tab) => tab.id === activeTabId) : undefined,
   );
-  const focusedTabId = useTabsStore((s) => s.activeTabId);
   const dragTarget = useTabDragStore((s) => s.target);
   const dragging = useTabDragStore((s) => s.subject !== null);
 
@@ -80,19 +79,21 @@ export function PaneView({ paneId }: { paneId: string }) {
   const isRealDiffTab = activeTab?.type === "diff" && !!activeTab.filePath && !!activeTab.diffMode;
 
   const dropHere = dragTarget?.paneId === paneId ? dragTarget : null;
-  const isFocusedPane = !!activeTabId && activeTabId === focusedTabId;
 
   return (
-    <div className={styles.pane} data-focused={isFocusedPane}>
+    <div className={styles.pane}>
       <TabStrip paneId={paneId} />
       <div className={styles.content} ref={contentRef}>
+        {/* Before `MonacoHost`, not after: both are in the content
+            column's flex flow, and in Source mode the markdown tab's
+            Source/Preview header has to sit above the editor. */}
+        {activeTab?.type === "markdown" && <MarkdownPane tab={activeTab} />}
+
         {monacoNeeded && (
           <Suspense fallback={null}>
             <MonacoHost tabId={activeTabId} />
           </Suspense>
         )}
-
-        {activeTab?.type === "markdown" && <MarkdownPane tab={activeTab} />}
 
         {isEditorTab && loadState?.kind === "loading" && (
           <div className={styles.loading}>Loading…</div>

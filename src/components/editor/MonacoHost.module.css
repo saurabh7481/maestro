@@ -1,4 +1,18 @@
+/* A flex item in the pane's content column rather than an `inset: 0`
+   overlay: a markdown tab in Source mode puts its Source/Preview header
+   above the editor, and an absolutely positioned Monaco painted straight
+   over that header — hiding the only way back to Preview. Every other
+   child of `.content` is an overlay (banners, placeholders, the portal
+   slot), so this is the one thing in flow. */
+.wrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+}
+
 .host {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }

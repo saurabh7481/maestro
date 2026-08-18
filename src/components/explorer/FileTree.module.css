@@ -8,7 +8,16 @@
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
+  /* Not `right: 0` — that clamps every row to the panel's own width, so
+     a deeply-nested path (lots of indent) had nowhere to go but clipped
+     under `.rowLabel`'s ellipsis, with no way to ever see the rest of
+     it. `min-width: 100%` keeps short rows' hover/active background
+     spanning the full panel like before; `width: max-content` lets a
+     row that's genuinely wider than the panel grow to its full content
+     width instead, which is what gives `.scroller`'s `overflow: auto`
+     something to actually scroll horizontally to. */
+  min-width: 100%;
+  width: max-content;
   /* Same WebKitGTK repaint/hit-test quirk noted on `.row:hover` in
      Sidebar.module.css, but here it can affect scroll itself: every
      scroll tick rewrites this element's `transform: translateY()`

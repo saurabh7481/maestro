@@ -10,6 +10,7 @@ export interface UiPrefs {
   leftSidebarWidth: number;
   rightSidebarWidth: number;
   autoSaveEnabled: boolean;
+  minimapEnabled: boolean;
 }
 
 const STORE_FILE = "ui-prefs.json";

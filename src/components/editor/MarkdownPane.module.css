@@ -39,9 +39,14 @@
   color: var(--text);
 }
 
+/* Sits *under* the header in the pane's flex column, not over it. It used
+   to be `position: absolute; inset: 0`, which stretched it across the
+   whole pane — the rendered markdown then scrolled across the title bar,
+   and the Source/Preview pills, painted underneath, could be seen but
+   never clicked, so a markdown tab was stuck in Preview for good. */
 .previewScroller {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 2.25rem 0;
 }

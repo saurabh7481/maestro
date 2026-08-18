@@ -34,6 +34,10 @@ interface UiState {
    * write-to-disk after each edit instead of waiting for Cmd/Ctrl+S. See
    * Settings → General. */
   autoSaveEnabled: boolean;
+  /** Off by default — minimap painting is disproportionately expensive in
+   * WebKitGTK (see `MonacoHost.tsx`), so this is opt-in rather than
+   * on-by-default like upstream VS Code. See Settings → General. */
+  minimapEnabled: boolean;
 
   setTheme: (theme: ThemeId) => void;
   setZoom: (zoom: number) => void;
@@ -49,9 +53,18 @@ interface UiState {
   openQuickOpen: () => void;
   setNewTabMenuOpen: (paneId: string | null) => void;
   setAutoSaveEnabled: (enabled: boolean) => void;
+  setMinimapEnabled: (enabled: boolean) => void;
   hydrate: (
     partial: Partial<
-      Pick<UiState, "theme" | "zoom" | "leftSidebarWidth" | "rightSidebarWidth" | "autoSaveEnabled">
+      Pick<
+        UiState,
+        | "theme"
+        | "zoom"
+        | "leftSidebarWidth"
+        | "rightSidebarWidth"
+        | "autoSaveEnabled"
+        | "minimapEnabled"
+      >
     >,
   ) => void;
 }
@@ -69,6 +82,7 @@ export const useUiStore = create<UiState>((set) => ({
   quickOpenMode: false,
   newTabMenuPaneId: null,
   autoSaveEnabled: false,
+  minimapEnabled: false,
 
   setTheme: (theme) => set({ theme }),
   setZoom: (zoom) => set({ zoom }),
@@ -100,5 +114,6 @@ export const useUiStore = create<UiState>((set) => ({
     set({ commandPaletteOpen: true, newTabMenuPaneId: null, quickOpenMode: true }),
   setNewTabMenuOpen: (newTabMenuPaneId) => set({ newTabMenuPaneId }),
   setAutoSaveEnabled: (autoSaveEnabled) => set({ autoSaveEnabled }),
+  setMinimapEnabled: (minimapEnabled) => set({ minimapEnabled }),
   hydrate: (partial) => set(partial),
 }));

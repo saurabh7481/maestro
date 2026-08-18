@@ -7,6 +7,7 @@ import {
   Keyboard,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
+  MapTrifold,
   Palette,
   Sliders,
   Sparkle,
@@ -39,6 +40,8 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
 function GeneralPane() {
   const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
   const setAutoSaveEnabled = useUiStore((s) => s.setAutoSaveEnabled);
+  const minimapEnabled = useUiStore((s) => s.minimapEnabled);
+  const setMinimapEnabled = useUiStore((s) => s.setMinimapEnabled);
 
   return (
     <div className={styles.group}>
@@ -53,6 +56,17 @@ function GeneralPane() {
           </div>
         </div>
         <Switch label="Auto save" checked={autoSaveEnabled} onCheckedChange={setAutoSaveEnabled} />
+      </div>
+      <div className={styles.presetRow}>
+        <MapTrifold size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Minimap</div>
+          <div className={styles.presetDescription}>
+            Show a zoomed-out map of the file alongside the editor. Off by default — its painting
+            is disproportionately expensive on Linux/WebKitGTK.
+          </div>
+        </div>
+        <Switch label="Minimap" checked={minimapEnabled} onCheckedChange={setMinimapEnabled} />
       </div>
     </div>
   );

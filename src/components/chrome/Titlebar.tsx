@@ -161,14 +161,16 @@ export function Titlebar() {
 
   return (
     <div className={styles.titlebar} data-tauri-drag-region>
-      <div className={styles.brand}>
-        <div className={clsx(styles.mark, "mo-gradient-mark", "mo-glow-accent")} />
-        <span className={styles.brandName}>Maestro</span>
+      <div className={styles.left}>
+        <div className={styles.brand}>
+          <div className={clsx(styles.mark, "mo-gradient-mark", "mo-glow-accent")} />
+          <span className={styles.brandName}>Maestro</span>
+        </div>
+
+        <div className={styles.divider} />
+
+        <WorktreeSwitcher />
       </div>
-
-      <div className={styles.divider} />
-
-      <WorktreeSwitcher />
 
       <div className={styles.searchWrap}>
         <button type="button" className={styles.search} onClick={() => setCommandPaletteOpen(true)}>
@@ -178,33 +180,35 @@ export function Titlebar() {
         </button>
       </div>
 
-      <ThemePicker />
+      <div className={styles.right}>
+        <ThemePicker />
 
-      <div className={styles.divider} />
+        <div className={styles.divider} />
 
-      <div className={styles.windowControls}>
-        <IconButton
-          icon={Minus}
-          label="Minimize"
-          size="md"
-          iconSize={14}
-          onClick={() => void appWindow.minimize()}
-        />
-        <IconButton
-          icon={Square}
-          label="Maximize"
-          size="md"
-          iconSize={12}
-          onClick={() => void appWindow.toggleMaximize()}
-        />
-        <IconButton
-          icon={X}
-          label="Close"
-          size="md"
-          iconSize={14}
-          tone="danger"
-          onClick={() => void appWindow.close()}
-        />
+        <div className={styles.windowControls}>
+          <IconButton
+            icon={Minus}
+            label="Minimize"
+            size="md"
+            iconSize={14}
+            onClick={() => void appWindow.minimize()}
+          />
+          <IconButton
+            icon={Square}
+            label="Maximize"
+            size="md"
+            iconSize={12}
+            onClick={() => void appWindow.toggleMaximize()}
+          />
+          <IconButton
+            icon={X}
+            label="Close"
+            size="md"
+            iconSize={14}
+            tone="danger"
+            onClick={() => void appWindow.close()}
+          />
+        </div>
       </div>
     </div>
   );

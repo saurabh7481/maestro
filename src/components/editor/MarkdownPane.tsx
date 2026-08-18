@@ -9,9 +9,12 @@ import styles from "./MarkdownPane.module.css";
 
 /** Renders the Source/Preview toggle header for a markdown tab, plus the
  * Preview body when that mode is active. Source mode intentionally renders
- * nothing in its body — `MonacoHost` (mounted once at `MainContent` level)
- * shows through underneath, since it self-hides via `display:none` in
- * every mode except file/markdown-source (see MonacoHost.tsx). */
+ * nothing in its body — the pane's `MonacoHost` takes the space below the
+ * header instead, since it self-hides via `display:none` in every mode
+ * except file/markdown-source (see MonacoHost.tsx). Both this header and
+ * that editor are flex children of the pane's content column, so the
+ * header stays visible and clickable in either mode; `PaneView` renders
+ * this component first to keep it on top. */
 export function MarkdownPane({ tab }: { tab: Tab }) {
   const mode = useOpenFilesStore((s) => s.byTabId[tab.id]?.markdownMode ?? "preview");
   const setMarkdownMode = useOpenFilesStore((s) => s.setMarkdownMode);

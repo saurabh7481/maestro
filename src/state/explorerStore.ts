@@ -16,6 +16,12 @@ interface ExplorerState {
   statusMap: Record<string, GitGlyph>;
   loadingDirs: Set<string>;
   unlisten: (() => void) | null;
+  /** Set by `revealPath` once every ancestor directory of a path is
+   * expanded and loaded — `FileTree.tsx` watches this to scroll the row
+   * into view, then clears it. Not itself a "selection" concept; the
+   * tree's existing `active` highlighting (keyed off the active tab)
+   * still drives which row reads as selected. */
+  pendingScrollPath: string | null;
 
   openForWorktree: (worktreeId: string, worktreeRoot: string) => Promise<void>;
   closeWorktree: () => Promise<void>;
@@ -24,6 +30,11 @@ interface ExplorerState {
   renameEntry: (fromRel: string, toRel: string) => Promise<void>;
   deleteEntry: (relPath: string) => Promise<void>;
   applyWatcherEvent: (event: FsChangeEvent) => void;
+  /** Expands (and loads) every ancestor directory of `relPath`, then sets
+   * `pendingScrollPath` so the tree scrolls to it — the "Reveal in
+   * Sidebar" action from a tab's context menu / the editor breadcrumb. */
+  revealPath: (relPath: string) => Promise<void>;
+  clearPendingScrollPath: () => void;
 }
 
 export const useExplorerStore = create<ExplorerState>((set, get) => {
@@ -64,6 +75,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
     statusMap: {},
     loadingDirs: new Set(),
     unlisten: null,
+    pendingScrollPath: null,
 
     openForWorktree: async (worktreeId, worktreeRoot) => {
       if (get().worktreeId === worktreeId) return;
@@ -81,6 +93,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
         statusMap: {},
         loadingDirs: new Set(),
         unlisten: null,
+        pendingScrollPath: null,
       });
 
       const unlisten = await listenToFsEvents(worktreeId, (event) => {
@@ -124,6 +137,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
         statusMap: {},
         loadingDirs: new Set(),
         unlisten: null,
+        pendingScrollPath: null,
       });
     },
 
@@ -139,6 +153,28 @@ export const useExplorerStore = create<ExplorerState>((set, get) => {
         if (!get().childrenByDir.has(relPath)) void loadDir(relPath);
       }
     },
+
+    revealPath: async (relPath) => {
+      const { worktreeRoot, worktreeId } = get();
+      if (!worktreeRoot || !worktreeId) return;
+
+      const segments = relPath.split("/");
+      segments.pop(); // the leaf itself never needs "expanding"
+      const expandedPaths = new Set(get().expandedPaths);
+      let ancestor = "";
+      for (const segment of segments) {
+        ancestor = ancestor ? `${ancestor}/${segment}` : segment;
+        expandedPaths.add(ancestor);
+        if (!get().childrenByDir.has(ancestor)) await loadDir(ancestor);
+        // A worktree switch (or the whole panel closing) mid-walk means
+        // this reveal no longer targets anything real — abandon it rather
+        // than resurrecting stale expansion state for a torn-down tree.
+        if (get().worktreeId !== worktreeId) return;
+      }
+      set({ expandedPaths, pendingScrollPath: relPath });
+    },
+
+    clearPendingScrollPath: () => set({ pendingScrollPath: null }),
 
     createEntry: async (parentRel, name, isDir) => {
       const { worktreeRoot } = get();

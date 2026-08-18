@@ -50,6 +50,7 @@ interface FileTreeRowProps {
   onNewFile: () => void;
   onNewFolder: () => void;
   onDelete: () => void;
+  onRevealInOs: () => void;
 }
 
 export function FileTreeRow({
@@ -66,6 +67,7 @@ export function FileTreeRow({
   onNewFile,
   onNewFolder,
   onDelete,
+  onRevealInOs,
 }: FileTreeRowProps) {
   const { icon: FileIcon, color: fileColor } = iconForFile(row.name);
   const [draftName, setDraftName] = useState(row.name);
@@ -192,6 +194,7 @@ export function FileTreeRow({
       onNewFolder={onNewFolder}
       onRename={beginRename}
       onDelete={onDelete}
+      onRevealInOs={onRevealInOs}
     >
       {content}
     </ExplorerContextMenu>

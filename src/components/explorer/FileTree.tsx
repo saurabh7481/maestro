@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { FilePlus, FolderSimplePlus } from "@phosphor-icons/react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useUiStore } from "../../state/uiStore";
@@ -75,6 +76,8 @@ export function FileTree() {
   const createEntry = useExplorerStore((s) => s.createEntry);
   const renameEntry = useExplorerStore((s) => s.renameEntry);
   const deleteEntry = useExplorerStore((s) => s.deleteEntry);
+  const pendingScrollPath = useExplorerStore((s) => s.pendingScrollPath);
+  const clearPendingScrollPath = useExplorerStore((s) => s.clearPendingScrollPath);
   const problemsByOwner = useProblemsStore((state) => state.byOwner);
 
   const ensureTab = useTabsStore((s) => s.ensureTab);
@@ -115,6 +118,20 @@ export function FileTree() {
     // WebKit. Re-measurement is needed only when our row estimate changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
+
+  // "Reveal in Sidebar" (tab context menu / editor breadcrumb) expands the
+  // target's ancestors via `revealPath` and sets `pendingScrollPath` —
+  // once that row actually exists in `rows` (the expand may still be
+  // loading a directory when this first runs), scroll to it and consume
+  // the pending marker so this doesn't re-fire on every unrelated update.
+  useEffect(() => {
+    if (!pendingScrollPath) return;
+    const index = rows.findIndex((row) => row.relPath === pendingScrollPath);
+    if (index === -1) return;
+    virtualizer.scrollToIndex(index, { align: "center" });
+    clearPendingScrollPath();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingScrollPath, rows]);
 
   function openFile(row: TreeRow) {
     if (!worktreeId || !worktreeRoot) return;
@@ -195,6 +212,7 @@ export function FileTree() {
                     onNewFile={() => {}}
                     onNewFolder={() => {}}
                     onDelete={() => {}}
+                    onRevealInOs={() => {}}
                   />
                 );
               }
@@ -217,6 +235,9 @@ export function FileTree() {
                   onNewFile={() => setPendingCreate({ parentRel: row.relPath, isDir: false })}
                   onNewFolder={() => setPendingCreate({ parentRel: row.relPath, isDir: true })}
                   onDelete={() => setDeleteTarget(row)}
+                  onRevealInOs={() =>
+                    worktreeRoot && void revealItemInDir(`${worktreeRoot}/${row.relPath}`)
+                  }
                 />
               );
             })}

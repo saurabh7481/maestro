@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor/editor/editor.api";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
@@ -10,7 +10,12 @@ import { useEditorNavigationStore } from "../../state/editorNavigationStore";
 import { fsApi } from "../../api/fs";
 import { getModel, getOrCreateModel } from "../../editor/monacoModelRegistry";
 import { saveFileTab } from "../../editor/saveFile";
+import { lspClientManager } from "../../lsp/clientManager";
+import { documentSymbols } from "../../lsp/providers";
+import { EditorBreadcrumb } from "./EditorBreadcrumb";
 import styles from "./MonacoHost.module.css";
+
+const SYMBOL_REFRESH_DELAY_MS = 600;
 
 const LARGE_FILE_BYTES = 2 * 1024 * 1024;
 const AUTO_SAVE_DELAY_MS = 800;
@@ -36,6 +41,14 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const loadedTabIdRef = useRef<string | null>(null);
   const autoSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const symbolRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Breadcrumb state: the active model's outline (refetched on model
+  // switch and, debounced, on edits) and where the cursor currently sits
+  // within it. Lives here rather than in a store since it's purely this
+  // pane's editor's own live state, same rationale as `editorRef` itself.
+  const [symbols, setSymbols] = useState<monaco.languages.DocumentSymbol[]>([]);
+  const [cursorPosition, setCursorPosition] = useState<monaco.Position | null>(null);
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeTab = tabId ? tabs.find((t) => t.id === tabId) : undefined;
@@ -63,6 +76,36 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     (activeTab.type === "file" || (activeTab.type === "markdown" && markdownMode === "source")) &&
     !isNonTextKind;
 
+  // Fetches this model's outline for the breadcrumb, straight off the
+  // same `lspClientManager` router `lsp/providers.ts` uses internally for
+  // Monaco's own `documentSymbolProvider` — going through the LSP client
+  // directly rather than Monaco's provider API, since Monaco doesn't
+  // expose "run the registered providers and give me the result" as a
+  // public call. Guarded on `forTabId` staying the loaded tab: a slow LSP
+  // response arriving after the user has already switched tabs (or away
+  // from a target tab entirely) must not paint a stale outline.
+  function refreshSymbols(forTabId: string, model: monaco.editor.ITextModel) {
+    if (!lspClientManager.capability(model, "textDocument/documentSymbol")) {
+      setSymbols([]);
+      return;
+    }
+    const cts = new monaco.CancellationTokenSource();
+    void lspClientManager
+      .request<unknown[]>(
+        model,
+        "textDocument/documentSymbol",
+        { textDocument: { uri: model.uri.toString() } },
+        cts.token,
+      )
+      .then((result) => {
+        if (loadedTabIdRef.current !== forTabId) return;
+        setSymbols(documentSymbols(result ?? [], model.uri.toString()));
+      })
+      .catch(() => {
+        if (loadedTabIdRef.current === forTabId) setSymbols([]);
+      });
+  }
+
   // Create the editor once, dispose on unmount (only happens app-wide).
   useEffect(() => {
     if (!containerRef.current) return;
@@ -71,10 +114,9 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       theme: "vs-dark",
       fontFamily: MONACO_FONT_FAMILY,
       fontSize: BASE_FONT_SIZE,
-      // Minimap painting is disproportionately expensive in WebKitGTK and
-      // duplicates the scrollbar for navigation. Keep the primary editing
-      // surface responsive; this can return later as an opt-in preference.
-      minimap: { enabled: false },
+      // Minimap painting is disproportionately expensive in WebKitGTK,
+      // hence off by default — Settings → General → Minimap opts back in.
+      minimap: { enabled: useUiStore.getState().minimapEnabled },
       // WebKitGTK can retain enormous compositor surfaces for Monaco's
       // promoted text/margin layers. Monaco exposes this specifically for
       // browsers where layer hinting causes high GPU memory usage.
@@ -100,10 +142,19 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     observer.observe(containerRef.current);
     scheduleLayout();
 
+    const cursorSub = editor.onDidChangeCursorPosition((e) => setCursorPosition(e.position));
+
     const changeSub = editor.onDidChangeModelContent(() => {
       const tabId = loadedTabIdRef.current;
       if (!tabId) return;
       setDirty(tabId, true);
+
+      if (symbolRefreshTimer.current) clearTimeout(symbolRefreshTimer.current);
+      symbolRefreshTimer.current = setTimeout(() => {
+        symbolRefreshTimer.current = null;
+        const model = editor.getModel();
+        if (model && loadedTabIdRef.current === tabId) refreshSymbols(tabId, model);
+      }, SYMBOL_REFRESH_DELAY_MS);
 
       const pending = timers.get(tabId);
       if (pending) clearTimeout(pending);
@@ -127,9 +178,11 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
 
     return () => {
       changeSub.dispose();
+      cursorSub.dispose();
       observer.disconnect();
       window.removeEventListener("resize", scheduleLayout);
       if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
+      if (symbolRefreshTimer.current) clearTimeout(symbolRefreshTimer.current);
       editor.dispose();
       editorRef.current = null;
       for (const timer of timers.values()) clearTimeout(timer);
@@ -147,6 +200,39 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     editor?.layout();
   }, [zoom, leftSidebarWidth, rightSidebarWidth, leftSidebarOpen, rightSidebarOpen]);
 
+  const minimapEnabled = useUiStore((s) => s.minimapEnabled);
+  useEffect(() => {
+    editorRef.current?.updateOptions({ minimap: { enabled: minimapEnabled } });
+  }, [minimapEnabled]);
+
+  // A pending "jump to this match" from the Search panel (see
+  // searchStore.ts's `reveal`) targeting a tab this pane already has
+  // loaded — applied straight to the live editor, since the tab-attach
+  // effect below only re-runs when `activeTab.id` *changes* and so never
+  // fires for a second match clicked within the same already-open file.
+  function applyPendingReveal(tabId: string) {
+    const editor = editorRef.current;
+    const pendingReveal = useSearchStore.getState().pendingReveal;
+    if (!editor || pendingReveal?.tabId !== tabId) return;
+    const { line, matchStart, matchEnd } = pendingReveal;
+    const selection = {
+      startLineNumber: line,
+      startColumn: matchStart + 1,
+      endLineNumber: line,
+      endColumn: matchEnd + 1,
+    };
+    editor.revealLineInCenter(line);
+    editor.setSelection(selection);
+    editor.focus();
+    useSearchStore.getState().clearPendingReveal();
+  }
+
+  const pendingReveal = useSearchStore((s) => s.pendingReveal);
+  useEffect(() => {
+    if (pendingReveal && loadedTabIdRef.current) applyPendingReveal(loadedTabIdRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingReveal]);
+
   // Attach the right model whenever the visible target tab changes.
   useEffect(() => {
     const editor = editorRef.current;
@@ -159,6 +245,8 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     if (!isTarget || !activeTab?.filePath || !activeTab.worktreeRoot || !modelWorktreeId) {
       editor.setModel(null);
       loadedTabIdRef.current = null;
+      setSymbols([]);
+      setCursorPosition(null);
       return;
     }
 
@@ -167,7 +255,11 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
 
     function attach(model: monaco.editor.ITextModel, isLarge: boolean) {
       editor?.updateOptions({
-        minimap: { enabled: false },
+        // Large files stay minimap-off regardless of the user's setting —
+        // painting one for a multi-MB file is its own separate cost on
+        // top of the general WebKitGTK expense the setting already trades
+        // off (see the `minimapEnabled` effect above).
+        minimap: { enabled: !isLarge && useUiStore.getState().minimapEnabled },
         folding: !isLarge,
         wordWrap: isLarge ? "off" : "on",
       });
@@ -176,22 +268,10 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       const saved = viewStates.current.get(tabId);
       if (saved) editor?.restoreViewState(saved);
 
-      // A pending "jump to this match" from the Search panel (see
-      // searchStore.ts's `reveal`) — consumed once, here, since this is
-      // the point a tab's model actually becomes visible in the editor.
-      const pendingReveal = useSearchStore.getState().pendingReveal;
-      if (pendingReveal?.tabId === tabId) {
-        const { line, matchStart, matchEnd } = pendingReveal;
-        const selection = {
-          startLineNumber: line,
-          startColumn: matchStart + 1,
-          endLineNumber: line,
-          endColumn: matchEnd + 1,
-        };
-        editor?.revealLineInCenter(line);
-        editor?.setSelection(selection);
-        useSearchStore.getState().clearPendingReveal();
-      }
+      setCursorPosition(editor?.getPosition() ?? null);
+      refreshSymbols(tabId, model);
+
+      applyPendingReveal(tabId);
 
       const pendingNavigation = useEditorNavigationStore.getState().consume(tabId);
       if (pendingNavigation?.selection) {
@@ -258,10 +338,22 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   }, [activeTab?.id, isTarget]);
 
   return (
-    <div
-      ref={containerRef}
-      className={styles.host}
-      style={{ display: isTarget ? "block" : "none" }}
-    />
+    <div className={styles.wrap} style={{ display: isTarget ? "flex" : "none" }}>
+      {activeTab?.filePath && (
+        <EditorBreadcrumb
+          filePath={activeTab.filePath}
+          symbols={symbols}
+          position={cursorPosition}
+          onRevealSymbol={(symbol) => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            editor.revealRangeInCenter(symbol.range);
+            editor.setSelection(symbol.selectionRange);
+            editor.focus();
+          }}
+        />
+      )}
+      <div ref={containerRef} className={styles.host} />
+    </div>
   );
 }
