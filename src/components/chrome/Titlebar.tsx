@@ -19,6 +19,8 @@ import {
   useWorkspaceStore,
   EMPTY_WORKTREES,
 } from "../../state/workspaceStore";
+import { useKeybindingsStore } from "../../state/keybindingsStore";
+import { formatCombo } from "../../design/keymap";
 import type { ThemeId } from "../../design/themes";
 import { THEME_LABELS, themes } from "../../design/themes";
 import { IconButton, Kbd, Tooltip } from "../primitives";
@@ -156,6 +158,7 @@ function WorktreeSwitcher() {
 
 export function Titlebar() {
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const commandPaletteCombo = useKeybindingsStore((s) => s.comboFor("commandPalette.open"));
 
   const appWindow = getCurrentWindow();
 
@@ -176,7 +179,7 @@ export function Titlebar() {
         <button type="button" className={styles.search} onClick={() => setCommandPaletteOpen(true)}>
           <MagnifyingGlass size={14} />
           <span className={styles.searchLabel}>Search files, symbols, commands…</span>
-          <Kbd>⌘K</Kbd>
+          <Kbd>{formatCombo(commandPaletteCombo)}</Kbd>
         </button>
       </div>
 

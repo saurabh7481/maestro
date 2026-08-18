@@ -34,7 +34,7 @@ impl TerminalHandle {
     /// line.
     pub fn shell_name(&self) -> &str {
         self.shell
-            .rsplit('/')
+            .rsplit(['/', '\\'])
             .next()
             .filter(|name| !name.is_empty())
             .unwrap_or(self.shell.as_str())
@@ -73,6 +73,7 @@ enum PtyEvent {
 /// while every other terminal emulator (reading the same passwd entry)
 /// didn't. `/etc/passwd` is the actually-authoritative source those
 /// other terminals read instead.
+#[cfg(unix)]
 fn passwd_shell() -> Option<String> {
     let username = std::env::var("USER").ok()?;
     let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
@@ -88,10 +89,48 @@ fn passwd_shell() -> Option<String> {
     None
 }
 
+/// macOS and Linux both read `/etc/passwd` — see `passwd_shell`'s own
+/// comment for why that beats `$SHELL`.
+#[cfg(unix)]
 fn default_shell() -> String {
     passwd_shell()
         .or_else(|| std::env::var("SHELL").ok())
         .unwrap_or_else(|| "/bin/bash".to_string())
+}
+
+/// Windows has no login-shell/passwd concept, and `$SHELL` is a Unix
+/// convention that isn't set here at all — so instead of the Unix
+/// heuristic above, this walks `PATH` itself (same search `CommandBuilder`
+/// would eventually do internally, see `portable-pty`'s `search_path`) to
+/// prefer a real, present shell over just assuming one exists.
+///
+/// PowerShell 7 (`pwsh`) is preferred when installed — it's the actively
+/// developed one, cross-platform-consistent with the shell this app's own
+/// scripts assume, and what a user who bothered to install it wants over
+/// the legacy one still shipped for compatibility. Windows PowerShell
+/// (`powershell.exe`) ships in every Windows install under
+/// `%SystemRoot%\System32\WindowsPowerShell\v1.0`, which is unconditionally
+/// on `PATH`, so it is the realistic universal fallback — `cmd.exe` (via
+/// `ComSpec`) only matters if `PATH` has been stripped down.
+#[cfg(windows)]
+fn shell_on_path(exe_name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| dir.join(exe_name).is_file()))
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn default_shell() -> String {
+    if shell_on_path("pwsh.exe") {
+        return "pwsh.exe".to_string();
+    }
+    if shell_on_path("powershell.exe") {
+        return "powershell.exe".to_string();
+    }
+    std::env::var("ComSpec")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "cmd.exe".to_string())
 }
 
 #[tauri::command]
@@ -135,7 +174,10 @@ pub async fn spawn_terminal(
     // exactly the gap that leaves `$XDG_CONFIG_HOME`-dependent rc-file
     // setups (modular `~/.config/<shell>/*.d` sourcing, prompt-theme init)
     // half-initialized even though the shell itself starts fine. Widely
-    // supported (bash, zsh, fish, dash all accept it).
+    // supported (bash, zsh, fish, dash all accept it) — but not a flag
+    // `pwsh.exe`/`powershell.exe`/`cmd.exe` understand, so it's Unix-only;
+    // Windows shells have no equivalent login/non-login distinction.
+    #[cfg(unix)]
     cmd.arg("-l");
     cmd.cwd(&worktree_path);
     // Tauri's own process is normally launched from a desktop entry, not

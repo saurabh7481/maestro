@@ -23,6 +23,7 @@ import { gitApi } from "../../api/git";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type { AgentKind } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
+import { isMac } from "../../design/platform";
 import { iconForFile } from "../explorer/fileIcons";
 import { AlertDialog, Button, IconButton, Tooltip } from "../primitives";
 import { ICON_SIZE } from "../../design/iconSize";
@@ -291,7 +292,7 @@ function CommitBox() {
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Message (⌘Enter to commit)"
+          placeholder={`Message (${isMac() ? "⌘Enter" : "Ctrl+Enter"} to commit)`}
           rows={2}
           style={{
             width: "100%",

@@ -4,6 +4,8 @@ import { useUiStore } from "../../state/uiStore";
 import { useTabsStore } from "../../state/tabsStore";
 import type { Tab } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
+import { useKeybindingsStore } from "../../state/keybindingsStore";
+import { formatCombo } from "../../design/keymap";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind } from "../../types/agent";
@@ -66,6 +68,7 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
   const activeWorktree = useActiveWorktree();
   const statusByKind = useAgentAvailabilityStore((s) => s.statusByKind);
   const openSettings = useUiStore((s) => s.openSettings);
+  const terminalCombo = useKeybindingsStore((s) => s.comboFor("terminal.new"));
 
   function startAgentTab(kind: AgentKind) {
     if (!activeWorktree) return;
@@ -171,7 +174,7 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
             <TerminalWindow size={17} color="var(--green)" />
             <span style={{ fontSize: "var(--text-sm)" }}>New Terminal</span>
             <div style={{ marginLeft: "auto" }}>
-              <Kbd>⌃`</Kbd>
+              <Kbd>{formatCombo(terminalCombo)}</Kbd>
             </div>
           </DropdownMenu.Item>
 

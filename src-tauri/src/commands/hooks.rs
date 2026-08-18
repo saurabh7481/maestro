@@ -1,4 +1,5 @@
 use crate::models::HookConfig;
+use crate::process_ext::HiddenCommandExt;
 use crate::state::AppState;
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Emitter, State};
@@ -166,9 +167,10 @@ pub async fn set_global_hook_config(
     Ok(())
 }
 
-/// Unix-shell hook script assembled from the enabled presets + custom
-/// script. v1 is Linux-first (docs/V1_SCOPE.md) — Windows-compatible hook
-/// generation is a v2 concern, not attempted here.
+/// POSIX-shell (`/bin/sh`-compatible) hook script assembled from the
+/// enabled presets + custom script — same syntax on every platform;
+/// `hook_shell` below is what makes that syntax actually runnable on
+/// Windows, rather than this script generation needing a second dialect.
 fn build_hook_script(config: &HookConfig) -> String {
     let mut parts = Vec::new();
     if config.copy_env_files {
@@ -197,6 +199,46 @@ fn build_hook_script(config: &HookConfig) -> String {
         parts.push(config.custom_script.clone());
     }
     parts.join("\n")
+}
+
+/// Where to run `build_hook_script`'s POSIX-shell output.
+#[cfg(unix)]
+fn hook_shell() -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from("/bin/sh"))
+}
+
+/// Windows has no `/bin/sh` — but every Windows install this app runs on
+/// already has `git.exe` on `PATH` (everything in `git.rs` depends on
+/// that), and Git for Windows bundles a real MSYS2 `bash.exe` right next
+/// to it. Reusing that avoids inventing a second, PowerShell-flavored
+/// dialect of every hook preset (`cp`, `ln -s`, `[ -d ]`) just for one
+/// platform — the same POSIX script that runs on macOS/Linux runs here
+/// unmodified. This is the same "Git Bash" detection VS Code's integrated
+/// terminal uses. The standard installer/winget/Chocolatey layout puts
+/// `git.exe` two siblings away from `bash.exe`:
+/// `<root>\cmd\git.exe` (the usual `PATH` entry) and `<root>\bin\git.exe`
+/// both sit one level below `<root>`, with `<root>\bin\bash.exe` beside
+/// them either way.
+#[cfg(windows)]
+fn hook_shell() -> Result<std::path::PathBuf, String> {
+    let path = std::env::var_os("PATH").ok_or("PATH is not set")?;
+    for dir in std::env::split_paths(&path) {
+        if !dir.join("git.exe").is_file() {
+            continue;
+        }
+        if let Some(root) = dir.parent() {
+            let bash = root.join("bin").join("bash.exe");
+            if bash.is_file() {
+                return Ok(bash);
+            }
+        }
+    }
+    Err(
+        "Worktree hooks need Git Bash, which ships with Git for Windows but \
+         wasn't found next to git.exe on PATH. Reinstall Git for Windows \
+         (gitforwindows.org) with its default components."
+            .to_string(),
+    )
 }
 
 #[tauri::command]
@@ -242,7 +284,30 @@ pub async fn run_worktree_hook(
         return Ok(());
     }
 
-    let mut command = Command::new("/bin/sh");
+    let shell = match hook_shell() {
+        Ok(shell) => shell,
+        Err(detail) => {
+            let _ = app.emit(
+                &channel,
+                HookEvent::Line {
+                    stream: "stderr",
+                    text: detail,
+                },
+            );
+            let _ = app.emit(
+                &channel,
+                HookEvent::Done {
+                    exit_code: None,
+                    success: false,
+                    cancelled: false,
+                    timed_out: false,
+                },
+            );
+            return Ok(());
+        }
+    };
+
+    let mut command = Command::new(&shell);
     command
         .arg("-c")
         .arg(&script)
@@ -253,7 +318,8 @@ pub async fn run_worktree_hook(
         .env("PROJECT_ROOT", &repo_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        .hide_window();
 
     let mut child = command.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("failed to capture hook stdout")?;

@@ -1,3 +1,4 @@
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -286,14 +287,15 @@ pub async fn spawn_server(
     args: &[String],
     on_event: Channel<LspTransportEvent>,
 ) -> Result<LspServerEntry, String> {
-    let mut command = Command::new(binary_path);
+    let mut command = Command::new(resolve_executable(binary_path));
     command
         .args(args)
         .current_dir(worktree_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        .hide_window();
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to start {binary_path}: {error}"))?;
@@ -583,13 +585,14 @@ pub fn resolve_typescript_sdk(
 pub async fn detect(kind: LspServerKind, binary_override: Option<String>) -> LspServerStatus {
     let binary_path = binary_override.unwrap_or_else(|| kind.default_binary().to_string());
     let checked_at = chrono::Utc::now().to_rfc3339();
-    let mut command = Command::new(&binary_path);
+    let mut command = Command::new(resolve_executable(&binary_path));
     command
         .args(kind.version_args())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        .hide_window();
 
     let result = tokio::time::timeout(PROBE_TIMEOUT, command.output()).await;
     let (availability, version, detail) = match result {

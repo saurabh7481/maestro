@@ -1,4 +1,5 @@
 use crate::agents::capabilities::{capabilities_for, AgentCapabilities};
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::process::Command;
@@ -156,7 +157,8 @@ pub async fn detect(kind: AgentKind, binary_override: Option<String>) -> CliStat
     let binary_path = binary_override.unwrap_or_else(|| kind.default_binary().to_string());
     let checked_at = chrono::Utc::now().to_rfc3339();
 
-    let mut version_cmd = Command::new(&binary_path);
+    let mut version_cmd = Command::new(resolve_executable(&binary_path));
+    version_cmd.hide_window();
     version_cmd.arg("--version");
     let version_output = run_with_timeout(version_cmd).await;
 
@@ -233,7 +235,8 @@ fn pill_label_for(kind: AgentKind) -> &'static str {
 async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<String>) {
     match kind {
         AgentKind::ClaudeCode => {
-            let mut cmd = Command::new(binary_path);
+            let mut cmd = Command::new(resolve_executable(binary_path));
+            cmd.hide_window();
             cmd.args(["auth", "status", "--json"]);
             probe_json_auth(cmd, |v| {
                 let logged_in = v.get("loggedIn").and_then(|b| b.as_bool()).unwrap_or(false);
@@ -253,7 +256,8 @@ async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<St
             .await
         }
         AgentKind::CursorAgent => {
-            let mut cmd = Command::new(binary_path);
+            let mut cmd = Command::new(resolve_executable(binary_path));
+            cmd.hide_window();
             cmd.args(["status", "--format", "json"]);
             probe_json_auth(cmd, |v| {
                 let authed = v
@@ -281,7 +285,8 @@ async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<St
         }
         AgentKind::Codex => {
             // Live-verified with standalone Codex CLI 0.147.0.
-            let mut cmd = Command::new(binary_path);
+            let mut cmd = Command::new(resolve_executable(binary_path));
+            cmd.hide_window();
             cmd.args(["login", "status"]);
             match run_with_timeout(cmd).await {
                 Ok(out) if out.status.success() => (

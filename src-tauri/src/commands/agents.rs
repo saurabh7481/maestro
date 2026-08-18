@@ -1,6 +1,7 @@
 use crate::agents::one_shot;
 use crate::agents::registry::{self, AgentKind, CliStatus};
 use crate::git;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use crate::state::AppState;
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
@@ -309,9 +310,10 @@ pub async fn list_agent_models(
                 read_binary_override(&conn, kind)?
                     .unwrap_or_else(|| kind.default_binary().to_string())
             };
-            let output = tokio::process::Command::new(&binary_path)
+            let output = tokio::process::Command::new(resolve_executable(&binary_path))
                 .arg("--list-models")
                 .stdin(Stdio::null())
+                .hide_window()
                 .output()
                 .await
                 .map_err(|e| e.to_string())?;
@@ -361,12 +363,14 @@ pub async fn list_agent_models(
             Ok(families.into_values().collect())
         }
         AgentKind::Codex => {
-            let output = tokio::process::Command::new(AgentKind::Codex.default_binary())
-                .args(["debug", "models"])
-                .stdin(Stdio::null())
-                .output()
-                .await
-                .map_err(|e| e.to_string())?;
+            let output =
+                tokio::process::Command::new(resolve_executable(AgentKind::Codex.default_binary()))
+                    .args(["debug", "models"])
+                    .stdin(Stdio::null())
+                    .hide_window()
+                    .output()
+                    .await
+                    .map_err(|e| e.to_string())?;
             let value: serde_json::Value =
                 serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
             let models = value

@@ -49,6 +49,7 @@
 
 use crate::agents::adapter::{PermissionMode, ToolUseCache, TurnCtx, TurnSpawn};
 use crate::agents::events::AgentEvent;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde_json::Value;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -61,7 +62,8 @@ use tokio::process::Command;
 const THINKING_ACCUMULATOR_KEY: &str = "__thinking__";
 
 pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
-    let mut cmd = Command::new(ctx.binary_path);
+    let mut cmd = Command::new(resolve_executable(ctx.binary_path));
+    cmd.hide_window();
     cmd.arg("-p").arg(text);
     cmd.args(["--output-format", "stream-json", "--trust"]);
     if ctx.stream_deltas {

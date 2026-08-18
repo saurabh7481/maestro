@@ -43,6 +43,7 @@ pub mod providers;
 
 use crate::agents::adapter::{PermissionMode, ToolUseCache, TurnCtx, TurnSpawn};
 use crate::agents::events::AgentEvent;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -170,6 +171,7 @@ pub fn ensure_worktree_exclusions(worktree_root: &str) {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--git-path", "info/exclude"])
         .current_dir(worktree_root)
+        .hide_window()
         .output();
     let Ok(output) = output else { return };
     if !output.status.success() {
@@ -230,7 +232,8 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
 
     ensure_worktree_exclusions(ctx.worktree_root);
 
-    let mut cmd = Command::new(ctx.binary_path);
+    let mut cmd = Command::new(resolve_executable(ctx.binary_path));
+    cmd.hide_window();
     cmd.arg("--message").arg(text);
 
     if let Some(model) = ctx.model {

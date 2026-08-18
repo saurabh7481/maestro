@@ -8,12 +8,14 @@
 
 use crate::agents::adapter::{PermissionMode, ToolUseCache, TurnCtx, TurnSpawn};
 use crate::agents::events::AgentEvent;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde_json::Value;
 use std::process::Stdio;
 use tokio::process::Command;
 
 pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
-    let mut cmd = Command::new(ctx.binary_path);
+    let mut cmd = Command::new(resolve_executable(ctx.binary_path));
+    cmd.hide_window();
     cmd.arg("exec").arg("--json");
     if let Some(id) = ctx.resume_session_id {
         cmd.arg("resume").arg(id);

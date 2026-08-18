@@ -1,4 +1,5 @@
 use crate::fs_ops;
+use crate::process_ext::HiddenCommandExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ pub(crate) async fn run_git(dir: &Path, args: &[&str]) -> Result<String, String>
     let output = Command::new("git")
         .args(args)
         .current_dir(dir)
+        .hide_window()
         .output()
         .await
         .map_err(|e| format!("failed to run git: {e}"))?;
@@ -458,6 +460,139 @@ pub async fn unstage_paths(dir: &Path, rel_paths: &[String]) -> Result<(), Strin
 
 pub async fn unstage_all(dir: &Path) -> Result<(), String> {
     run_git(dir, &["restore", "--staged", "."]).await?;
+    Ok(())
+}
+
+/// Same contract as `run_git`, but pipes `stdin` to the child process
+/// rather than relying only on `args` — `git apply` reads its patch from
+/// stdin here (`stage_hunk` below) rather than a temp file, so the patch
+/// text never touches disk.
+async fn run_git_with_stdin(dir: &Path, args: &[&str], stdin: &str) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .hide_window()
+        .spawn()
+        .map_err(|e| format!("failed to run git: {e}"))?;
+
+    child
+        .stdin
+        .take()
+        .expect("stdin was piped")
+        .write_all(stdin.as_bytes())
+        .await
+        .map_err(|e| format!("failed to write git stdin: {e}"))?;
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("failed to run git: {e}"))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Parses a `git diff`'s hunk header (`@@ -oldStart[,oldLines]
+/// +newStart[,newLines] @@ ...`) into the "new" (`+`) side's 1-based,
+/// inclusive `[start, end]` line range — a hunk that only removes lines
+/// (`newLines == 0`) has no real range, but still needs a single
+/// reference line for overlap matching against Monaco's own
+/// `ILineChange`, which uses the same all-zero-length convention.
+fn parse_hunk_new_range(header_line: &str) -> Option<(u32, u32)> {
+    let rest = header_line.strip_prefix("@@ -")?;
+    let plus = rest.find('+')?;
+    let new_part = rest[plus + 1..].split(" @@").next()?;
+    let mut parts = new_part.splitn(2, ',');
+    let start: u32 = parts.next()?.trim().parse().ok()?;
+    let len: u32 = parts
+        .next()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(1);
+    let end = if len == 0 { start } else { start + len - 1 };
+    Some((start, end))
+}
+
+/// Splits a single-file unified diff into its header (`diff --git`/
+/// `index`/`---`/`+++` lines) and each `@@ ...@@`-delimited hunk block,
+/// tagged with the hunk's "new"-side range for `stage_hunk` to match
+/// against.
+fn split_diff_hunks(diff_text: &str) -> (String, Vec<(u32, u32, String)>) {
+    let mut header_lines = Vec::new();
+    let mut hunks: Vec<(u32, u32, String)> = Vec::new();
+    let mut current: Option<(u32, u32, Vec<&str>)> = None;
+    let mut in_header = true;
+
+    for line in diff_text.lines() {
+        if line.starts_with("@@ ") {
+            if let Some((start, end, body)) = current.take() {
+                hunks.push((start, end, format!("{}\n", body.join("\n"))));
+            }
+            in_header = false;
+            if let Some((start, end)) = parse_hunk_new_range(line) {
+                current = Some((start, end, vec![line]));
+            }
+            continue;
+        }
+        if in_header {
+            header_lines.push(line);
+        } else if let Some((_, _, body)) = current.as_mut() {
+            body.push(line);
+        }
+    }
+    if let Some((start, end, body)) = current.take() {
+        hunks.push((start, end, format!("{}\n", body.join("\n"))));
+    }
+    (format!("{}\n", header_lines.join("\n")), hunks)
+}
+
+/// Stages (or unstages) exactly one hunk of `rel_path`'s current diff —
+/// the backend half of `MonacoDiffHost`'s per-hunk Stage/Unstage button.
+/// `new_start`/`new_end` identify the hunk by its "new"-side line range,
+/// as reported by Monaco's own `getLineChanges()` for whichever hunk the
+/// cursor is in; the two sides agree on this numbering because the diff
+/// editor's two models *are* exactly the two sides `git diff`(`--cached`)
+/// itself would compare (see `diff_unstaged`/`diff_staged` above).
+///
+/// Recomputes the diff fresh on every call rather than trusting a hunk
+/// index the frontend cached earlier — the small race against a
+/// concurrent edit is the same one any hunk-staging UI (`git add -p`
+/// included) accepts, and re-deriving from the range is what makes a
+/// stale index harmless instead of silently staging the wrong hunk.
+pub async fn stage_hunk(
+    dir: &Path,
+    rel_path: &str,
+    unstage: bool,
+    new_start: u32,
+    new_end: u32,
+) -> Result<(), String> {
+    let diff_args: &[&str] = if unstage {
+        &["diff", "--unified=3", "--cached", "--", rel_path]
+    } else {
+        &["diff", "--unified=3", "--", rel_path]
+    };
+    let diff_text = run_git(dir, diff_args).await?;
+    let (header, hunks) = split_diff_hunks(&diff_text);
+
+    let target = hunks
+        .iter()
+        .find(|(start, end, _)| *start <= new_end && *end >= new_start)
+        .ok_or_else(|| "That change no longer matches the current diff — try again.".to_string())?;
+
+    let patch = format!("{header}{}", target.2);
+    let apply_args: &[&str] = if unstage {
+        &["apply", "--cached", "--reverse", "-"]
+    } else {
+        &["apply", "--cached", "-"]
+    };
+    run_git_with_stdin(dir, apply_args, &patch).await?;
     Ok(())
 }
 
@@ -1003,6 +1138,76 @@ pub async fn commit_files(dir: &Path, hash: &str) -> Result<Vec<(String, StatusK
     parse_name_status(&out)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlameLine {
+    /// 1-based, matching Monaco's own line numbering.
+    pub line: u32,
+    /// All-zero for a working-tree line with no commit yet (git's own
+    /// convention — `author` reads "Not Committed Yet" for these).
+    pub hash: String,
+    pub author: String,
+    /// Unix seconds (`author-time`, as git reports it) — left as a raw
+    /// epoch rather than formatted here since the frontend already has
+    /// its own relative-time formatter (`design/relativeTime.ts`) that
+    /// every other commit timestamp in the app goes through.
+    pub author_time: i64,
+    pub summary: String,
+}
+
+fn is_commit_hash(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Blames the file as it currently sits in the working tree (uncommitted
+/// edits included, reported against the special all-zero hash) via
+/// `--line-porcelain` — verbose (full commit metadata repeated for every
+/// single line rather than once per contiguous run) but trivial to parse
+/// correctly, and this only runs once per file open/save rather than per
+/// keystroke, so the extra output size isn't a real cost.
+pub async fn blame(dir: &Path, rel_path: &str) -> Result<Vec<BlameLine>, String> {
+    let out = run_git(dir, &["blame", "--line-porcelain", "--", rel_path]).await?;
+
+    let mut result = Vec::new();
+    let mut hash = String::new();
+    let mut final_line: u32 = 0;
+    let mut author = String::new();
+    let mut author_time: i64 = 0;
+    let mut summary = String::new();
+
+    for line in out.lines() {
+        if let Some((maybe_hash, rest)) = line.split_once(' ') {
+            if is_commit_hash(maybe_hash) {
+                // "<hash> <orig-line> <final-line>[ <group-size>]"
+                if let Some(final_str) = rest.trim_start().split_whitespace().nth(1) {
+                    if let Ok(fl) = final_str.parse::<u32>() {
+                        hash = maybe_hash.to_string();
+                        final_line = fl;
+                    }
+                }
+                continue;
+            }
+        }
+        if let Some(v) = line.strip_prefix("author ") {
+            author = v.to_string();
+        } else if let Some(v) = line.strip_prefix("author-time ") {
+            author_time = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = line.strip_prefix("summary ") {
+            summary = v.to_string();
+        } else if line.starts_with('\t') {
+            result.push(BlameLine {
+                line: final_line,
+                hash: hash.clone(),
+                author: author.clone(),
+                author_time,
+                summary: summary.clone(),
+            });
+        }
+    }
+
+    Ok(result)
+}
+
 fn parse_name_status(out: &str) -> Result<Vec<(String, StatusKind)>, String> {
     let mut files = Vec::new();
     for line in out.lines() {
@@ -1464,6 +1669,71 @@ mod tests {
         run_git(dir.path(), &["init", "-b", "main"]).await.unwrap();
         let commits = log(dir.path(), 10, 0).await.unwrap();
         assert!(commits.is_empty());
+    }
+
+    /// Two far-apart edits in the same file, so `--unified=3` reports them
+    /// as two separate hunks rather than merging them into one.
+    async fn write_two_hunk_file(dir: &Path) {
+        let lines: Vec<String> = (1..=20).map(|n| format!("line{n}")).collect();
+        std::fs::write(dir.join("multi.txt"), lines.join("\n") + "\n").unwrap();
+        run_git(dir, &["add", "multi.txt"]).await.unwrap();
+        run_git(dir, &["commit", "-m", "add multi.txt"])
+            .await
+            .unwrap();
+
+        let mut edited = lines;
+        edited[1] = "line2-changed".to_string(); // hunk near line 2
+        edited[17] = "line18-changed".to_string(); // hunk near line 18
+        std::fs::write(dir.join("multi.txt"), edited.join("\n") + "\n").unwrap();
+    }
+
+    #[tokio::test]
+    async fn stages_a_single_hunk_leaving_the_other_unstaged() {
+        let dir = init_repo().await;
+        write_two_hunk_file(dir.path()).await;
+
+        // The range only overlaps the hunk touching line 18.
+        stage_hunk(dir.path(), "multi.txt", false, 18, 18)
+            .await
+            .unwrap();
+
+        let staged = run_git(dir.path(), &["diff", "--cached", "--", "multi.txt"])
+            .await
+            .unwrap();
+        assert!(staged.contains("+line18-changed"));
+        assert!(!staged.contains("line2-changed"));
+
+        let unstaged = run_git(dir.path(), &["diff", "--", "multi.txt"])
+            .await
+            .unwrap();
+        assert!(unstaged.contains("+line2-changed"));
+        assert!(!unstaged.contains("line18-changed"));
+    }
+
+    #[tokio::test]
+    async fn unstages_a_single_hunk_leaving_the_other_staged() {
+        let dir = init_repo().await;
+        write_two_hunk_file(dir.path()).await;
+        stage_paths(dir.path(), &["multi.txt".to_string()])
+            .await
+            .unwrap();
+
+        // The range only overlaps the hunk touching line 2.
+        stage_hunk(dir.path(), "multi.txt", true, 2, 2)
+            .await
+            .unwrap();
+
+        let staged = run_git(dir.path(), &["diff", "--cached", "--", "multi.txt"])
+            .await
+            .unwrap();
+        assert!(staged.contains("+line18-changed"));
+        assert!(!staged.contains("line2-changed"));
+
+        let unstaged = run_git(dir.path(), &["diff", "--", "multi.txt"])
+            .await
+            .unwrap();
+        assert!(unstaged.contains("+line2-changed"));
+        assert!(!unstaged.contains("line18-changed"));
     }
 
     #[test]

@@ -7,6 +7,7 @@
 //! agents' *simplest* code path, proven now rather than deferred.
 
 use crate::agents::registry::AgentKind;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde_json::Value;
 use std::process::Stdio;
 use std::time::Duration;
@@ -15,7 +16,8 @@ use tokio::process::Command;
 const ONE_SHOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
-    let mut command = Command::new(binary_path);
+    let mut command = Command::new(resolve_executable(binary_path));
+    command.hide_window();
     match kind {
         AgentKind::ClaudeCode => {
             // `--tools ""` disables all tools outright — this call only

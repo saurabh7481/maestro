@@ -5,6 +5,7 @@ mod fs_ops;
 mod git;
 mod lsp;
 mod models;
+mod process_ext;
 mod processes;
 mod search;
 mod state;

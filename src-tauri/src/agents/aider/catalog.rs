@@ -15,6 +15,7 @@
 
 use crate::agents::aider::providers::{AiderProvider, Catalog, LocalShape};
 use crate::commands::agents::ModelOption;
+use crate::process_ext::{resolve_executable, HiddenCommandExt};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -181,9 +182,10 @@ async fn fetch_local(
 /// from, which is a startling thing for a settings pane to do. Confirmed
 /// against aider 0.86.2.
 async fn fetch_litellm(binary_path: &str, prefix: &str) -> Result<Vec<ModelOption>, String> {
-    let output = tokio::process::Command::new(binary_path)
+    let output = tokio::process::Command::new(resolve_executable(binary_path))
         .args(["--no-git", "--list-models", prefix])
         .stdin(std::process::Stdio::null())
+        .hide_window()
         .output()
         .await
         .map_err(|e| format!("Couldn't run {binary_path}: {e}"))?;
