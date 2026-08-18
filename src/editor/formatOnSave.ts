@@ -126,11 +126,7 @@ async function formatWithPrettier(model: monaco.editor.ITextModel): Promise<void
     return;
   }
   if (formatted === current) return;
-  model.pushEditOperations(
-    [],
-    [{ range: model.getFullModelRange(), text: formatted }],
-    () => null,
-  );
+  model.pushEditOperations([], [{ range: model.getFullModelRange(), text: formatted }], () => null);
 }
 
 /** Reformats `model` in place before a save: the active LSP's formatter

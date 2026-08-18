@@ -77,11 +77,7 @@ export function EditorBreadcrumb({
       {symbolPath.map((symbol) => (
         <Fragment key={`${symbol.name}:${symbol.range.startLineNumber}`}>
           <CaretRight size={10} className={styles.separator} />
-          <button
-            type="button"
-            className={styles.segment}
-            onClick={() => onRevealSymbol(symbol)}
-          >
+          <button type="button" className={styles.segment} onClick={() => onRevealSymbol(symbol)}>
             {symbol.name}
           </button>
         </Fragment>

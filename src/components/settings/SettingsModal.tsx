@@ -87,15 +87,11 @@ function GeneralPane() {
         <div className={styles.presetText}>
           <div className={styles.presetTitle}>Word wrap</div>
           <div className={styles.presetDescription}>
-            Wrap long lines to the editor's width instead of scrolling horizontally. Always off
-            for large files regardless of this setting.
+            Wrap long lines to the editor's width instead of scrolling horizontally. Always off for
+            large files regardless of this setting.
           </div>
         </div>
-        <Switch
-          label="Word wrap"
-          checked={wordWrapEnabled}
-          onCheckedChange={setWordWrapEnabled}
-        />
+        <Switch label="Word wrap" checked={wordWrapEnabled} onCheckedChange={setWordWrapEnabled} />
       </div>
       <div className={styles.presetRow}>
         <UserFocus size={18} color="var(--accent-2)" />
@@ -116,8 +112,8 @@ function GeneralPane() {
         <div className={styles.presetText}>
           <div className={styles.presetTitle}>Minimap</div>
           <div className={styles.presetDescription}>
-            Show a zoomed-out map of the file alongside the editor. Off by default — its painting
-            is disproportionately expensive on Linux/WebKitGTK.
+            Show a zoomed-out map of the file alongside the editor. Off by default — its painting is
+            disproportionately expensive on Linux/WebKitGTK.
           </div>
         </div>
         <Switch label="Minimap" checked={minimapEnabled} onCheckedChange={setMinimapEnabled} />

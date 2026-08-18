@@ -140,7 +140,9 @@ export function DiffView({ tab }: { tab: Tab }) {
                   {navState.count} {navState.count === 1 ? "change" : "changes"}
                 </span>
               )}
-              <Tooltip label={diffSideBySide ? "Switch to inline view" : "Switch to side-by-side view"}>
+              <Tooltip
+                label={diffSideBySide ? "Switch to inline view" : "Switch to side-by-side view"}
+              >
                 <IconButton
                   icon={diffSideBySide ? Columns : Rows}
                   label={diffSideBySide ? "Switch to inline view" : "Switch to side-by-side view"}

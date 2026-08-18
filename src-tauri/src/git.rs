@@ -1179,7 +1179,7 @@ pub async fn blame(dir: &Path, rel_path: &str) -> Result<Vec<BlameLine>, String>
         if let Some((maybe_hash, rest)) = line.split_once(' ') {
             if is_commit_hash(maybe_hash) {
                 // "<hash> <orig-line> <final-line>[ <group-size>]"
-                if let Some(final_str) = rest.trim_start().split_whitespace().nth(1) {
+                if let Some(final_str) = rest.split_whitespace().nth(1) {
                     if let Ok(fl) = final_str.parse::<u32>() {
                         hash = maybe_hash.to_string();
                         final_line = fl;

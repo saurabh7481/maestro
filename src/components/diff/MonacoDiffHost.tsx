@@ -77,7 +77,10 @@ function lineCount(start: number, end: number): number {
  * reports the live added/removed counts for the header instead of DiffView
  * re-deriving them from another `getDiff()` round-trip. */
 export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostProps>(
-  function MonacoDiffHost({ relPath, oldText, newText, worktreeRoot, mode, onNavStateChange }, ref) {
+  function MonacoDiffHost(
+    { relPath, oldText, newText, worktreeRoot, mode, onNavStateChange },
+    ref,
+  ) {
     const readOnly = mode !== "unstaged";
     const containerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);

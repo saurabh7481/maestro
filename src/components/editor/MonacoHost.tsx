@@ -344,6 +344,13 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     if (!isTarget || !activeTab?.filePath || !activeTab.worktreeRoot || !modelWorktreeId) {
       editor.setModel(null);
       loadedTabIdRef.current = null;
+      // Resetting the breadcrumb/status-bar state that goes with the
+      // now-detached model — not "external system" synchronization, just
+      // local UI state whose lifetime is tied to `isTarget`/`activeTab`
+      // flipping away from this pane, so the extra render this causes is
+      // the correct, intended outcome rather than the cascading-render
+      // footgun the rule is guarding against.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSymbols([]);
       setCursorPosition(null);
       blameByLine.current = new Map();
