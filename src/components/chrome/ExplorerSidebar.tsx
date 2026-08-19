@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -95,6 +103,16 @@ function FileRow({ entry, kind, active, onOpen, onStage, onUnstage, onDiscard }:
     kind.kind === "renamed" || kind.kind === "copied"
       ? `${splitPath(entry.oldPath ?? entry.path).name} → ${name}`
       : name;
+  // `.rowAction` buttons are hover-revealed via `opacity`, not conditional
+  // rendering, so they're always in the layout — but sizing `.trailing`
+  // from their own geometry means its width depends on those buttons
+  // being measured correctly while invisible, which WebKitGTK doesn't
+  // reliably do (same repaint-on-opacity-change class of bug `.row`'s
+  // `will-change` comment documents). Pinning an explicit min-width here,
+  // computed from the actual action count rather than the buttons'
+  // rendered geometry, keeps every row's status glyph in the same column
+  // regardless of hover state or which row is currently hovered.
+  const actionCount = [onStage, onUnstage, onDiscard].filter(Boolean).length;
 
   return (
     <ScmContextMenu path={entry.path} onStage={onStage} onUnstage={onUnstage} onDiscard={onDiscard}>
@@ -105,7 +123,10 @@ function FileRow({ entry, kind, active, onOpen, onStage, onUnstage, onDiscard }:
           </span>
           <span className={styles.fileName}>{label}</span>
           {dir && <span className={styles.filePath}>{dir}</span>}
-          <span className={styles.trailing}>
+          <span
+            className={styles.trailing}
+            style={{ "--trailing-actions": actionCount } as CSSProperties}
+          >
             {onStage && (
               <IconButton
                 icon={Plus}
