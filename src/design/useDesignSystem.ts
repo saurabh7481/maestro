@@ -23,6 +23,12 @@ export function useDesignSystem(): void {
   const diffSideBySide = useUiStore((s) => s.diffSideBySide);
   const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
+  const terminalFontSize = useUiStore((s) => s.terminalFontSize);
+  const terminalFontFamily = useUiStore((s) => s.terminalFontFamily);
+  const terminalLineHeight = useUiStore((s) => s.terminalLineHeight);
+  const terminalCursorStyle = useUiStore((s) => s.terminalCursorStyle);
+  const terminalCursorBlink = useUiStore((s) => s.terminalCursorBlink);
+  const terminalScrollback = useUiStore((s) => s.terminalScrollback);
   const hydrate = useUiStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -73,6 +79,12 @@ export function useDesignSystem(): void {
       diffSideBySide,
       formatOnSaveEnabled,
       gitBlameEnabled,
+      terminalFontSize,
+      terminalFontFamily,
+      terminalLineHeight,
+      terminalCursorStyle,
+      terminalCursorBlink,
+      terminalScrollback,
     });
   }, [
     theme,
@@ -85,6 +97,12 @@ export function useDesignSystem(): void {
     diffSideBySide,
     formatOnSaveEnabled,
     gitBlameEnabled,
+    terminalFontSize,
+    terminalFontFamily,
+    terminalLineHeight,
+    terminalCursorStyle,
+    terminalCursorBlink,
+    terminalScrollback,
   ]);
 
   useEffect(() => {

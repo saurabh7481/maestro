@@ -7,6 +7,8 @@ import { terminalApi } from "../../api/terminal";
 import { replayTerminalBuffer, useTerminalSessionStore } from "../../state/terminalSessionStore";
 import type { Tab } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
+import { useUiStore } from "../../state/uiStore";
+import { buildTerminalFontFamily } from "../../design/terminalPrefs";
 import styles from "./TerminalTab.module.css";
 
 // Mirrors the "maestro" theme's tokens (`design/themes.ts`) rather than
@@ -38,26 +40,6 @@ const THEME = {
   brightWhite: "#e7ebf2",
 };
 
-// A concrete font stack, not `var(--font-mono)` — xterm.js measures glyphs
-// and sets the canvas 2D context's `font` property directly with this
-// string, which (unlike a stylesheet) never resolves CSS custom
-// properties. Passing the CSS var literally left the terminal silently
-// falling back to the browser/OS's generic monospace font instead of the
-// JetBrains Mono the rest of the app renders with — the single biggest
-// reason it read as visually inconsistent. Mirrors MonacoHost.tsx's
-// `MONACO_FONT_FAMILY`, which sidesteps the same canvas-rendering gap.
-const TERMINAL_FONT_FAMILY =
-  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-
-/** xterm.js's own scrollback, in lines. Each retained line costs roughly
- * `columns × 4` bytes in its cell buffer, so the old 8000 was on the order
- * of 6 MB per open terminal at a typical width — and terminals now stay
- * mounted for as long as they're open (`TabHost.tsx`), so that is resident
- * RAM per tab, not per visible tab. 2000 lines is still well past what
- * anyone scrolls back through by hand and cuts that by ~75%.
- * See docs/PERFORMANCE_AUDIT.md §1.1. */
-const SCROLLBACK_LINES = 2000;
-
 /** Real PTY terminal tab (docs/ROADMAP.md Phase 7) — the backend process
  * lives in `AppState.terminals`, independent of this component's mount
  * state, so a rebuilt tab reconnects to the same running shell rather than
@@ -75,24 +57,39 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
   const worktreeRoot = tab.worktreeRoot;
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const refitRef = useRef<(() => void) | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+
+  const fontSize = useUiStore((s) => s.terminalFontSize);
+  const fontFamily = useUiStore((s) => s.terminalFontFamily);
+  const lineHeight = useUiStore((s) => s.terminalLineHeight);
+  const cursorStyle = useUiStore((s) => s.terminalCursorStyle);
+  const cursorBlink = useUiStore((s) => s.terminalCursorBlink);
+  const scrollback = useUiStore((s) => s.terminalScrollback);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !worktreeRoot) return;
 
+    // Reads the store directly (not the reactive values above) so a
+    // settings change while this terminal is already open doesn't retrigger
+    // this effect and rebuild it — that would kill and respawn the shell.
+    // The live-update effect further down keeps an already-open terminal in
+    // sync via `term.options` instead.
+    const prefs = useUiStore.getState();
     const term = new Terminal({
-      fontFamily: TERMINAL_FONT_FAMILY,
-      fontSize: 13,
+      fontFamily: buildTerminalFontFamily(prefs.terminalFontFamily),
+      fontSize: prefs.terminalFontSize,
       fontWeight: "500",
       fontWeightBold: "700",
-      lineHeight: 1.35,
+      lineHeight: prefs.terminalLineHeight,
       letterSpacing: 0,
       theme: THEME,
-      cursorBlink: true,
-      cursorStyle: "block",
-      scrollback: SCROLLBACK_LINES,
+      cursorBlink: prefs.terminalCursorBlink,
+      cursorStyle: prefs.terminalCursorStyle,
+      scrollback: prefs.terminalScrollback,
       allowProposedApi: true,
     });
+    termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
@@ -157,6 +154,7 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
 
     return () => {
       refitRef.current = null;
+      termRef.current = null;
       if (frame != null) cancelAnimationFrame(frame);
       onData.dispose();
       resizeObserver.disconnect();
@@ -166,6 +164,24 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
     // retriggers this — and the `started` guard above would stop a re-run
     // from spawning a second shell or replaying the command anyway.
   }, [tab.id, worktreeRoot, tab.initialCommand]);
+
+  // Keeps an already-open terminal's appearance in sync with Settings →
+  // Terminal — xterm.js accepts option updates after construction
+  // (`term.options.fontSize = …`), so this doesn't need to tear the shell
+  // down and reconnect. `fontSize`/`lineHeight` change the cell grid, so a
+  // refit (and, if the row/col count actually changed, a PTY resize) has to
+  // follow.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontFamily = buildTerminalFontFamily(fontFamily);
+    term.options.fontSize = fontSize;
+    term.options.lineHeight = lineHeight;
+    term.options.cursorStyle = cursorStyle;
+    term.options.cursorBlink = cursorBlink;
+    term.options.scrollback = scrollback;
+    refitRef.current?.();
+  }, [fontSize, fontFamily, lineHeight, cursorStyle, cursorBlink, scrollback]);
 
   // Coming back from `display: none` restores a non-zero size, which the
   // ResizeObserver above does report — but the window may also have been

@@ -12,6 +12,7 @@ import {
   Palette,
   Sliders,
   Sparkle,
+  TerminalWindow,
   TextAlignLeft,
   UserFocus,
   Code,
@@ -27,13 +28,22 @@ import { HooksPane } from "./HooksPane";
 import { AgentsPane } from "./AgentsPane";
 import { KeybindingsPane } from "./KeybindingsPane";
 import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
+import { TerminalPane } from "./TerminalPane";
 import styles from "./SettingsModal.module.css";
 
-type Section = "general" | "appearance" | "agents" | "language" | "hooks" | "keybindings";
+type Section =
+  | "general"
+  | "appearance"
+  | "terminal"
+  | "agents"
+  | "language"
+  | "hooks"
+  | "keybindings";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "general", label: "General", icon: Sliders },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "terminal", label: "Terminal", icon: TerminalWindow },
   { id: "agents", label: "Agents & CLI", icon: Sparkle },
   { id: "language", label: "Language Intelligence", icon: Code },
   { id: "hooks", label: "Worktree Hooks", icon: GitBranch },
@@ -243,6 +253,7 @@ export function SettingsModal() {
         <div className={styles.paneBody}>
           {section === "general" && <GeneralPane />}
           {section === "appearance" && <AppearancePane />}
+          {section === "terminal" && <TerminalPane />}
           {section === "hooks" && <HooksPane scope={{ kind: "global" }} />}
           {section === "agents" && <AgentsPane />}
           {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}

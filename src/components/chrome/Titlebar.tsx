@@ -11,8 +11,8 @@ import {
   Square,
   X,
 } from "@phosphor-icons/react";
-import clsx from "clsx";
 import { useUiStore } from "../../state/uiStore";
+import maestroLogo from "../../assets/maestro-logo.png";
 import {
   useActiveProject,
   useActiveWorktree,
@@ -166,7 +166,7 @@ export function Titlebar() {
     <div className={styles.titlebar} data-tauri-drag-region>
       <div className={styles.left}>
         <div className={styles.brand}>
-          <div className={clsx(styles.mark, "mo-gradient-mark", "mo-glow-accent")} />
+          <img className={styles.mark} src={maestroLogo} alt="" />
           <span className={styles.brandName}>Maestro</span>
         </div>
 

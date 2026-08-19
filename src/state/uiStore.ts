@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import type { ThemeId } from "../design/themes";
 import { ZOOM_DEFAULT } from "../design/zoom";
+import {
+  TERMINAL_CURSOR_STYLE_DEFAULT,
+  TERMINAL_FONT_FAMILY_DEFAULT,
+  TERMINAL_FONT_SIZE_DEFAULT,
+  TERMINAL_LINE_HEIGHT_DEFAULT,
+  TERMINAL_SCROLLBACK_DEFAULT,
+  type TerminalCursorStyle,
+} from "../design/terminalPrefs";
 
 export type SidebarView = "explorer" | "scm" | "history" | "search" | "problems";
 
@@ -61,6 +69,15 @@ interface UiState {
    * there's no correctness risk in defaulting it on the way there is for
    * `formatOnSaveEnabled`. See Settings → General. */
   gitBlameEnabled: boolean;
+  /** Terminal appearance/behavior — Settings → Terminal. Applied to every
+   * open `TerminalTab` live (xterm.js's `term.options` accepts updates
+   * after construction), not just to terminals opened afterward. */
+  terminalFontSize: number;
+  terminalFontFamily: string;
+  terminalLineHeight: number;
+  terminalCursorStyle: TerminalCursorStyle;
+  terminalCursorBlink: boolean;
+  terminalScrollback: number;
 
   setTheme: (theme: ThemeId) => void;
   setZoom: (zoom: number) => void;
@@ -81,6 +98,12 @@ interface UiState {
   setDiffSideBySide: (enabled: boolean) => void;
   setFormatOnSaveEnabled: (enabled: boolean) => void;
   setGitBlameEnabled: (enabled: boolean) => void;
+  setTerminalFontSize: (size: number) => void;
+  setTerminalFontFamily: (family: string) => void;
+  setTerminalLineHeight: (lineHeight: number) => void;
+  setTerminalCursorStyle: (style: TerminalCursorStyle) => void;
+  setTerminalCursorBlink: (enabled: boolean) => void;
+  setTerminalScrollback: (lines: number) => void;
   hydrate: (
     partial: Partial<
       Pick<
@@ -95,6 +118,12 @@ interface UiState {
         | "diffSideBySide"
         | "formatOnSaveEnabled"
         | "gitBlameEnabled"
+        | "terminalFontSize"
+        | "terminalFontFamily"
+        | "terminalLineHeight"
+        | "terminalCursorStyle"
+        | "terminalCursorBlink"
+        | "terminalScrollback"
       >
     >,
   ) => void;
@@ -118,6 +147,12 @@ export const useUiStore = create<UiState>((set) => ({
   diffSideBySide: true,
   formatOnSaveEnabled: false,
   gitBlameEnabled: true,
+  terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  terminalFontFamily: TERMINAL_FONT_FAMILY_DEFAULT,
+  terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
+  terminalCursorStyle: TERMINAL_CURSOR_STYLE_DEFAULT,
+  terminalCursorBlink: true,
+  terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
 
   setTheme: (theme) => set({ theme }),
   setZoom: (zoom) => set({ zoom }),
@@ -154,5 +189,11 @@ export const useUiStore = create<UiState>((set) => ({
   setDiffSideBySide: (diffSideBySide) => set({ diffSideBySide }),
   setFormatOnSaveEnabled: (formatOnSaveEnabled) => set({ formatOnSaveEnabled }),
   setGitBlameEnabled: (gitBlameEnabled) => set({ gitBlameEnabled }),
+  setTerminalFontSize: (terminalFontSize) => set({ terminalFontSize }),
+  setTerminalFontFamily: (terminalFontFamily) => set({ terminalFontFamily }),
+  setTerminalLineHeight: (terminalLineHeight) => set({ terminalLineHeight }),
+  setTerminalCursorStyle: (terminalCursorStyle) => set({ terminalCursorStyle }),
+  setTerminalCursorBlink: (terminalCursorBlink) => set({ terminalCursorBlink }),
+  setTerminalScrollback: (terminalScrollback) => set({ terminalScrollback }),
   hydrate: (partial) => set(partial),
 }));
