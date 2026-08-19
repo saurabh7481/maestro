@@ -453,7 +453,7 @@ pub async fn list_agent_models(
     }
 }
 
-const COMMIT_MESSAGE_PROMPT_PREFIX: &str = "Write a git commit message for the following staged changes.\n\nRules:\n- First line: a concise imperative summary, at most 72 characters, no trailing period.\n- If the change needs more explanation than the summary allows, add a blank line then a short body written as bullet points describing what changed and, where it isn't obvious from the diff alone, why.\n- Base the message on the actual files and code touched below — name the specific component, function, or behavior that changed rather than a generic description like \"update files\" or \"fix bug\".\n- Follow Conventional Commits style (e.g. `feat:`, `fix:`, `refactor:`) only if the existing commit history already uses it; otherwise plain style.\n- Reply with ONLY the commit message text — no commentary, no code fences, no quotes around it.\n\nFiles changed (from `git diff --staged --stat`):\n";
+const COMMIT_MESSAGE_PROMPT_PREFIX: &str = "Write a git commit message for the following staged changes.\n\nRules:\n- First line: a concise imperative summary, at most 72 characters, no trailing period.\n- If the change needs more explanation than the summary allows, add a blank line then a short body written as bullet points describing what changed and, where it isn't obvious from the diff alone, why.\n- Base the message on the actual files and code touched below — name the specific component, function, or behavior that changed rather than a generic description like \"update files\" or \"fix bug\".\n- Match the style (Conventional Commits or plain) of the recent commit messages listed below — don't go looking for more history than what's given here.\n- Do not run any commands or use any tools. Everything you need is already provided below; just answer directly.\n- Reply with ONLY the commit message text itself — no commentary on what you're doing or checking, no code fences, no quotes around it.\n\n";
 
 /// The concrete cross-feature use case that motivated centralizing agent
 /// availability: draft a commit message from the *already-staged* diff.
@@ -476,6 +476,27 @@ pub async fn generate_commit_message(
         .await
         .unwrap_or_default();
 
+    // Handed to the model directly so it never needs to go check history
+    // itself — that self-directed check is exactly what was leaking as
+    // narration ("Checking recent commit history for style...") into the
+    // final message text despite the "no commentary" rule above.
+    let recent_subjects: Vec<String> = git::log(&worktree_path, 5, 0)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| c.message)
+        .collect();
+    let recent_history = if recent_subjects.is_empty() {
+        "Recent commit messages: none (this is the first commit) — use plain style.\n".to_string()
+    } else {
+        let list = recent_subjects
+            .iter()
+            .map(|s| format!("- {s}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("Recent commit messages (for style reference only):\n{list}\n")
+    };
+
     let binary_path = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         read_binary_override(&conn, kind)?.unwrap_or_else(|| kind.default_binary().to_string())
@@ -492,7 +513,9 @@ pub async fn generate_commit_message(
         None => diff,
     };
 
-    let prompt = format!("{COMMIT_MESSAGE_PROMPT_PREFIX}{stat}\n\nFull diff:\n{truncated}");
+    let prompt = format!(
+        "{COMMIT_MESSAGE_PROMPT_PREFIX}{recent_history}\nFiles changed (from `git diff --staged --stat`):\n{stat}\n\nFull diff:\n{truncated}"
+    );
     let message = one_shot::run_one_shot(kind, &binary_path, &prompt, &worktree_root).await?;
     Ok(message.trim().to_string())
 }
