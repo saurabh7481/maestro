@@ -36,8 +36,8 @@ pub type ToolUseCache = HashMap<String, (String, Value)>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PermissionMode {
-    #[default]
     Manual,
+    #[default]
     Auto,
     Plan,
 }
