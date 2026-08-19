@@ -48,10 +48,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `apt-get update` — these are long-standing Ubuntu 22.04 packages
+      # that resolve fine against the index already baked into the runner
+      # image, and skipping it avoids depending on GitHub's regional apt
+      # mirror (live-observed hanging silently for 18+ minutes on a bad
+      # mirror with no timeout to catch it). `Acquire::Retries`/`Timeout`
+      # on `install` itself is a backstop for the same class of flakiness
+      # on the package-file fetch, which still hits the network.
       - name: Install Linux Tauri build dependencies
         run: |
-          sudo apt-get update
           sudo apt-get install -y \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=15 \
+            -o Acquire::https::Timeout=15 \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
