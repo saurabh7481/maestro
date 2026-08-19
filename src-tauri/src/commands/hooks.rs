@@ -174,11 +174,27 @@ pub async fn set_global_hook_config(
 fn build_hook_script(config: &HookConfig) -> String {
     let mut parts = Vec::new();
     if config.copy_env_files {
-        // `cp` is silent on success and stderr is suppressed on purpose
-        // (no .env files to copy isn't a failure) — echo either way so the
-        // streamed output panel shows what happened instead of nothing.
+        // Recursively mirrors every `.env*` file from $SOURCE_WORKTREE into
+        // the same relative path under $NEW_WORKTREE — not just the repo
+        // root — so monorepos with per-package env files (e.g.
+        // `apps/web/.env.local`) get them too. `find` output is captured
+        // once via command substitution (rather than piped straight into
+        // `while read`) so the "found none" branch doesn't need a second
+        // `find` pass and doesn't lose state to the pipe subshell. Prune
+        // list mirrors IGNORED_DIR_SEGMENTS in watcher.rs/fs_ops.rs.
         parts.push(
-            r#"if cp "$SOURCE_WORKTREE"/.env* "$NEW_WORKTREE"/ 2>/dev/null; then echo "Copied .env files from $SOURCE_WORKTREE"; else echo "No .env files found in $SOURCE_WORKTREE"; fi"#
+            r#"env_files=$(find "$SOURCE_WORKTREE" \( -name .git -o -name node_modules -o -name target -o -name dist -o -name build -o -name .next -o -name coverage \) -prune -o -type f -name '.env*' -print 2>/dev/null)
+if [ -z "$env_files" ]; then
+  echo "No .env files found in $SOURCE_WORKTREE"
+else
+  echo "$env_files" | while IFS= read -r env_file; do
+    rel_path=${env_file#"$SOURCE_WORKTREE"/}
+    dest_path="$NEW_WORKTREE/$rel_path"
+    mkdir -p "$(dirname "$dest_path")"
+    cp "$env_file" "$dest_path"
+  done
+  echo "Copied .env files from $SOURCE_WORKTREE"
+fi"#
                 .to_string(),
         );
     }
