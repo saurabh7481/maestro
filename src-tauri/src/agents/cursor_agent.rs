@@ -75,6 +75,18 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     if let Some(id) = ctx.resume_session_id {
         cmd.arg("--resume").arg(id);
     }
+    // Without this, a *fresh* (non-`--resume`d) invocation still has full
+    // shell/grep/glob tool access and — live-verified — will happily grep
+    // `~/.cursor/projects/<hash>/agent-transcripts/` and surface another
+    // tab's unrelated conversation content into this one, since every
+    // cursor-agent invocation against the same worktree writes its
+    // transcript under the same project hash. `--sandbox enabled` confines
+    // filesystem tool access to the workspace root, which stops that
+    // cross-tab leak while leaving normal in-worktree read/write/shell/
+    // network tool use unaffected (also live-verified). Unrelated to
+    // `capabilities.rs`'s note that this flag doesn't gate approvals —
+    // that's about permission prompting, this is about session isolation.
+    cmd.arg("--sandbox").arg("enabled");
     if let Some(model) = ctx.model {
         cmd.arg("--model").arg(model);
     }
@@ -283,6 +295,16 @@ pub fn parse_line(
             (Vec::new(), session_id)
         }
         "user" => (Vec::new(), None), // echo of what we sent — already shown locally
+        // A `request`/`response` pair the CLI uses to ask permission for
+        // things outside the `tool_call` protocol (live-captured case:
+        // `webSearchRequestQuery`/`webSearchRequestResponse`). Maestro runs
+        // this CLI fully headless (`stdin: Stdio::null()` in `build_turn`),
+        // so there is no channel to answer these interactively — the CLI
+        // resolves them on its own (observed: silently auto-rejected) and
+        // moves on regardless of what Maestro does here. Surfacing that as
+        // an "Unrecognized event" card reads as a crash; dropping it is
+        // honest, since Maestro genuinely has no action to offer for it.
+        "interaction_query" => (Vec::new(), None),
         "thinking" => match subtype {
             "delta" => {
                 let delta = value.get("text").and_then(|t| t.as_str()).unwrap_or("");

@@ -654,7 +654,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const capabilities = useAgentCapabilities(kind);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const permissionMode: PermissionMode = tabState?.permissionMode ?? "manual";
+  const permissionMode: PermissionMode = tabState?.permissionMode ?? "auto";
   const working = tabState?.status === "working";
   // The turn is over and the process is gone — the run is just holding for
   // an Approve/Deny. The composer stays usable so the user can redirect the
@@ -810,9 +810,15 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   /** Accepts the plan: leaves read-only mode and tells the agent to carry
    * it out. Lands in Manual rather than Auto deliberately — approving a
    * *plan* is not the same as approving every action it will take, and
-   * Manual is the mode that still asks (where the CLI can). */
+   * Manual is the mode that still asks (where the CLI can). Falls back to
+   * Auto for a CLI where Manual can't ask anything anyway (`externalConfig`
+   * — see `PermissionModePicker`), since landing in a mode the picker
+   * doesn't even offer would strand the tab there with no way back to it
+   * through the UI. */
   async function handleApprovePlan() {
-    if (permissionMode === "plan") changePermissionMode("manual");
+    if (permissionMode === "plan") {
+      changePermissionMode(capabilities.manualGate === "externalConfig" ? "auto" : "manual");
+    }
     await handleSend("Approved — please implement the plan above.", null, null, false);
   }
 
@@ -925,12 +931,13 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
           <Switch
             label="Dangerously skip permissions"
             checked={permissionMode === "auto"}
+            disabled={capabilities.manualGate === "externalConfig"}
             onCheckedChange={(v) => changePermissionMode(v ? "auto" : "manual")}
           />
           <p className={styles.settingsNote}>
-            Off by default. When on, every tool call runs without an approval card — only enable
-            this in a sandbox you trust. The composer's mode picker below the message box offers the
-            same switch, plus a read-only Plan mode.
+            {capabilities.manualGate === "externalConfig"
+              ? `${capabilities.manualGateDetail ?? "This CLI has no per-command approval hook to turn off."} Always on for this reason.`
+              : "On by default. When off, tool calls wait for an approval card instead of running immediately. The composer's mode picker below the message box offers the same switch, plus a read-only Plan mode."}
           </p>
           {tab.worktreeId && tab.worktreeRoot && (
             <ResumeSessionPicker

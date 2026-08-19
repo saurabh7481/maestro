@@ -7,12 +7,45 @@
 //! terminal windows opening and closing. `CREATE_NO_WINDOW` suppresses it.
 //! Not applied in `terminal.rs`: that PTY is the one deliberately visible
 //! shell and goes through `portable-pty`, not this module.
+//!
+//! On Linux, the same `hide_window()` call site doubles as the fix for a
+//! second, unrelated problem with the exact same shape (one child-process
+//! prep step every spawn site already needs): see
+//! `sanitized_ld_library_path` below.
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// AppImage's generated `AppRun` prepends `$APPDIR/usr/lib` onto
+/// `LD_LIBRARY_PATH` before exec'ing the bundled binary, so *every* child
+/// process this app spawns inherits it too — including the system's own
+/// `git`. The libcurl/libpcre2 etc. bundled in `$APPDIR/usr/lib` for the
+/// embedded webview don't match what e.g. `/usr/lib/git-core/git-remote-
+/// https` was actually linked against, so a spawned `git push`/`pull`
+/// fails hard (live-observed on a Linux AppImage build: `git-remote-
+/// https: symbol lookup error: .../libcurl.so.4: undefined symbol:
+/// nghttp2_option_set_no_rfc9113_leading_and_trailing_ws_validation`).
+/// Stripping the `$APPDIR`-rooted entries back out of `LD_LIBRARY_PATH`
+/// before spawning restores the system libraries a spawned system binary
+/// expects. `APPDIR` is only ever set when actually running from an
+/// extracted/mounted AppImage, so this is `None` (no override applied) on
+/// every other build, including a plain `cargo run`/`.deb` install.
+#[cfg(not(windows))]
+fn sanitized_ld_library_path() -> Option<std::ffi::OsString> {
+    let appdir = std::env::var_os("APPDIR")?;
+    let current = std::env::var_os("LD_LIBRARY_PATH")?;
+    let filtered: Vec<_> = std::env::split_paths(&current)
+        .filter(|p| !p.starts_with(&appdir))
+        .collect();
+    std::env::join_paths(&filtered).ok()
+}
+
 pub trait HiddenCommandExt {
-    /// No-op on non-Windows targets.
+    /// Windows: suppresses the child's console window. Linux: also
+    /// strips any AppImage-injected `LD_LIBRARY_PATH` entries so spawned
+    /// system binaries load the system's own shared libraries (see
+    /// `sanitized_ld_library_path`). A genuine no-op on macOS, and on
+    /// Linux outside an AppImage.
     fn hide_window(&mut self) -> &mut Self;
 }
 
@@ -27,6 +60,9 @@ impl HiddenCommandExt for std::process::Command {
 #[cfg(not(windows))]
 impl HiddenCommandExt for std::process::Command {
     fn hide_window(&mut self) -> &mut Self {
+        if let Some(path) = sanitized_ld_library_path() {
+            self.env("LD_LIBRARY_PATH", path);
+        }
         self
     }
 }
@@ -41,6 +77,9 @@ impl HiddenCommandExt for tokio::process::Command {
 #[cfg(not(windows))]
 impl HiddenCommandExt for tokio::process::Command {
     fn hide_window(&mut self) -> &mut Self {
+        if let Some(path) = sanitized_ld_library_path() {
+            self.env("LD_LIBRARY_PATH", path);
+        }
         self
     }
 }

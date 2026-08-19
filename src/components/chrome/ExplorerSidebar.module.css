@@ -85,13 +85,25 @@
 
 /* Wraps a file row's hover-revealed action buttons + status glyph so
    they stay flush right even when `.filePath` isn't rendered (a
-   repo-root file with no subdirectory) — see `FileRow`'s comment. */
+   repo-root file with no subdirectory) — see `FileRow`'s comment. Sized
+   via `--trailing-actions` (set inline per row from the actual action
+   count) rather than letting flex size it from the action buttons'
+   own geometry — those buttons are opacity-hidden, not unrendered, until
+   hovered, and WebKitGTK doesn't reliably measure an opacity:0 flex
+   child, which showed up as the status glyph's column drifting between
+   rows depending on which one was currently hovered. `1.75rem` here is
+   `IconButton`'s `size="sm"` box (`IconButton.module.css`'s `.sm`); kept
+   as a literal since the two modules share no token for it today. */
 .trailing {
   margin-left: auto;
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: calc(
+    var(--trailing-actions, 0) * 1.75rem + var(--trailing-actions, 0) * var(--space-2) + 0.875rem
+  );
+  justify-content: flex-end;
 }
 
 .sectionCount {

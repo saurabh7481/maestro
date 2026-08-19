@@ -405,6 +405,15 @@ function PermissionModePicker({
       ? undefined
       : "This CLI has no confirmed read-only mode, so Plan behaves like Manual.",
   };
+  // `externalConfig` means the CLI has no per-invocation approval hook at
+  // all (confirmed live for Cursor Agent and Aider — see
+  // `manualGateDetail`) — Maestro runs these fully headless, with no
+  // stdin to answer an approval through, so "Manual" can't actually ask
+  // anything and just runs identically to Auto while implying otherwise.
+  // Offering it as a real, distinct option misleads more than omitting it.
+  const visibleModes = PERMISSION_MODE_ORDER.filter(
+    (id) => id !== "manual" || capabilities.manualGate !== "externalConfig",
+  );
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -421,7 +430,7 @@ function PermissionModePicker({
           align="start"
           sideOffset={8}
         >
-          {PERMISSION_MODE_ORDER.map((id) => {
+          {visibleModes.map((id) => {
             const optionMeta = PERMISSION_MODE_META[id];
             const OptionIcon = optionMeta.icon;
             return (

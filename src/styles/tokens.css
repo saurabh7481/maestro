@@ -98,8 +98,8 @@
 
   /* Stacking */
   --z-rail: 10;
-  --z-dropdown: 40;
-  --z-modal: 60;
+  --z-modal: 40;
+  --z-dropdown: 60;
   --z-toast: 80;
 }
 
