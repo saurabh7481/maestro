@@ -18,11 +18,13 @@ import "monaco-editor/languages/definitions/sql/register";
 import "monaco-editor/languages/definitions/typescript/register";
 import "monaco-editor/languages/definitions/yaml/register";
 import { ensureMonacoEnvironment } from "./monacoSetup";
+import { registerJsonLanguage } from "./jsonLanguage";
 import { lspClientManager } from "../lsp/clientManager";
 import { languageForPath } from "./languages";
 import { registerEditorModelApi } from "./modelBridge";
 
 ensureMonacoEnvironment();
+registerJsonLanguage(monaco);
 
 const MAX_MODELS = 10;
 

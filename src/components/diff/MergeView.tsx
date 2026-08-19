@@ -3,13 +3,15 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import { Check, GitMerge, WarningCircle } from "@phosphor-icons/react";
 import { ensureMonacoEnvironment } from "../../editor/monacoSetup";
 import { languageForPath } from "../../editor/languages";
+import { EDITOR_THEME_NAME, applyEditorTheme } from "../../editor/editorTheme";
+import { buildCodeFontFamily } from "../../design/codeFonts";
+import { useUiStore } from "../../state/uiStore";
 import { gitApi } from "../../api/git";
 import { useTabsStore, type Tab } from "../../state/tabsStore";
 import type { ConflictContent } from "../../types/git";
 import styles from "./MergeView.module.css";
 
 ensureMonacoEnvironment();
-const FONT = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const CONFLICT = /<<<<<<<[^\n]*\n([\s\S]*?)=======\n([\s\S]*?)>>>>>>>[^\n]*(?:\n|$)/g;
 const FIRST_CONFLICT = /<<<<<<<[^\n]*\n([\s\S]*?)=======\n([\s\S]*?)>>>>>>>[^\n]*(?:\n|$)/;
 
@@ -41,15 +43,18 @@ function MergeEditors({
   const incomingRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const resultEditor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const allEditors = useRef<monaco.editor.IStandaloneCodeEditor[]>([]);
 
   useEffect(() => {
     if (!currentRef.current || !incomingRef.current || !resultRef.current) return;
     const language = languageForPath(path);
+    const prefs = useUiStore.getState();
+    applyEditorTheme(monaco, prefs.editorBackgroundColor);
     const base = {
       automaticLayout: true,
-      theme: "vs-dark",
-      fontFamily: FONT,
-      fontSize: 13,
+      theme: EDITOR_THEME_NAME,
+      fontFamily: buildCodeFontFamily(prefs.editorFontFamily),
+      fontSize: Math.round(prefs.editorFontSize * prefs.zoom),
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
     } satisfies monaco.editor.IStandaloneEditorConstructionOptions;
@@ -71,6 +76,7 @@ function MergeEditors({
       language,
     });
     resultEditor.current = merged;
+    allEditors.current = [current, incoming, merged];
     const subscription = merged.onDidChangeModelContent(() => onResult(merged.getValue()));
     return () => {
       subscription.dispose();
@@ -84,6 +90,7 @@ function MergeEditors({
       merged.dispose();
       mergedModel?.dispose();
       resultEditor.current = null;
+      allEditors.current = [];
     };
   }, [data, onResult, path]);
 
@@ -91,6 +98,25 @@ function MergeEditors({
     const editor = resultEditor.current;
     if (editor && editor.getValue() !== result) editor.setValue(result);
   }, [result]);
+
+  const zoom = useUiStore((s) => s.zoom);
+  const editorFontSize = useUiStore((s) => s.editorFontSize);
+  useEffect(() => {
+    const fontSize = Math.round(editorFontSize * zoom);
+    for (const editor of allEditors.current) editor.updateOptions({ fontSize });
+  }, [zoom, editorFontSize]);
+
+  const editorFontFamily = useUiStore((s) => s.editorFontFamily);
+  useEffect(() => {
+    const fontFamily = buildCodeFontFamily(editorFontFamily);
+    for (const editor of allEditors.current) editor.updateOptions({ fontFamily });
+  }, [editorFontFamily]);
+
+  const editorBackgroundColor = useUiStore((s) => s.editorBackgroundColor);
+  useEffect(() => {
+    if (allEditors.current.length === 0) return;
+    applyEditorTheme(monaco, editorBackgroundColor);
+  }, [editorBackgroundColor]);
 
   return (
     <div className={styles.editors}>

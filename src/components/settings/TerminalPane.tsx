@@ -1,8 +1,8 @@
 import { ArrowCounterClockwise, MagnifyingGlassMinus, MagnifyingGlassPlus } from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
+import { CODE_FONT_OPTIONS } from "../../design/codeFonts";
 import {
   TERMINAL_CURSOR_STYLE_OPTIONS,
-  TERMINAL_FONT_FAMILY_OPTIONS,
   TERMINAL_FONT_SIZE_DEFAULT,
   TERMINAL_LINE_HEIGHT_DEFAULT,
   TERMINAL_LINE_HEIGHT_STEP,
@@ -98,7 +98,7 @@ export function TerminalPane() {
           onChange={(e) => setFontFamily(e.target.value)}
           style={{ minWidth: "11rem" }}
         >
-          {TERMINAL_FONT_FAMILY_OPTIONS.map((option) => (
+          {CODE_FONT_OPTIONS.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>

@@ -16,6 +16,9 @@ export interface UiPrefs {
   diffSideBySide: boolean;
   formatOnSaveEnabled: boolean;
   gitBlameEnabled: boolean;
+  editorFontSize: number;
+  editorFontFamily: string;
+  editorBackgroundColor: string;
   terminalFontSize: number;
   terminalFontFamily: string;
   terminalLineHeight: number;

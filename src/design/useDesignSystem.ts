@@ -23,6 +23,9 @@ export function useDesignSystem(): void {
   const diffSideBySide = useUiStore((s) => s.diffSideBySide);
   const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
+  const editorFontSize = useUiStore((s) => s.editorFontSize);
+  const editorFontFamily = useUiStore((s) => s.editorFontFamily);
+  const editorBackgroundColor = useUiStore((s) => s.editorBackgroundColor);
   const terminalFontSize = useUiStore((s) => s.terminalFontSize);
   const terminalFontFamily = useUiStore((s) => s.terminalFontFamily);
   const terminalLineHeight = useUiStore((s) => s.terminalLineHeight);
@@ -79,6 +82,9 @@ export function useDesignSystem(): void {
       diffSideBySide,
       formatOnSaveEnabled,
       gitBlameEnabled,
+      editorFontSize,
+      editorFontFamily,
+      editorBackgroundColor,
       terminalFontSize,
       terminalFontFamily,
       terminalLineHeight,
@@ -97,6 +103,9 @@ export function useDesignSystem(): void {
     diffSideBySide,
     formatOnSaveEnabled,
     gitBlameEnabled,
+    editorFontSize,
+    editorFontFamily,
+    editorBackgroundColor,
     terminalFontSize,
     terminalFontFamily,
     terminalLineHeight,

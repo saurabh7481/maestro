@@ -9,6 +9,7 @@ import type { Tab } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useUiStore } from "../../state/uiStore";
 import { buildTerminalFontFamily } from "../../design/terminalPrefs";
+import { isMac } from "../../design/platform";
 import styles from "./TerminalTab.module.css";
 
 // Mirrors the "maestro" theme's tokens (`design/themes.ts`) rather than
@@ -90,6 +91,56 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       allowProposedApi: true,
     });
     termRef.current = term;
+
+    // Ctrl+C is already the shell's interrupt signal, so it can't also be a
+    // blanket "copy" shortcut the way it is in most GUI apps — xterm.js
+    // ships no clipboard wiring of its own either way, copy/paste isn't
+    // free. This matches convention instead: Ctrl+Shift+C/V (the
+    // traditional Linux/Windows terminal-emulator bindings, since plain
+    // Ctrl+V is `vim`'s visual-block-mode shortcut inside a shell and would
+    // conflict), plus Cmd+C/Cmd+V on macOS where Cmd never collides with
+    // Ctrl. Bare Ctrl+C still copies when there's a selection — mirroring
+    // Windows Terminal/gnome-terminal's "copy if selected, else interrupt"
+    // — and falls through untouched (`return true`) to send SIGINT
+    // otherwise.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const mac = isMac();
+      const key = event.key.toLowerCase();
+
+      if (key === "c") {
+        const explicitCopy = mac
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+        const bareCtrlC = !mac && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
+        if (explicitCopy || bareCtrlC) {
+          const selection = term.getSelection();
+          if (selection) {
+            void navigator.clipboard.writeText(selection);
+            return false;
+          }
+          // No selection: an explicit copy chord has nothing to copy and
+          // no other meaning to xterm either, so just swallow it; bare
+          // Ctrl+C falls through unchanged to send SIGINT as usual.
+          return bareCtrlC;
+        }
+      }
+
+      if (key === "v") {
+        const pasteChord = mac
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+        if (pasteChord) {
+          void navigator.clipboard.readText().then((text) => {
+            if (text) void terminalApi.write(tab.id, text);
+          });
+          return false;
+        }
+      }
+
+      return true;
+    });
+
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);

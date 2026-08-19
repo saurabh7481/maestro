@@ -9,6 +9,11 @@ import {
   TERMINAL_SCROLLBACK_DEFAULT,
   type TerminalCursorStyle,
 } from "../design/terminalPrefs";
+import {
+  EDITOR_BACKGROUND_DEFAULT,
+  EDITOR_FONT_FAMILY_DEFAULT,
+  EDITOR_FONT_SIZE_DEFAULT,
+} from "../design/editorPrefs";
 
 export type SidebarView = "explorer" | "scm" | "history" | "search" | "problems";
 
@@ -40,16 +45,16 @@ interface UiState {
   newTabMenuPaneId: string | null;
   /** VS Code-style "save as you type" — when on, `MonacoHost` debounces a
    * write-to-disk after each edit instead of waiting for Cmd/Ctrl+S. See
-   * Settings → General. */
+   * Settings → Editor. */
   autoSaveEnabled: boolean;
   /** Off by default — minimap painting is disproportionately expensive in
    * WebKitGTK (see `MonacoHost.tsx`), so this is opt-in rather than
-   * on-by-default like upstream VS Code. See Settings → General. */
+   * on-by-default like upstream VS Code. See Settings → Editor. */
   minimapEnabled: boolean;
   /** On by default, matching the prior hardcoded behavior for anything
    * under the large-file threshold — `MonacoHost.tsx` still forces this
    * off for large files regardless, same as it forces minimap off. See
-   * Settings → General. */
+   * Settings → Editor. */
   wordWrapEnabled: boolean;
   /** How `MonacoDiffHost` lays out a diff — two columns (default,
    * matching VS Code) or one inline column with +/− lines interleaved.
@@ -62,13 +67,22 @@ interface UiState {
    * is opt-in even though the formatter itself (LSP if available, else
    * the bundled Prettier fallback — see `editor/formatOnSave.ts`) is
    * always registered and available on demand via the command palette.
-   * See Settings → General. */
+   * See Settings → Editor. */
   formatOnSaveEnabled: boolean;
   /** On by default — purely informational (who/when last touched the
    * cursor's current line, rendered as dimmed end-of-line text), so
    * there's no correctness risk in defaulting it on the way there is for
-   * `formatOnSaveEnabled`. See Settings → General. */
+   * `formatOnSaveEnabled`. See Settings → Editor. */
   gitBlameEnabled: boolean;
+  /** Monaco appearance — Settings → Editor. `zoom` still scales this
+   * multiplicatively on top (`MonacoHost.tsx`), matching how it already
+   * scaled the previously-hardcoded base size. */
+  editorFontSize: number;
+  editorFontFamily: string;
+  /** Hex color for `editor.background` on the custom theme `MonacoHost.tsx`
+   * defines (inherits from Monaco's built-in "vs-dark" otherwise
+   * unchanged) — not a full theme editor, just the one thing asked for. */
+  editorBackgroundColor: string;
   /** Terminal appearance/behavior — Settings → Terminal. Applied to every
    * open `TerminalTab` live (xterm.js's `term.options` accepts updates
    * after construction), not just to terminals opened afterward. */
@@ -98,6 +112,9 @@ interface UiState {
   setDiffSideBySide: (enabled: boolean) => void;
   setFormatOnSaveEnabled: (enabled: boolean) => void;
   setGitBlameEnabled: (enabled: boolean) => void;
+  setEditorFontSize: (size: number) => void;
+  setEditorFontFamily: (family: string) => void;
+  setEditorBackgroundColor: (color: string) => void;
   setTerminalFontSize: (size: number) => void;
   setTerminalFontFamily: (family: string) => void;
   setTerminalLineHeight: (lineHeight: number) => void;
@@ -118,6 +135,9 @@ interface UiState {
         | "diffSideBySide"
         | "formatOnSaveEnabled"
         | "gitBlameEnabled"
+        | "editorFontSize"
+        | "editorFontFamily"
+        | "editorBackgroundColor"
         | "terminalFontSize"
         | "terminalFontFamily"
         | "terminalLineHeight"
@@ -147,6 +167,9 @@ export const useUiStore = create<UiState>((set) => ({
   diffSideBySide: true,
   formatOnSaveEnabled: false,
   gitBlameEnabled: true,
+  editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
+  editorFontFamily: EDITOR_FONT_FAMILY_DEFAULT,
+  editorBackgroundColor: EDITOR_BACKGROUND_DEFAULT,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalFontFamily: TERMINAL_FONT_FAMILY_DEFAULT,
   terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
@@ -189,6 +212,9 @@ export const useUiStore = create<UiState>((set) => ({
   setDiffSideBySide: (diffSideBySide) => set({ diffSideBySide }),
   setFormatOnSaveEnabled: (formatOnSaveEnabled) => set({ formatOnSaveEnabled }),
   setGitBlameEnabled: (gitBlameEnabled) => set({ gitBlameEnabled }),
+  setEditorFontSize: (editorFontSize) => set({ editorFontSize }),
+  setEditorFontFamily: (editorFontFamily) => set({ editorFontFamily }),
+  setEditorBackgroundColor: (editorBackgroundColor) => set({ editorBackgroundColor }),
   setTerminalFontSize: (terminalFontSize) => set({ terminalFontSize }),
   setTerminalFontFamily: (terminalFontFamily) => set({ terminalFontFamily }),
   setTerminalLineHeight: (terminalLineHeight) => set({ terminalLineHeight }),

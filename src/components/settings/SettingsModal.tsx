@@ -1,20 +1,15 @@
 import { useState } from "react";
 import {
   ArrowCounterClockwise,
-  ArrowsLeftRight,
-  FloppyDisk,
   GearSix,
   GitBranch,
   Keyboard,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
-  MapTrifold,
   Palette,
-  Sliders,
   Sparkle,
   TerminalWindow,
-  TextAlignLeft,
-  UserFocus,
+  TextAa,
   Code,
   X,
 } from "@phosphor-icons/react";
@@ -23,17 +18,18 @@ import { useUiStore } from "../../state/uiStore";
 import type { ThemeId } from "../../design/themes";
 import { themes, THEME_LABELS } from "../../design/themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
-import { Modal, IconButton, Switch } from "../primitives";
+import { Modal, IconButton } from "../primitives";
 import { HooksPane } from "./HooksPane";
 import { AgentsPane } from "./AgentsPane";
 import { KeybindingsPane } from "./KeybindingsPane";
 import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
 import { TerminalPane } from "./TerminalPane";
+import { EditorPane } from "./EditorPane";
 import styles from "./SettingsModal.module.css";
 
 type Section =
-  | "general"
   | "appearance"
+  | "editor"
   | "terminal"
   | "agents"
   | "language"
@@ -41,96 +37,14 @@ type Section =
   | "keybindings";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
-  { id: "general", label: "General", icon: Sliders },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "editor", label: "Editor", icon: TextAa },
   { id: "terminal", label: "Terminal", icon: TerminalWindow },
   { id: "agents", label: "Agents & CLI", icon: Sparkle },
   { id: "language", label: "Language Intelligence", icon: Code },
   { id: "hooks", label: "Worktree Hooks", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
 ];
-
-function GeneralPane() {
-  const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
-  const setAutoSaveEnabled = useUiStore((s) => s.setAutoSaveEnabled);
-  const minimapEnabled = useUiStore((s) => s.minimapEnabled);
-  const setMinimapEnabled = useUiStore((s) => s.setMinimapEnabled);
-  const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
-  const setWordWrapEnabled = useUiStore((s) => s.setWordWrapEnabled);
-  const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
-  const setFormatOnSaveEnabled = useUiStore((s) => s.setFormatOnSaveEnabled);
-  const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
-  const setGitBlameEnabled = useUiStore((s) => s.setGitBlameEnabled);
-
-  return (
-    <div className={styles.group}>
-      <span className={styles.groupLabel}>Editor</span>
-      <div className={styles.presetRow}>
-        <FloppyDisk size={18} color="var(--accent-2)" />
-        <div className={styles.presetText}>
-          <div className={styles.presetTitle}>Auto save</div>
-          <div className={styles.presetDescription}>
-            Automatically save changes shortly after you stop typing, like VS Code — no need to
-            press Cmd/Ctrl+S.
-          </div>
-        </div>
-        <Switch label="Auto save" checked={autoSaveEnabled} onCheckedChange={setAutoSaveEnabled} />
-      </div>
-      <div className={styles.presetRow}>
-        <TextAlignLeft size={18} color="var(--accent-2)" />
-        <div className={styles.presetText}>
-          <div className={styles.presetTitle}>Format on save</div>
-          <div className={styles.presetDescription}>
-            Reformat a file right before it's written to disk — the active language server's
-            formatter if one's running, otherwise Prettier for the languages it supports (JS/TS,
-            CSS/SCSS/LESS, JSON, HTML, Markdown, YAML). Off by default.
-          </div>
-        </div>
-        <Switch
-          label="Format on save"
-          checked={formatOnSaveEnabled}
-          onCheckedChange={setFormatOnSaveEnabled}
-        />
-      </div>
-      <div className={styles.presetRow}>
-        <ArrowsLeftRight size={18} color="var(--accent-2)" />
-        <div className={styles.presetText}>
-          <div className={styles.presetTitle}>Word wrap</div>
-          <div className={styles.presetDescription}>
-            Wrap long lines to the editor's width instead of scrolling horizontally. Always off for
-            large files regardless of this setting.
-          </div>
-        </div>
-        <Switch label="Word wrap" checked={wordWrapEnabled} onCheckedChange={setWordWrapEnabled} />
-      </div>
-      <div className={styles.presetRow}>
-        <UserFocus size={18} color="var(--accent-2)" />
-        <div className={styles.presetText}>
-          <div className={styles.presetTitle}>Inline git blame</div>
-          <div className={styles.presetDescription}>
-            Show who last changed the cursor's current line, as dimmed text at the end of it.
-          </div>
-        </div>
-        <Switch
-          label="Inline git blame"
-          checked={gitBlameEnabled}
-          onCheckedChange={setGitBlameEnabled}
-        />
-      </div>
-      <div className={styles.presetRow}>
-        <MapTrifold size={18} color="var(--accent-2)" />
-        <div className={styles.presetText}>
-          <div className={styles.presetTitle}>Minimap</div>
-          <div className={styles.presetDescription}>
-            Show a zoomed-out map of the file alongside the editor. Off by default — its painting is
-            disproportionately expensive on Linux/WebKitGTK.
-          </div>
-        </div>
-        <Switch label="Minimap" checked={minimapEnabled} onCheckedChange={setMinimapEnabled} />
-      </div>
-    </div>
-  );
-}
 
 function AppearancePane() {
   const theme = useUiStore((s) => s.theme);
@@ -251,8 +165,8 @@ export function SettingsModal() {
           </div>
         </div>
         <div className={styles.paneBody}>
-          {section === "general" && <GeneralPane />}
           {section === "appearance" && <AppearancePane />}
+          {section === "editor" && <EditorPane />}
           {section === "terminal" && <TerminalPane />}
           {section === "hooks" && <HooksPane scope={{ kind: "global" }} />}
           {section === "agents" && <AgentsPane />}

@@ -1,3 +1,5 @@
+import { CODE_FONT_DEFAULT } from "./codeFonts";
+
 export const TERMINAL_FONT_SIZE_MIN = 9;
 export const TERMINAL_FONT_SIZE_MAX = 24;
 export const TERMINAL_FONT_SIZE_DEFAULT = 13;
@@ -19,25 +21,9 @@ export const TERMINAL_SCROLLBACK_MAX = 20000;
 export const TERMINAL_SCROLLBACK_STEP = 500;
 export const TERMINAL_SCROLLBACK_DEFAULT = 2000;
 
-export const TERMINAL_FONT_FAMILY_DEFAULT = "JetBrains Mono";
+export const TERMINAL_FONT_FAMILY_DEFAULT = CODE_FONT_DEFAULT;
 export type TerminalCursorStyle = "block" | "underline" | "bar";
 export const TERMINAL_CURSOR_STYLE_DEFAULT: TerminalCursorStyle = "block";
-
-/** Curated primary-font choices for the terminal — "JetBrains Mono" is
- * self-hosted (`styles/fonts.css`) and always available; the rest are
- * common platform monospace fonts that may or may not be installed. Either
- * way `buildTerminalFontFamily` appends the same fallback stack the app
- * uses everywhere else, so an unavailable pick just falls through instead
- * of breaking. */
-export const TERMINAL_FONT_FAMILY_OPTIONS = [
-  "JetBrains Mono",
-  "Fira Code",
-  "Cascadia Code",
-  "SF Mono",
-  "Menlo",
-  "Consolas",
-  "ui-monospace",
-] as const;
 
 export const TERMINAL_CURSOR_STYLE_OPTIONS: { value: TerminalCursorStyle; label: string }[] = [
   { value: "block", label: "Block" },
@@ -62,11 +48,4 @@ export function clampTerminalScrollback(value: number): number {
   return clamp(Math.round(value), TERMINAL_SCROLLBACK_MIN, TERMINAL_SCROLLBACK_MAX);
 }
 
-/** xterm.js's `fontFamily` is passed straight to a canvas 2D context's
- * `font` property (see `TerminalTab.tsx`'s old `TERMINAL_FONT_FAMILY`
- * comment) — it never resolves CSS custom properties, so the fallback
- * stack has to be spelled out literally here rather than reusing
- * `var(--font-mono)`. */
-export function buildTerminalFontFamily(primary: string): string {
-  return `'${primary}', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
-}
+export { buildCodeFontFamily as buildTerminalFontFamily, CODE_FONT_OPTIONS } from "./codeFonts";
