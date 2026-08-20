@@ -1,13 +1,51 @@
 import { useEffect, useRef, useState } from "react";
-import { TerminalWindow, WarningCircle } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  CaretUp,
+  MagnifyingGlass,
+  TerminalWindow,
+  WarningCircle,
+  X,
+} from "@phosphor-icons/react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { ClipboardAddon, type IClipboardProvider } from "@xterm/addon-clipboard";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 import { terminalApi } from "../../api/terminal";
 import { replayTerminalBuffer, useTerminalSessionStore } from "../../state/terminalSessionStore";
 import type { Tab } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
+import { isMac } from "../../design/platform";
 import styles from "./TerminalTab.module.css";
+
+// `ClipboardAddon` wires up OSC 52, the escape sequence a *program running
+// in the shell* (tmux, neovim's `+`/`*` register sync, …) emits to read or
+// write the system clipboard directly, independent of the Ctrl/Cmd+C/V
+// keybindings below — those only fire on an actual keypress from the user.
+// The read half (`\x1b]52;c;?\x07`) lets a program's *output* — `cat`-ing an
+// untrusted file, or text relayed from a compromised remote host over SSH —
+// silently ask the terminal to hand back whatever's on the clipboard, which
+// would turn "something printed to this terminal" into a clipboard-
+// exfiltration channel. Matching WezTerm's and kitty's default posture,
+// reads are refused; only the write half (a program *setting* the
+// clipboard) is wired up.
+const clipboardProvider: IClipboardProvider = {
+  readText: () => "",
+  writeText: (_selection, text) => navigator.clipboard.writeText(text),
+};
+
+const SEARCH_DECORATIONS: NonNullable<ISearchOptions["decorations"]> = {
+  matchBackground: "#2d3348",
+  matchBorder: "#4b5578",
+  matchOverviewRuler: "#4b5578",
+  activeMatchBackground: "#40456b",
+  activeMatchBorder: "#7c8cff",
+  activeMatchColorOverviewRuler: "#7c8cff",
+};
 
 // Mirrors the "maestro" theme's tokens (`design/themes.ts`) rather than
 // reading them live — xterm.js's `theme` option is a one-time snapshot
@@ -76,6 +114,13 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const refitRef = useRef<(() => void) | null>(null);
 
+  const termRef = useRef<Terminal | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchInfo, setMatchInfo] = useState<{ index: number; count: number } | null>(null);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !worktreeRoot) return;
@@ -93,8 +138,90 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       scrollback: SCROLLBACK_LINES,
       allowProposedApi: true,
     });
+    termRef.current = term;
+
+    // xterm.js ships no clipboard or find-in-scrollback handling of its
+    // own, and Ctrl+C is already the shell's interrupt signal — so it
+    // can't also be a blanket "copy" shortcut the way it is in most GUI
+    // apps. This matches convention instead: Ctrl+Shift+C/V (the
+    // traditional Linux/Windows terminal-emulator bindings, since plain
+    // Ctrl+V is `vim`'s visual-block-mode shortcut inside a shell and
+    // would conflict), Cmd+C/Cmd+V on macOS where Cmd never collides with
+    // Ctrl, and bare Ctrl+C still copies when there's a selection —
+    // mirroring Windows Terminal/gnome-terminal's "copy if selected, else
+    // interrupt" — falling through untouched (`return true`) to send
+    // SIGINT otherwise. Ctrl/Cmd+F opens the search bar below instead of
+    // reaching the shell.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const mac = isMac();
+      const key = event.key.toLowerCase();
+
+      if (key === "f") {
+        const findChord = mac
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          : event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
+        if (findChord) {
+          setSearchOpen(true);
+          return false;
+        }
+      }
+
+      if (key === "c") {
+        const explicitCopy = mac
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+        const bareCtrlC =
+          !mac && event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
+        if (explicitCopy || bareCtrlC) {
+          const selection = term.getSelection();
+          if (selection) {
+            void navigator.clipboard.writeText(selection);
+            return false;
+          }
+          // No selection: an explicit copy chord has nothing to copy and
+          // no other meaning to xterm either, so just swallow it; bare
+          // Ctrl+C falls through unchanged to send SIGINT as usual.
+          return bareCtrlC;
+        }
+      }
+
+      if (key === "v") {
+        const pasteChord = mac
+          ? event.metaKey && !event.ctrlKey && !event.altKey
+          : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+        if (pasteChord) {
+          void navigator.clipboard.readText().then((text) => {
+            if (text) void terminalApi.write(tab.id, text);
+          });
+          return false;
+        }
+      }
+
+      return true;
+    });
+
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+
+    const searchAddon = new SearchAddon();
+    searchAddonRef.current = searchAddon;
+    term.loadAddon(searchAddon);
+    const onSearchResults = searchAddon.onDidChangeResults(({ resultIndex, resultCount }) => {
+      setMatchInfo(resultCount > 0 ? { index: resultIndex, count: resultCount } : null);
+    });
+
+    // Opens in the user's OS browser via Tauri's opener plugin rather than
+    // the default `window.open` — inside a Tauri webview that would try to
+    // spawn another app window rather than a real browser tab.
+    term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
+
+    const unicode11Addon = new Unicode11Addon();
+    term.loadAddon(unicode11Addon);
+    term.unicode.activeVersion = "11";
+
+    term.loadAddon(new ClipboardAddon(undefined, clipboardProvider));
+
     term.open(container);
     fitAddon.fit();
 
@@ -159,8 +286,14 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       refitRef.current = null;
       if (frame != null) cancelAnimationFrame(frame);
       onData.dispose();
+      onSearchResults.dispose();
       resizeObserver.disconnect();
       term.dispose();
+      termRef.current = null;
+      searchAddonRef.current = null;
+      setSearchOpen(false);
+      setSearchQuery("");
+      setMatchInfo(null);
     };
     // `initialCommand` is fixed for a tab's lifetime, so it never actually
     // retriggers this — and the `started` guard above would stop a re-run
@@ -175,6 +308,26 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
   useEffect(() => {
     if (active) refitRef.current?.();
   }, [active]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  const closeSearch = () => {
+    searchAddonRef.current?.clearDecorations();
+    setSearchOpen(false);
+    setSearchQuery("");
+    setMatchInfo(null);
+    termRef.current?.focus();
+  };
+
+  const runSearch = (query: string, direction: "next" | "previous") => {
+    const addon = searchAddonRef.current;
+    if (!addon || !query) return;
+    const options: ISearchOptions = { decorations: SEARCH_DECORATIONS };
+    if (direction === "next") addon.findNext(query, options);
+    else addon.findPrevious(query, options);
+  };
 
   return (
     <div className={styles.tab}>
@@ -197,7 +350,66 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
           <span>Couldn't start a shell: {spawnError}</span>
         </div>
       )}
-      <div className={styles.body} ref={containerRef} />
+      <div className={styles.body}>
+        <div className={styles.terminalMount} ref={containerRef} />
+        {searchOpen && (
+          <div className={styles.searchBar}>
+            <MagnifyingGlass size={13} color="var(--text-mute)" />
+            <input
+              ref={searchInputRef}
+              className={styles.searchInput}
+              placeholder="Find in terminal"
+              value={searchQuery}
+              onChange={(event) => {
+                const query = event.target.value;
+                setSearchQuery(query);
+                if (query) {
+                  runSearch(query, "next");
+                } else {
+                  searchAddonRef.current?.clearDecorations();
+                  setMatchInfo(null);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeSearch();
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  runSearch(searchQuery, event.shiftKey ? "previous" : "next");
+                }
+              }}
+            />
+            <span className={styles.searchCount}>
+              {matchInfo ? `${matchInfo.index + 1}/${matchInfo.count}` : searchQuery ? "0/0" : ""}
+            </span>
+            <button
+              type="button"
+              className={styles.searchButton}
+              title="Previous match (Shift+Enter)"
+              onClick={() => runSearch(searchQuery, "previous")}
+            >
+              <CaretUp size={13} />
+            </button>
+            <button
+              type="button"
+              className={styles.searchButton}
+              title="Next match (Enter)"
+              onClick={() => runSearch(searchQuery, "next")}
+            >
+              <CaretDown size={13} />
+            </button>
+            <button
+              type="button"
+              className={styles.searchButton}
+              title="Close (Esc)"
+              onClick={closeSearch}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -189,6 +189,30 @@ pub async fn spawn_terminal(
     // launched from.
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    // AppImage's generated `AppRun` prepends `$APPDIR/usr/lib` onto
+    // `LD_LIBRARY_PATH` before exec'ing the bundled binary, so `CommandBuilder`
+    // — which otherwise inherits Maestro's full environment — hands that
+    // straight to the shell, and everything the shell launches, e.g. `git`,
+    // inherits it too: they load the AppImage's bundled libs instead of the
+    // system's, which is how you get glibc's "no version information
+    // available" warning on a plain `git status`. Filtering out only the
+    // `$APPDIR`-rooted entries (rather than dropping the variable outright)
+    // preserves anything the user legitimately set themselves; mirrors
+    // `process_ext.rs`'s `sanitized_ld_library_path`, which fixes the same
+    // leak for the app's own git/agent/LSP/hook spawns — that path never
+    // touches `terminal.rs` since this PTY shell goes through
+    // `portable-pty`, not `std::process::Command`.
+    #[cfg(unix)]
+    if let Some(appdir) = std::env::var_os("APPDIR") {
+        if let Some(current) = std::env::var_os("LD_LIBRARY_PATH") {
+            let filtered: Vec<_> = std::env::split_paths(&current)
+                .filter(|p| !p.starts_with(&appdir))
+                .collect();
+            if let Ok(joined) = std::env::join_paths(&filtered) {
+                cmd.env("LD_LIBRARY_PATH", joined);
+            }
+        }
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // The slave side is only needed to spawn the child — dropping it here
