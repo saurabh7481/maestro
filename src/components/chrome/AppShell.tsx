@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDesignSystem } from "../../design/useDesignSystem";
 import { useSessionPersistence } from "../../design/useSessionPersistence";
-import { useActiveWorktree } from "../../state/workspaceStore";
+import { useActiveWorktree, useWorkspaceStore } from "../../state/workspaceStore";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useScmStore } from "../../state/scmStore";
 import { useTabsStore } from "../../state/tabsStore";
@@ -214,6 +214,60 @@ function useLayoutShortcuts() {
   }, []);
 }
 
+/** Keyboard-only navigation between worktrees and tabs, so neither
+ * requires reaching for the mouse (the Titlebar's worktree switcher and
+ * TabStrip clicks remain the mouse path for the same actions).
+ * Mod+Alt+←/→ cycle tabs within whichever pane is currently focused
+ * (found the same way `useLayoutShortcuts`'s `splitFocusedPane` does —
+ * the pane containing `activeTabId`), wrapping at the ends. Mod+Alt+↑/↓
+ * cycle worktrees within the active project the same way — vertical for
+ * worktrees, horizontal for tabs, so the two don't read as the same
+ * gesture. Both are no-ops (not just harmless — genuinely skipped) when
+ * there's only one tab/worktree to cycle to. */
+function useNavigationShortcuts() {
+  useEffect(() => {
+    function cycleTab(direction: 1 | -1) {
+      const state = useTabsStore.getState();
+      const pane = Object.values(state.panes).find((candidate) =>
+        candidate.tabIds.includes(state.activeTabId ?? ""),
+      );
+      if (!pane || pane.tabIds.length < 2) return;
+      const index = pane.tabIds.indexOf(pane.activeTabId ?? "");
+      const nextIndex = (index + direction + pane.tabIds.length) % pane.tabIds.length;
+      state.setActiveTab(pane.tabIds[nextIndex]);
+    }
+
+    function cycleWorktree(direction: 1 | -1) {
+      const state = useWorkspaceStore.getState();
+      if (!state.activeProjectId) return;
+      const worktrees = state.worktreesByProject[state.activeProjectId] ?? [];
+      if (worktrees.length < 2) return;
+      const index = worktrees.findIndex((w) => w.id === state.activeWorktreeId);
+      const nextIndex = (index + direction + worktrees.length) % worktrees.length;
+      state.selectWorktree(state.activeProjectId, worktrees[nextIndex].id);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      const comboFor = useKeybindingsStore.getState().comboFor;
+      if (comboMatchesEvent(comboFor("tab.next"), event)) {
+        event.preventDefault();
+        cycleTab(1);
+      } else if (comboMatchesEvent(comboFor("tab.previous"), event)) {
+        event.preventDefault();
+        cycleTab(-1);
+      } else if (comboMatchesEvent(comboFor("worktree.next"), event)) {
+        event.preventDefault();
+        cycleWorktree(1);
+      } else if (comboMatchesEvent(comboFor("worktree.previous"), event)) {
+        event.preventDefault();
+        cycleWorktree(-1);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
+
 /** The main window is the one that owns detached windows: it hands tabs
  * over when one opens and takes them back when one docks or closes
  * (`chrome/satelliteWindows.ts`). Registered once, here, since the
@@ -244,6 +298,7 @@ export function AppShell() {
   useTerminalShortcut();
   useAgentAvailabilitySync();
   useLayoutShortcuts();
+  useNavigationShortcuts();
   useSatelliteHost();
 
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);

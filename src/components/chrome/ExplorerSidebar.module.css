@@ -83,26 +83,20 @@
   margin-left: var(--space-2);
 }
 
-/* Wraps a file row's hover-revealed action buttons + status glyph so
-   they stay flush right even when `.filePath` isn't rendered (a
-   repo-root file with no subdirectory) — see `FileRow`'s comment. Sized
-   via `--trailing-actions` (set inline per row from the actual action
-   count) rather than letting flex size it from the action buttons'
-   own geometry — those buttons are opacity-hidden, not unrendered, until
-   hovered, and WebKitGTK doesn't reliably measure an opacity:0 flex
-   child, which showed up as the status glyph's column drifting between
-   rows depending on which one was currently hovered. `1.75rem` here is
-   `IconButton`'s `size="sm"` box (`IconButton.module.css`'s `.sm`); kept
-   as a literal since the two modules share no token for it today. */
+/* The trailing action-buttons + status glyph group. Sizing this from its
+   own content (previous approach: a `min-width` computed from an
+   inline `--trailing-actions` count) depended on measuring hover-revealed
+   buttons that are opacity-hidden, not unrendered, until hovered —
+   WebKitGTK doesn't reliably measure an opacity:0 flex child, which kept
+   drifting the glyph's column between rows depending on hover state and
+   which section a row belonged to (staged rows have 1 action, unstaged
+   have 2). `.fileRow` now gives this a fixed-width grid column instead,
+   so its width is a constant no measurement can get wrong — this just
+   right-aligns whatever's inside that column. */
 .trailing {
-  margin-left: auto;
-  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: calc(
-    var(--trailing-actions, 0) * 1.75rem + var(--trailing-actions, 0) * var(--space-2) + 0.875rem
-  );
   justify-content: flex-end;
 }
 
@@ -112,6 +106,37 @@
   border-radius: var(--radius-full);
   padding: 0.0625rem var(--space-4);
   color: var(--text-dim);
+}
+
+/* Fixed 3-column grid for a Source Control row (icon | name+path | status
+   column) instead of a flex chain that pushes the trailing group right via
+   `margin-left: auto` — that still depends on the flex algorithm handing
+   the trailing group exactly the space it asked for, which is the same
+   content-measurement dependency `.trailing`'s comment describes.  A grid
+   track's width is a constant, unrelated to what (or how much of what) is
+   rendered inside it, so the status glyph lands in the exact same column
+   for every row regardless of section, directory length, or hover state.
+   `composes` keeps this on `.row`'s shared hover/active/padding styling
+   (Sidebar.module.css); `display: grid` here overrides `.row`'s
+   `display: flex` because CSS Modules injects composed rules before the
+   composing file's own rules. */
+.fileRow {
+  composes: row from "./Sidebar.module.css";
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 5.25rem;
+  column-gap: var(--space-4);
+}
+
+/* The middle grid column: name + optional directory. `min-width: 0` is
+   needed in addition to the track's `minmax(0, …)` — grid items default to
+   `min-width: auto`, which alone would still refuse to shrink below the
+   content's natural width. */
+.fileLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* A fixed height + flex-centering, rather than relying on text

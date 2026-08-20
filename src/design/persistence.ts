@@ -3,6 +3,7 @@ import type { ThemeId } from "./themes";
 import type { Pane, Tab } from "../state/tabsStore";
 import type { LayoutNode } from "../state/paneLayout";
 import type { SatelliteRecord } from "../state/satelliteStore";
+import type { TerminalCursorStyle } from "./terminalPrefs";
 
 export interface UiPrefs {
   theme: ThemeId;
@@ -15,6 +16,15 @@ export interface UiPrefs {
   diffSideBySide: boolean;
   formatOnSaveEnabled: boolean;
   gitBlameEnabled: boolean;
+  editorFontSize: number;
+  editorFontFamily: string;
+  editorBackgroundColor: string;
+  terminalFontSize: number;
+  terminalFontFamily: string;
+  terminalLineHeight: number;
+  terminalCursorStyle: TerminalCursorStyle;
+  terminalCursorBlink: boolean;
+  terminalScrollback: number;
 }
 
 const STORE_FILE = "ui-prefs.json";
