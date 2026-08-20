@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.4.5"
+version = "0.4.6"
 description = "Cross-platform GUI Agentic Development Environment wrapping Claude Code, Codex CLI, and Cursor Agent, organized around git projects and worktrees."
 authors = ["Maestro contributors"]
 edition = "2021"
