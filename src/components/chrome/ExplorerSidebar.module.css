@@ -144,17 +144,26 @@
   align-items: center;
 }
 
-/* The filename (`.fileName` below) must always render in full — the
-   directory path is secondary context and is what should give up space
-   first, matching VS Code's SCM panel. Previously this was `flex: none`
-   while the filename used the shared, shrinkable `.rowLabel`, so a long
-   directory (e.g. "packages/domain/analytics/src") could claim its full
-   width and squeeze the filename down to nothing. */
+/* The filename (`.fileName` below) must always render in full where
+   there's room for it — the directory path is secondary context and is
+   what should give up space first, matching VS Code's SCM panel.
+   Previously this was `flex: none` while the filename used the shared,
+   shrinkable `.rowLabel`, so a long directory (e.g.
+   "packages/domain/analytics/src") could claim its full width and
+   squeeze the filename down to nothing. A hugely disproportionate
+   `flex-shrink` (999 vs. `.fileName`'s 1) keeps that priority — this
+   shrinks first and almost entirely absorbs the squeeze in the common
+   case — without being `flex: none`'s *only* shrinkable sibling: a
+   filename long enough to overflow the row even at `.filePath`'s 0
+   width (e.g. a long untracked-file name with hover-revealed action
+   buttons competing for the same row) needs somewhere left to give,
+   or the row's content spills past its own right edge instead of
+   ellipsizing. */
 .filePath {
   font-size: var(--text-sm);
   color: var(--text-mute);
   font-family: var(--font-mono);
-  flex: 1 1 auto;
+  flex: 1 999 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -162,8 +171,9 @@
 }
 
 .fileName {
-  flex: none;
+  flex: 0 1 auto;
   max-width: 70%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -238,12 +248,17 @@
 }
 
 /* One transform for the whole rendered window rather than positioning each
-   row individually. */
+   row individually — see `AgentTab.module.css`'s `.transcriptWindow`
+   comment for why this also needs `will-change: transform`: the same
+   inline-style transform update on every scroll frame, without a
+   compositor-layer promotion, is what WebKitGTK has been observed
+   occasionally failing to repaint cleanly. */
 .scmWindow {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
+  will-change: transform;
 }
 
 /* Was `gap: 1px` on the flex body; absolutely-positioned virtual rows can't

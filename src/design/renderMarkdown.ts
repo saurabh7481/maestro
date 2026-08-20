@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 /** Shared markdown → sanitized HTML conversion, used anywhere Maestro
  * shows markdown-formatted text: file previews (`MarkdownPane.tsx`) and
@@ -101,4 +102,26 @@ export function useMarkdownHtml(content: string | null | undefined): string | nu
  * and then reflow. */
 export function plainTextFallbackHtml(content: string): string {
   return `<p>${escapeHtml(content).replace(/\n/g, "<br>")}</p>`;
+}
+
+/** Installed once, globally, by `main.tsx` — not per-component — the same
+ * "catch-all for everywhere else" shape as that file's `contextmenu`
+ * interceptor. A markdown link is a plain `<a href>` inside
+ * `dangerouslySetInnerHTML` HTML (`AgentMarkdown.tsx`, `MarkdownPane.tsx`
+ * today, and this app has no router and no other `<a>` source at all — see
+ * that file's comment), with no click handling of its own, so without this
+ * a click follows it exactly like a normal web page would. A Tauri webview
+ * has no separate browser tab to open a new one in, so that navigates the
+ * app's own window away to the target URL — replacing the entire UI, with
+ * no back button to recover it (live-reported: an agent's response linked
+ * out and the click "replaced the app with that link"). Opens through the
+ * OS's real browser instead, via the same `plugin-opener` every other
+ * external link in this app already uses. */
+export function interceptMarkdownLinkClicks(event: MouseEvent): void {
+  if (!(event.target instanceof HTMLElement)) return;
+  const anchor = event.target.closest("a");
+  const href = anchor?.getAttribute("href");
+  if (!href) return;
+  event.preventDefault();
+  void openUrl(href);
 }

@@ -105,6 +105,7 @@
 }
 
 .body pre {
+  position: relative;
   background: var(--bg-3);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
@@ -118,6 +119,55 @@
   padding: 0;
   color: var(--text-dim);
   font-size: var(--text-sm);
+}
+
+/* `CodeBlockControls`' portal mount — see `AgentMarkdown.tsx`'s scanning
+   effect. Hover-revealed, same convention as `.copyButton` above. */
+.codeToolbar {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.body pre:hover .codeToolbar,
+.codeToolbar:focus-within {
+  opacity: 1;
+}
+
+.codeToolbarButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 1.75rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-mute);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.codeToolbarButton:hover {
+  color: var(--text);
+  border-color: var(--border-2);
+  background: var(--hover);
+}
+
+/* Replaces the raw ```mermaid``` source in place (`CodeBlockControls`
+   hides the `<code>` sibling via `display: none` while this is shown) —
+   normal block flow, not absolutely positioned, so `pre`'s height comes
+   from the diagram's own natural size rather than collapsing to zero. */
+.mermaidDiagram {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-3);
+}
+.mermaidDiagram svg {
+  max-width: 100%;
+  height: auto;
 }
 
 .body blockquote {

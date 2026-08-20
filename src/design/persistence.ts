@@ -3,6 +3,7 @@ import type { ThemeId } from "./themes";
 import type { Pane, Tab } from "../state/tabsStore";
 import type { LayoutNode } from "../state/paneLayout";
 import type { SatelliteRecord } from "../state/satelliteStore";
+import type { AgentKind } from "../types/agent";
 
 export interface UiPrefs {
   theme: ThemeId;
@@ -60,6 +61,33 @@ export async function loadKeybindingOverrides(): Promise<Record<string, string>>
 export async function saveKeybindingOverrides(overrides: Record<string, string>): Promise<void> {
   const store = await getKeybindingsStore();
   await store.set(KEYBINDINGS_KEY, overrides);
+}
+
+const AGENT_MODEL_STORE_FILE = "agent-model-prefs.json";
+const AGENT_MODEL_KEY = "byKind";
+
+let agentModelStorePromise: Promise<Store> | null = null;
+
+function getAgentModelStore(): Promise<Store> {
+  if (!agentModelStorePromise) {
+    agentModelStorePromise = load(AGENT_MODEL_STORE_FILE, { autoSave: true });
+  }
+  return agentModelStorePromise;
+}
+
+/** The last model a user explicitly picked for each provider, so a new
+ * tab of the same agent kind starts on it instead of that provider's own
+ * default every time — see `AgentComposer.tsx`'s model-picker hydration
+ * effect, the only reader/writer of this. */
+export async function loadAgentModelPrefs(): Promise<Partial<Record<AgentKind, string>>> {
+  const store = await getAgentModelStore();
+  return (await store.get<Partial<Record<AgentKind, string>>>(AGENT_MODEL_KEY)) ?? {};
+}
+
+export async function saveAgentModelPref(kind: AgentKind, modelId: string): Promise<void> {
+  const store = await getAgentModelStore();
+  const existing = (await store.get<Partial<Record<AgentKind, string>>>(AGENT_MODEL_KEY)) ?? {};
+  await store.set(AGENT_MODEL_KEY, { ...existing, [kind]: modelId });
 }
 
 export interface SessionPrefs {

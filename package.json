@@ -47,6 +47,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.13",
     "marked": "^18.0.9",
+    "mermaid": "^11.17.0",
     "monaco-editor": "^0.56.0",
     "prettier": "^3.9.6",
     "react": "^19.1.0",

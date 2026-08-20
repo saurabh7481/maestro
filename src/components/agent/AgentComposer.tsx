@@ -27,6 +27,7 @@ import { fsApi } from "../../api/fs";
 import { searchApi } from "../../api/search";
 import { fuzzyScore } from "../../design/fuzzy";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
+import { loadAgentModelPrefs, saveAgentModelPref } from "../../design/persistence";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type {
   AgentCapabilities,
@@ -583,6 +584,25 @@ export function AgentComposer({
     if (element) resizeComposerTextarea(element);
   }, [draft]);
 
+  // A run only ever needs to pick up the last-used model once, right after
+  // mount — and only once real options are known, so a stale/removed model
+  // id from a previous session can't be applied blind (`resolvedModel`
+  // below would send it straight to the CLI with no validation otherwise).
+  // Guarded by a ref rather than `model !== null` because `null` is also
+  // the legitimate "explicitly use the provider's own default" state once
+  // a user has picked it — nothing here should stomp back over that.
+  const appliedModelPrefRef = useRef(false);
+  useEffect(() => {
+    if (appliedModelPrefRef.current || modelOptions.length === 0) return;
+    appliedModelPrefRef.current = true;
+    void loadAgentModelPrefs().then((prefs) => {
+      const preferred = prefs[kind];
+      if (preferred && modelOptions.some((option) => option.id === preferred)) {
+        setModel(preferred);
+      }
+    });
+  }, [kind, modelOptions]);
+
   const worktreeFiles = useWorktreeFileList(worktreeRoot);
   const selectedModel = modelOptions.find((option) => option.id === model) ?? null;
   const effortValues = selectedModel?.supportedEfforts ?? [];
@@ -617,6 +637,13 @@ export function AgentComposer({
     setEffort(nextEffort);
     setThinking(nextThinking);
     setFast(nextFast);
+    // Only an actual model switch (not an effort/thinking/fast-only call)
+    // updates the remembered preference — and only per `kind`, so picking
+    // a model in a Claude Code tab never overwrites what's remembered for
+    // Cursor/Codex/Aider.
+    if (next.model !== undefined && next.model !== null && next.model !== model) {
+      void saveAgentModelPref(kind, next.model);
+    }
     if (locked) {
       const option = modelOptions.find((candidate) => candidate.id === nextModel) ?? null;
       const variant = option?.variants.find(

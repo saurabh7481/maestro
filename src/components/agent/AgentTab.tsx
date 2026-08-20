@@ -41,10 +41,33 @@ type Group =
   | { role: "user"; text: string; key: string }
   | { role: "assistant"; items: TranscriptItem[]; key: string };
 
-/** Rough starting height for an unmeasured transcript row. Only affects
- * the scrollbar before a row has been on screen once; every row that
- * renders is measured for real via `measureElement`. */
-const ESTIMATED_GROUP_HEIGHT = 180;
+/** Rough starting height for an unmeasured transcript row, scaled by role
+ * and content rather than one flat number for every row — only affects the
+ * scrollbar/layout before a row has been on screen once, since every row
+ * that renders is measured for real via `measureElement`, but that gap
+ * between estimate and reality is exactly what has to be corrected in a
+ * visible jump the moment a far-off-estimate row is first measured. A flat
+ * guess (previously 180px for everything) was badly wrong in both
+ * directions: a one-line "ok" and a multi-tool-call turn full of diffs
+ * both estimated the same. */
+function estimateGroupHeight(group: Group): number {
+  if (group.role === "user") {
+    const lines = Math.max(1, Math.ceil(group.text.length / 60));
+    return 70 + lines * 22;
+  }
+  let lines = 0;
+  let cards = 0;
+  for (const item of group.items) {
+    if (item.kind === "assistantText" || item.kind === "thinking") {
+      lines += Math.max(1, Math.ceil(item.text.length / 70));
+    } else {
+      // toolCall/error/turnComplete/raw all render as a compact card
+      // whose height doesn't track its payload's raw size.
+      cards += 1;
+    }
+  }
+  return 60 + lines * 22 + cards * 90;
+}
 
 /** How close to the bottom counts as "following along", in pixels. Above
  * this the user is reading scrollback and must not be yanked down. */
@@ -456,9 +479,14 @@ function Transcript({
   const virtualizer = useVirtualizer({
     count: groups.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ESTIMATED_GROUP_HEIGHT,
+    estimateSize: (index) => estimateGroupHeight(groups[index]),
     getItemKey: (index) => groups[index].key,
-    overscan: 5,
+    // Transcript rows vary in height far more than most virtualized lists
+    // (a one-line reply vs. a multi-tool-call turn full of diffs), so a
+    // small overscan meant a normal-speed scroll routinely revealed rows
+    // still on the flat estimate rather than their real measured height —
+    // the estimate-to-reality correction is what read as a sudden jump.
+    overscan: 10,
   });
 
   const virtualItems = virtualizer.getVirtualItems();
@@ -634,6 +662,33 @@ function Transcript({
   );
 }
 
+/** A run flips to `idle` on the frontend the instant its `turnResult`
+ * event arrives (`agentSessionStore.ts`'s `turnResult` case) — emitted
+ * from inside the Rust backend's stdout reader the moment the CLI closes
+ * its stdout stream. The backend's own `turn_active` guard
+ * (`manager.rs::run_turn`) only clears once the child process has fully
+ * *exited*, which live-observed can lag stdout closing by a beat for
+ * cursor-agent specifically (it does extra work — session bookkeeping —
+ * between the two). A message sent into that gap (most commonly a queued
+ * follow-up auto-flushing the moment `idle` flips true, see the effect
+ * below) hits the still-`turn_active` run and is rejected, even though by
+ * construction the guard is about to clear. Retrying briefly closes that
+ * gap instead of surfacing it as a hard failure for a message the user
+ * already sees appended to the transcript. */
+async function sendAgentMessageWithRetry(runId: string, text: string): Promise<void> {
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await agentsApi.sendAgentMessage(runId, text);
+      return;
+    } catch (error) {
+      const retryable = String(error).includes("already running a turn");
+      if (!retryable || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+  }
+}
+
 export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const runId = tab.id;
   const kind = tab.agentKind ?? "claudeCode";
@@ -719,7 +774,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
           permissionMode,
         });
       } else {
-        await agentsApi.sendAgentMessage(runId, text);
+        await sendAgentMessageWithRetry(runId, text);
       }
     } catch (error) {
       setRunError(runId, `Agent could not continue: ${String(error)}`);

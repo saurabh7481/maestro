@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { error as logError } from "@tauri-apps/plugin-log";
-import { prefetchMarkdownRenderer } from "./design/renderMarkdown";
+import { interceptMarkdownLinkClicks, prefetchMarkdownRenderer } from "./design/renderMarkdown";
 import "./styles/fonts.css";
 import "./styles/global.css";
 
@@ -12,6 +12,13 @@ import "./styles/global.css";
 // `TabContextMenu`), which calls `preventDefault()` on its own trigger
 // already; this is the catch-all for everywhere else.
 window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// Same catch-all shape as above, for links: this app has no router and no
+// `<a>` JSX anywhere in its own components, so every `<a>` that exists at
+// all comes from rendered markdown (`design/renderMarkdown.ts`) — clicking
+// one otherwise navigates this window itself to the target URL, same as a
+// plain web page, with nothing in a desktop app to bring it back.
+window.addEventListener("click", interceptMarkdownLinkClicks);
 
 // Render-time exceptions are caught and shown by `ErrorBoundary`; these
 // two cover what it can't — errors from event handlers and rejected
