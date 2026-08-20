@@ -3,7 +3,7 @@ import { searchApi } from "../api/search";
 import { listenToSearchEvents } from "../api/searchEvents";
 import { fsApi } from "../api/fs";
 import { getEditorModel } from "../editor/modelBridge";
-import { useTabsStore, fileTabId } from "./tabsStore";
+import { useTabsStore, fileTabId, classifyFileTabType } from "./tabsStore";
 import { useOpenFilesStore } from "./openFilesStore";
 import type { FileMatches, SearchMatch, SearchOptions } from "../types/search";
 
@@ -14,10 +14,6 @@ export interface PendingReveal {
   line: number;
   matchStart: number;
   matchEnd: number;
-}
-
-function isMarkdownPath(path: string): boolean {
-  return /\.mdx?$/i.test(path);
 }
 
 interface SearchState {
@@ -191,7 +187,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     const tabId = fileTabId(worktreeId, path);
     useTabsStore.getState().ensureTab({
       id: tabId,
-      type: isMarkdownPath(path) ? "markdown" : "file",
+      type: classifyFileTabType(path),
       title: path.split("/").pop() ?? path,
       filePath: path,
       worktreeRoot,

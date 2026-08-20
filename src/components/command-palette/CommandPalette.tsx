@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
-import { useTabsStore, fileTabId } from "../../state/tabsStore";
+import { useTabsStore, fileTabId, classifyFileTabType } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useKeybindingsStore } from "../../state/keybindingsStore";
 import { useScmStore } from "../../state/scmStore";
@@ -32,10 +32,6 @@ function splitActivePane(edge: SplitEdge): void {
     candidate.tabIds.includes(activeTabId ?? ""),
   );
   if (pane) state.splitPane(pane.id, edge);
-}
-
-function isMarkdownPath(path: string): boolean {
-  return /\.mdx?$/i.test(path);
 }
 
 interface Command {
@@ -433,7 +429,7 @@ export function CommandPalette() {
     if (activeWorktree) {
       ensureTab({
         id: fileTabId(activeWorktree.id, relPath),
-        type: isMarkdownPath(relPath) ? "markdown" : "file",
+        type: classifyFileTabType(relPath),
         title: relPath.split("/").pop() ?? relPath,
         filePath: relPath,
         worktreeRoot: activeWorktree.path,

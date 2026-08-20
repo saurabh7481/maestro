@@ -1,0 +1,37 @@
+.header {
+  composes: header from "./MarkdownPane.module.css";
+}
+
+.headerTitle {
+  composes: headerTitle from "./MarkdownPane.module.css";
+}
+
+.toggle {
+  composes: toggle from "./MarkdownPane.module.css";
+}
+
+.pill {
+  composes: pill from "./MarkdownPane.module.css";
+}
+
+/* Same "sits under the header, not over it" reasoning as
+   `MarkdownPane.module.css`'s `.previewScroller` — but this one doesn't
+   scroll itself: the iframe below is its own document with its own
+   scrollbar, exactly like a real browser tab, so double-scrollbars would
+   be the bug here instead. */
+.previewScroller {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  /* The document inside is arbitrary HTML that may declare its own dark
+     or light background — this shows through immediately rather than a
+     flash of the app's own background while it loads. */
+  background: #fff;
+}

@@ -15,7 +15,7 @@ import {
   EDITOR_FONT_SIZE_DEFAULT,
 } from "../design/editorPrefs";
 
-export type SidebarView = "explorer" | "scm" | "history" | "search" | "problems";
+export type SidebarView = "explorer" | "scm" | "agentChanges" | "history" | "search" | "problems";
 
 export const LEFT_SIDEBAR_WIDTH_DEFAULT = 16.625;
 export const RIGHT_SIDEBAR_WIDTH_DEFAULT = 19;

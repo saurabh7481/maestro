@@ -67,8 +67,8 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   const tabs = useTabsStore((s) => s.tabs);
   const activeTab = tabId ? tabs.find((t) => t.id === tabId) : undefined;
 
-  const markdownMode = useOpenFilesStore((s) =>
-    activeTab ? (s.byTabId[activeTab.id]?.markdownMode ?? "preview") : "preview",
+  const previewMode = useOpenFilesStore((s) =>
+    activeTab ? (s.byTabId[activeTab.id]?.previewMode ?? "preview") : "preview",
   );
   const registerLoaded = useOpenFilesStore((s) => s.registerLoaded);
   const setDirty = useOpenFilesStore((s) => s.setDirty);
@@ -87,7 +87,8 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
 
   const isTarget =
     !!activeTab &&
-    (activeTab.type === "file" || (activeTab.type === "markdown" && markdownMode === "source")) &&
+    (activeTab.type === "file" ||
+      ((activeTab.type === "markdown" || activeTab.type === "html") && previewMode === "source")) &&
     !isNonTextKind;
 
   // Fetches this model's outline for the breadcrumb, straight off the

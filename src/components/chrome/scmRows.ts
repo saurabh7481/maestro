@@ -1,4 +1,35 @@
-import type { FileStatusEntry } from "../../types/git";
+import type { FileStatusEntry, StatusKind } from "../../types/git";
+
+/** Shared by `ExplorerSidebar.tsx` (against its own `ScmRow[]`) and
+ * `AgentChangesPanel.tsx` (against a `ReviewFile[]`) — same vocabulary
+ * for two different lists, kept here rather than in either component so
+ * neither has to import the other just for this. */
+export function splitPath(path: string): { name: string; dir: string } {
+  const idx = path.lastIndexOf("/");
+  return idx === -1
+    ? { name: path, dir: "" }
+    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
+}
+
+export function glyphFor(kind: StatusKind): { glyph: string; color: string } {
+  switch (kind.kind) {
+    case "modified":
+    case "typeChanged":
+      return { glyph: "M", color: "var(--yellow)" };
+    case "added":
+      return { glyph: "A", color: "var(--green)" };
+    case "renamed":
+      return { glyph: "R", color: "var(--green)" };
+    case "copied":
+      return { glyph: "C", color: "var(--green)" };
+    case "deleted":
+      return { glyph: "D", color: "var(--red)" };
+    case "untracked":
+      return { glyph: "U", color: "var(--green)" };
+    case "conflicted":
+      return { glyph: "!", color: "var(--red)" };
+  }
+}
 
 export type ScmRow =
   | { kind: "header"; key: string; section: ScmSection }

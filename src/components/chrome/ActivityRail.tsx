@@ -5,6 +5,7 @@ import {
   GitBranch,
   MagnifyingGlass,
   SidebarSimple,
+  Sparkle,
   WarningCircle,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
@@ -47,6 +48,7 @@ export function ActivityRail() {
       label: "Source Control",
       badge: changedFileCount > 0 ? changedFileCount : undefined,
     },
+    { id: "agentChanges", icon: Sparkle, label: "Agent Changes" },
     { id: "history", icon: ClockCounterClockwise, label: "History" },
     { id: "search", icon: MagnifyingGlass, label: "Search" },
     {

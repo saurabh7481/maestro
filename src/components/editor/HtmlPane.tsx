@@ -1,35 +1,35 @@
 import { useEffect, useReducer, useState } from "react";
-import { FileText } from "@phosphor-icons/react";
+import { Code } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { getEditorModel } from "../../editor/modelBridge";
-import { useMarkdownHtml } from "../../design/renderMarkdown";
 import type { Tab } from "../../state/tabsStore";
-import styles from "./MarkdownPane.module.css";
+import styles from "./HtmlPane.module.css";
 
-/** Renders the Source/Preview toggle header for a markdown tab, plus the
- * Preview body when that mode is active. Source mode intentionally renders
- * nothing in its body — the pane's `MonacoHost` takes the space below the
- * header instead, since it self-hides via `display:none` in every mode
- * except file/markdown-source (see MonacoHost.tsx). Both this header and
- * that editor are flex children of the pane's content column, so the
- * header stays visible and clickable in either mode; `PaneView` renders
- * this component first to keep it on top. */
-export function MarkdownPane({ tab }: { tab: Tab }) {
+/** Same Source/Preview toggle shape as `MarkdownPane.tsx` (see that file's
+ * comment for the header/self-hiding-`MonacoHost` mechanics, which this
+ * shares verbatim) — the one real difference is what Preview renders.
+ *
+ * Markdown's preview is sanitized (DOMPurify) HTML from a trusted
+ * renderer, safe to inject directly. This file's *own content* is
+ * arbitrary HTML — routinely agent-generated, and Maestro has no way to
+ * know it doesn't carry a `<script>` — so it renders inside a sandboxed
+ * `<iframe srcdoc>` instead of `dangerouslySetInnerHTML`. `srcdoc` gives
+ * the content an opaque (`null`) origin with no access to this app's DOM,
+ * storage, or Tauri APIs; `sandbox="allow-scripts"` lets scripts that
+ * exist in the file actually run (the point of previewing HTML, not just
+ * text) while omitting `allow-same-origin` (nothing to gain here, and the
+ * combination is the one that lets sandboxed script reach for real
+ * privileges elsewhere), `allow-top-navigation` (so a link/script inside
+ * can't do what a plain chat link already did once — see
+ * `design/renderMarkdown.ts`'s `interceptMarkdownLinkClicks` comment —
+ * and hijack the whole app window), and `allow-popups`. */
+export function HtmlPane({ tab }: { tab: Tab }) {
   const mode = useOpenFilesStore((s) => s.byTabId[tab.id]?.previewMode ?? "preview");
   const setPreviewMode = useOpenFilesStore((s) => s.setPreviewMode);
   const [fetchedContent, setFetchedContent] = useState<string | null>(null);
-  // Bumped by the Monaco model's own change subscription below so a live
-  // buffer (unsaved edits in Source mode) is reflected in Preview without
-  // re-fetching from disk. `.getValue()` itself is read directly during
-  // render — a pure, synchronous read of already-existing external state,
-  // not something that needs an effect.
   const [, forceRerender] = useReducer((c: number) => c + 1, 0);
 
-  // `getModel()` can hand back a model the LRU registry is about to evict
-  // (see `monacoModelRegistry.ts`) — guarding with `isDisposed()` here
-  // means a stale/disposed reference falls back to `fetchedContent`
-  // instead of a `.getValue()` call throwing during render.
   const rawLiveModel = mode === "preview" ? getEditorModel(tab.id) : undefined;
   const liveModel = rawLiveModel && !rawLiveModel.isDisposed() ? rawLiveModel : undefined;
 
@@ -54,18 +54,11 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
 
   const content = liveModel ? liveModel.getValue() : fetchedContent;
 
-  // `null` only for the one chunk-load on the session's first markdown
-  // render (see `renderMarkdown.ts`); an empty preview body for that
-  // moment is preferable to a flash of unformatted source here, since a
-  // whole file's worth of raw markdown would be a much bigger reflow than
-  // a single chat message.
-  const html = useMarkdownHtml(content) ?? "";
-
   return (
     <>
       <div className={styles.header}>
         <span className={styles.headerTitle}>
-          <FileText size={14} color="var(--accent-2)" />
+          <Code size={14} color="var(--accent-2)" />
           {tab.title}
         </span>
         <div className={styles.toggle}>
@@ -89,7 +82,14 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
       </div>
       {mode === "preview" && (
         <div className={styles.previewScroller}>
-          <div className={styles.previewBody} dangerouslySetInnerHTML={{ __html: html }} />
+          {content != null && (
+            <iframe
+              className={styles.frame}
+              title={tab.title}
+              sandbox="allow-scripts"
+              srcDoc={content}
+            />
+          )}
         </div>
       )}
     </>

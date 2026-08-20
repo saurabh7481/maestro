@@ -82,6 +82,14 @@ export type TranscriptItem =
       outputTokens: number | null;
       cacheReadTokens: number | null;
       cacheWriteTokens: number | null;
+      /** When this turn actually finished, for `AgentChangesPanel.tsx`'s
+       * per-turn timestamps — nothing else on a turn carries a durable
+       * wall-clock time (`turnStartedAtMs`/`lastEventAtMs` on
+       * `AgentTabState` are transient and reset per turn). `null` for a
+       * turn completed before this field existed — a restored transcript
+       * from an older session simply shows no timestamp rather than a
+       * fabricated one. */
+      completedAtMs: number | null;
     }
   /** An event Maestro's adapter for this CLI didn't recognize and
    * forwarded verbatim rather than dropping (docs/CHECKLIST.md's "no
@@ -862,6 +870,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                     outputTokens: event.outputTokens,
                     cacheReadTokens: event.cacheReadTokens,
                     cacheWriteTokens: event.cacheWriteTokens,
+                    completedAtMs: Date.now(),
                   },
                 ],
                 turnBaseline: null,

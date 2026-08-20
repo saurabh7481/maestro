@@ -15,7 +15,18 @@ import {
 } from "./paneLayout";
 
 export type TabType =
-  "agent" | "file" | "markdown" | "diff" | "review" | "merge" | "terminal" | "processes";
+  "agent" | "file" | "markdown" | "html" | "diff" | "review" | "merge" | "terminal" | "processes";
+
+/** Which of `TabType`'s two previewable-file variants a path's extension
+ * calls for, or plain `"file"` — every place that opens a tab from a file
+ * path (`FileTree`, search results, the command palette, Problems, LSP
+ * jump-to-file) needs this same classification, previously copy-pasted as
+ * a slightly different regex in each. */
+export function classifyFileTabType(pathOrName: string): "markdown" | "html" | "file" {
+  if (/\.mdx?$/i.test(pathOrName)) return "markdown";
+  if (/\.html?$/i.test(pathOrName)) return "html";
+  return "file";
+}
 
 export interface Tab {
   id: string;

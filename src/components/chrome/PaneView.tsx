@@ -9,6 +9,7 @@ import { TAB_VISUALS } from "../../design/tabVisuals";
 import { TabStrip } from "./TabStrip";
 import { registerPaneElement } from "./tabDrag";
 import { MarkdownPane } from "../editor/MarkdownPane";
+import { HtmlPane } from "../editor/HtmlPane";
 import { BinaryFileView } from "../editor/BinaryFileView";
 import { TooLargeFileView } from "../editor/TooLargeFileView";
 import { ExternalChangeBanner } from "../editor/ExternalChangeBanner";
@@ -66,7 +67,8 @@ export function PaneView({ paneId }: { paneId: string }) {
     return () => unregisterSlot(paneId);
   }, [paneId, registerSlot, unregisterSlot]);
 
-  const isEditorTab = activeTab?.type === "file" || activeTab?.type === "markdown";
+  const isEditorTab =
+    activeTab?.type === "file" || activeTab?.type === "markdown" || activeTab?.type === "html";
   // A restored/background file tab must not load the editor while the user
   // is working in an agent or terminal. Monaco's module and models stay
   // cached after their first use, so returning to an editor stays quick.
@@ -85,9 +87,10 @@ export function PaneView({ paneId }: { paneId: string }) {
       <TabStrip paneId={paneId} />
       <div className={styles.content} ref={contentRef}>
         {/* Before `MonacoHost`, not after: both are in the content
-            column's flex flow, and in Source mode the markdown tab's
+            column's flex flow, and in Source mode the markdown/html tab's
             Source/Preview header has to sit above the editor. */}
         {activeTab?.type === "markdown" && <MarkdownPane tab={activeTab} />}
+        {activeTab?.type === "html" && <HtmlPane tab={activeTab} />}
 
         {monacoNeeded && (
           <Suspense fallback={null}>

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Info, WarningCircle, XCircle } from "@phosphor-icons/react";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { problemsForWorktree, useProblemsStore } from "../../state/problemsStore";
-import { fileTabId, useTabsStore } from "../../state/tabsStore";
+import { classifyFileTabType, fileTabId, useTabsStore } from "../../state/tabsStore";
 import { useEditorNavigationStore } from "../../state/editorNavigationStore";
 import type { Problem, ProblemSeverity } from "../../types/problem";
 import sidebar from "../chrome/Sidebar.module.css";
@@ -55,7 +55,7 @@ export function ProblemsPanel() {
     const tabId = fileTabId(activeWorktree.id, problem.relativePath);
     ensureTab({
       id: tabId,
-      type: /\.mdx?$/i.test(problem.relativePath) ? "markdown" : "file",
+      type: classifyFileTabType(problem.relativePath),
       title: problem.relativePath.split("/").pop() ?? problem.relativePath,
       filePath: problem.relativePath,
       worktreeId: activeWorktree.id,

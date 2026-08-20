@@ -1,19 +1,21 @@
 import { create } from "zustand";
 
-export type MarkdownMode = "source" | "preview";
+/** Shared by every previewable tab type (markdown, html) — not just
+ * markdown anymore, kept as one field since they're the same toggle. */
+export type PreviewMode = "source" | "preview";
 
 export interface OpenFileMeta {
   dirty: boolean;
   diskMtimeMs: number;
   externalChangePending: boolean;
-  markdownMode: MarkdownMode;
+  previewMode: PreviewMode;
 }
 
 const DEFAULT_META: OpenFileMeta = {
   dirty: false,
   diskMtimeMs: 0,
   externalChangePending: false,
-  markdownMode: "preview",
+  previewMode: "preview",
 };
 
 interface OpenFilesState {
@@ -27,7 +29,7 @@ interface OpenFilesState {
    * without touching `dirty` or the buffer content — so the next save
    * overwrites the external change instead of hitting a stale conflict. */
   acknowledgeExternalChange: (tabId: string, newDiskMtimeMs: number) => void;
-  setMarkdownMode: (tabId: string, mode: MarkdownMode) => void;
+  setPreviewMode: (tabId: string, mode: PreviewMode) => void;
   forget: (tabId: string) => void;
 }
 
@@ -89,11 +91,11 @@ export const useOpenFilesStore = create<OpenFilesState>((set) => ({
       },
     })),
 
-  setMarkdownMode: (tabId, mode) =>
+  setPreviewMode: (tabId, mode) =>
     set((s) => ({
       byTabId: {
         ...s.byTabId,
-        [tabId]: { ...DEFAULT_META, ...s.byTabId[tabId], markdownMode: mode },
+        [tabId]: { ...DEFAULT_META, ...s.byTabId[tabId], previewMode: mode },
       },
     })),
 

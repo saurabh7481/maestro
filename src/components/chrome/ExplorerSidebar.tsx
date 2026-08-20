@@ -30,6 +30,7 @@ import { ICON_SIZE } from "../../design/iconSize";
 import { FileTree } from "../explorer/FileTree";
 import { SearchPanel } from "../search/SearchPanel";
 import { ProblemsPanel } from "../problems/ProblemsPanel";
+import { AgentChangesPanel } from "../agent/AgentChangesPanel";
 import { ScmContextMenu } from "./ScmContextMenu";
 import type {
   CommitFileEntry,
@@ -38,36 +39,9 @@ import type {
   StashEntry,
   StatusKind,
 } from "../../types/git";
-import { flattenScmRows, splitScmSections, type ScmRow } from "./scmRows";
+import { flattenScmRows, splitScmSections, glyphFor, splitPath, type ScmRow } from "./scmRows";
 import sidebar from "./Sidebar.module.css";
 import styles from "./ExplorerSidebar.module.css";
-
-function splitPath(path: string): { name: string; dir: string } {
-  const idx = path.lastIndexOf("/");
-  return idx === -1
-    ? { name: path, dir: "" }
-    : { name: path.slice(idx + 1), dir: path.slice(0, idx) };
-}
-
-function glyphFor(kind: StatusKind): { glyph: string; color: string } {
-  switch (kind.kind) {
-    case "modified":
-    case "typeChanged":
-      return { glyph: "M", color: "var(--yellow)" };
-    case "added":
-      return { glyph: "A", color: "var(--green)" };
-    case "renamed":
-      return { glyph: "R", color: "var(--green)" };
-    case "copied":
-      return { glyph: "C", color: "var(--green)" };
-    case "deleted":
-      return { glyph: "D", color: "var(--red)" };
-    case "untracked":
-      return { glyph: "U", color: "var(--green)" };
-    case "conflicted":
-      return { glyph: "!", color: "var(--red)" };
-  }
-}
 
 interface FileRowProps {
   entry: FileStatusEntry;
@@ -1018,6 +992,7 @@ export function ExplorerSidebar() {
   if (!rightSidebarOpen) return null;
 
   if (sidebarView === "scm") return <ScmView />;
+  if (sidebarView === "agentChanges") return <AgentChangesPanel key={activeWorktree?.id} />;
   // Keyed on the active worktree so switching worktrees remounts
   // HistoryView fresh — resets its local expand/files-cache state without
   // needing a setState-in-effect to do it.

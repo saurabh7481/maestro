@@ -5,7 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useUiStore } from "../../state/uiStore";
-import { useTabsStore, fileTabId } from "../../state/tabsStore";
+import { useTabsStore, fileTabId, classifyFileTabType } from "../../state/tabsStore";
 import { IconButton, AlertDialog } from "../primitives";
 import { FileTreeRow, ROW_HEIGHT } from "./FileTreeRow";
 import type { TreeRow } from "./FileTreeRow";
@@ -59,10 +59,6 @@ function flatten(
 
   walk("", 0);
   return rows;
-}
-
-function isMarkdown(name: string): boolean {
-  return /\.mdx?$/i.test(name);
 }
 
 export function FileTree() {
@@ -137,7 +133,7 @@ export function FileTree() {
     if (!worktreeId || !worktreeRoot) return;
     ensureTab({
       id: fileTabId(worktreeId, row.relPath),
-      type: isMarkdown(row.name) ? "markdown" : "file",
+      type: classifyFileTabType(row.name),
       title: row.name,
       filePath: row.relPath,
       worktreeRoot,

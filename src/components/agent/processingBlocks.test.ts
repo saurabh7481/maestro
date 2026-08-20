@@ -12,6 +12,7 @@ const completed: TranscriptItem = {
   outputTokens: 186,
   cacheReadTokens: 42014,
   cacheWriteTokens: 9869,
+  completedAtMs: 1700000000000,
 };
 
 const thinking = (id: string): TranscriptItem => ({

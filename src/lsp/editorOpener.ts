@@ -1,6 +1,6 @@
 import * as monaco from "monaco-editor/editor/editor.api";
 import { useWorkspaceStore } from "../state/workspaceStore";
-import { fileTabId, useTabsStore } from "../state/tabsStore";
+import { classifyFileTabType, fileTabId, useTabsStore } from "../state/tabsStore";
 import { useEditorNavigationStore } from "../state/editorNavigationStore";
 import type { Worktree } from "../types/workspace";
 
@@ -31,7 +31,7 @@ export function registerMaestroEditorOpener(): monaco.IDisposable {
       workspace.selectWorktree(match.worktree.projectId, match.worktree.id);
       useTabsStore.getState().ensureTab({
         id,
-        type: relativePath.toLowerCase().endsWith(".md") ? "markdown" : "file",
+        type: classifyFileTabType(relativePath),
         title: relativePath.split("/").pop() ?? relativePath,
         filePath: relativePath,
         worktreeId: match.worktree.id,
