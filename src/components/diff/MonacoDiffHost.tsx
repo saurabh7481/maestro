@@ -2,6 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as monaco from "monaco-editor/editor/editor.api";
 import { ensureMonacoEnvironment } from "../../editor/monacoSetup";
 import { languageForPath } from "../../editor/languages";
+import { EDITOR_THEME_NAME, applyEditorTheme } from "../../editor/editorTheme";
+import { buildCodeFontFamily } from "../../design/codeFonts";
 import { useUiStore } from "../../state/uiStore";
 import { useScmStore } from "../../state/scmStore";
 import { fsApi } from "../../api/fs";
@@ -11,9 +13,6 @@ import styles from "./MonacoDiffHost.module.css";
 
 ensureMonacoEnvironment();
 
-const MONACO_FONT_FAMILY =
-  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-const BASE_FONT_SIZE = 13;
 const AUTO_SAVE_DELAY_MS = 800;
 
 export interface DiffNavState {
@@ -159,15 +158,17 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
       // broken/blank diff despite the model API reporting correct content.
       // Clearing the container first guarantees each instance starts clean.
       container.innerHTML = "";
+      const prefs = useUiStore.getState();
+      applyEditorTheme(monaco, prefs.editorBackgroundColor);
       const editor = monaco.editor.createDiffEditor(container, {
         automaticLayout: true,
-        theme: "vs-dark",
+        theme: EDITOR_THEME_NAME,
         readOnly,
-        renderSideBySide: useUiStore.getState().diffSideBySide,
+        renderSideBySide: prefs.diffSideBySide,
         renderMarginRevertIcon: true,
         renderGutterMenu: true,
-        fontFamily: MONACO_FONT_FAMILY,
-        fontSize: Math.round(BASE_FONT_SIZE * useUiStore.getState().zoom),
+        fontFamily: buildCodeFontFamily(prefs.editorFontFamily),
+        fontSize: Math.round(prefs.editorFontSize * prefs.zoom),
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
       });
@@ -217,12 +218,25 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const editorFontSize = useUiStore((s) => s.editorFontSize);
+
     // App-level zoom (Cmd/Ctrl +/-) scales the whole rem-based UI via
     // --zoom, but Monaco manages its own canvas-rendered font size — it
     // never picks that up on its own, so mirror it explicitly here.
     useEffect(() => {
-      editorRef.current?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
-    }, [zoom]);
+      editorRef.current?.updateOptions({ fontSize: Math.round(editorFontSize * zoom) });
+    }, [zoom, editorFontSize]);
+
+    const editorFontFamily = useUiStore((s) => s.editorFontFamily);
+    useEffect(() => {
+      editorRef.current?.updateOptions({ fontFamily: buildCodeFontFamily(editorFontFamily) });
+    }, [editorFontFamily]);
+
+    const editorBackgroundColor = useUiStore((s) => s.editorBackgroundColor);
+    useEffect(() => {
+      if (!editorRef.current) return;
+      applyEditorTheme(monaco, editorBackgroundColor);
+    }, [editorBackgroundColor]);
 
     const diffSideBySide = useUiStore((s) => s.diffSideBySide);
     useEffect(() => {

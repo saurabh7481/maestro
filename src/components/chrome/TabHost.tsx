@@ -167,21 +167,32 @@ function MountedTab({
     return () => container.remove();
   }, [container]);
 
+  // `active` alone is only "the active tab of its *own* pane" — a pane
+  // keeps that state even while its whole worktree is in the background
+  // (switching worktrees doesn't destroy the other worktrees' panes, only
+  // stops rendering them), so a background worktree's active agent tab
+  // still had `active=true` reach it here despite being parked in the
+  // hidden container above, not shown in any on-screen slot. `AgentTab`'s
+  // Esc-to-stop effect trusts this `active` prop to mean "the tab the user
+  // is actually looking at" — without `slot != null`, an Esc press while
+  // viewing a *different* worktree could still stop that background run.
+  const visible = active && slot != null;
+
   return createPortal(
     <div
-      className={active ? styles.slot : `${styles.slot} ${styles.slotHidden}`}
+      className={visible ? styles.slot : `${styles.slot} ${styles.slotHidden}`}
       // Hidden slots are inert to assistive tech and to find-in-page for
       // the same reason they're `display: none` visually — they are
       // background tabs, not hidden UI on the current screen.
-      aria-hidden={active ? undefined : true}
+      aria-hidden={visible ? undefined : true}
     >
       {/* One boundary per slot, not one around the whole list — a
           suspending background tab must not blank the visible one. */}
       <Suspense fallback={null}>
         {tab.type === "agent" ? (
-          <AgentTab tab={tab} active={active} />
+          <AgentTab tab={tab} active={visible} />
         ) : (
-          <TerminalTab tab={tab} active={active} />
+          <TerminalTab tab={tab} active={visible} />
         )}
       </Suspense>
     </div>,

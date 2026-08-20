@@ -14,6 +14,8 @@ import { saveFileTab } from "../../editor/saveFile";
 import { lspClientManager } from "../../lsp/clientManager";
 import { documentSymbols } from "../../lsp/providers";
 import { relativeTime } from "../../design/relativeTime";
+import { buildCodeFontFamily } from "../../design/codeFonts";
+import { EDITOR_THEME_NAME, applyEditorTheme } from "../../editor/editorTheme";
 import type { BlameLine } from "../../types/git";
 import { EditorBreadcrumb } from "./EditorBreadcrumb";
 import styles from "./MonacoHost.module.css";
@@ -23,10 +25,6 @@ const UNCOMMITTED_HASH = "0000000000000000000000000000000000000000";
 
 const LARGE_FILE_BYTES = 2 * 1024 * 1024;
 const AUTO_SAVE_DELAY_MS = 800;
-
-const MONACO_FONT_FAMILY =
-  "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-const BASE_FONT_SIZE = 13;
 
 function blameLabel(info: BlameLine): string {
   if (info.hash === UNCOMMITTED_HASH) return "Uncommitted changes";
@@ -172,15 +170,17 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   // Create the editor once, dispose on unmount (only happens app-wide).
   useEffect(() => {
     if (!containerRef.current) return;
+    const prefs = useUiStore.getState();
+    applyEditorTheme(monaco, prefs.editorBackgroundColor);
     const editor = monaco.editor.create(containerRef.current, {
       automaticLayout: false,
-      theme: "vs-dark",
-      fontFamily: MONACO_FONT_FAMILY,
-      fontSize: BASE_FONT_SIZE,
+      theme: EDITOR_THEME_NAME,
+      fontFamily: buildCodeFontFamily(prefs.editorFontFamily),
+      fontSize: prefs.editorFontSize,
       // Minimap painting is disproportionately expensive in WebKitGTK,
-      // hence off by default — Settings → General → Minimap opts back in.
-      minimap: { enabled: useUiStore.getState().minimapEnabled },
-      wordWrap: useUiStore.getState().wordWrapEnabled ? "on" : "off",
+      // hence off by default — Settings → Editor → Minimap opts back in.
+      minimap: { enabled: prefs.minimapEnabled },
+      wordWrap: prefs.wordWrapEnabled ? "on" : "off",
       // WebKitGTK can retain enormous compositor surfaces for Monaco's
       // promoted text/margin layers. Monaco exposes this specifically for
       // browsers where layer hinting causes high GPU memory usage.
@@ -264,14 +264,36 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const editorFontSize = useUiStore((s) => s.editorFontSize);
+
   // App-level zoom (Cmd/Ctrl +/-) scales the whole rem-based UI via
   // --zoom, but Monaco manages its own canvas-rendered font size — it
   // never picks that up on its own, so mirror it explicitly here.
   useEffect(() => {
     const editor = editorRef.current;
-    editor?.updateOptions({ fontSize: Math.round(BASE_FONT_SIZE * zoom) });
+    editor?.updateOptions({ fontSize: Math.round(editorFontSize * zoom) });
     editor?.layout();
-  }, [zoom, leftSidebarWidth, rightSidebarWidth, leftSidebarOpen, rightSidebarOpen]);
+  }, [
+    zoom,
+    editorFontSize,
+    leftSidebarWidth,
+    rightSidebarWidth,
+    leftSidebarOpen,
+    rightSidebarOpen,
+  ]);
+
+  const editorFontFamily = useUiStore((s) => s.editorFontFamily);
+  useEffect(() => {
+    const editor = editorRef.current;
+    editor?.updateOptions({ fontFamily: buildCodeFontFamily(editorFontFamily) });
+    editor?.layout();
+  }, [editorFontFamily]);
+
+  const editorBackgroundColor = useUiStore((s) => s.editorBackgroundColor);
+  useEffect(() => {
+    if (!editorRef.current) return;
+    applyEditorTheme(monaco, editorBackgroundColor);
+  }, [editorBackgroundColor]);
 
   const minimapEnabled = useUiStore((s) => s.minimapEnabled);
   useEffect(() => {

@@ -58,10 +58,10 @@
 }
 
 .mark {
-  width: 1.1875rem;
-  height: 1.1875rem;
-  border-radius: 6px;
-  transform: rotate(45deg);
+  width: 1.375rem;
+  height: 1.375rem;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px var(--accent-soft));
 }
 
 .brandName {

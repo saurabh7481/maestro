@@ -1,12 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -89,12 +81,10 @@ interface FileRowProps {
 
 /** A single Source Control row: file-type icon, name, (optional) parent
  * directory, and a trailing group of hover-revealed action buttons plus
- * the status glyph. The trailing group carries its own `margin-left:
- * auto` (`.trailing`) rather than relying on `.filePath`'s flex-grow to
- * push it right — a file with no subdirectory (`dir` empty, common for
- * repo-root scripts) previously left nothing to push against, so the
- * glyph drifted left and column-misaligned against every row that *did*
- * have a directory shown. */
+ * the status glyph. Laid out via `.fileRow`'s fixed-width grid column
+ * (ExplorerSidebar.module.css) so the status glyph always lands in the
+ * same column regardless of directory length, action count, or hover
+ * state. */
 function FileRow({ entry, kind, active, onOpen, onStage, onUnstage, onDiscard }: FileRowProps) {
   const { name, dir } = splitPath(entry.path);
   const { icon: Icon, color } = iconForFile(name);
@@ -103,30 +93,19 @@ function FileRow({ entry, kind, active, onOpen, onStage, onUnstage, onDiscard }:
     kind.kind === "renamed" || kind.kind === "copied"
       ? `${splitPath(entry.oldPath ?? entry.path).name} → ${name}`
       : name;
-  // `.rowAction` buttons are hover-revealed via `opacity`, not conditional
-  // rendering, so they're always in the layout — but sizing `.trailing`
-  // from their own geometry means its width depends on those buttons
-  // being measured correctly while invisible, which WebKitGTK doesn't
-  // reliably do (same repaint-on-opacity-change class of bug `.row`'s
-  // `will-change` comment documents). Pinning an explicit min-width here,
-  // computed from the actual action count rather than the buttons'
-  // rendered geometry, keeps every row's status glyph in the same column
-  // regardless of hover state or which row is currently hovered.
-  const actionCount = [onStage, onUnstage, onDiscard].filter(Boolean).length;
 
   return (
     <ScmContextMenu path={entry.path} onStage={onStage} onUnstage={onUnstage} onDiscard={onDiscard}>
       <Tooltip label={entry.path} side="left">
-        <div className={sidebar.row} data-active={active} onClick={onOpen}>
+        <div className={styles.fileRow} data-active={active} onClick={onOpen}>
           <span className={styles.fileIcon}>
             <Icon size={ICON_SIZE.sm} color={color} />
           </span>
-          <span className={styles.fileName}>{label}</span>
-          {dir && <span className={styles.filePath}>{dir}</span>}
-          <span
-            className={styles.trailing}
-            style={{ "--trailing-actions": actionCount } as CSSProperties}
-          >
+          <span className={styles.fileLabel}>
+            <span className={styles.fileName}>{label}</span>
+            {dir && <span className={styles.filePath}>{dir}</span>}
+          </span>
+          <span className={styles.trailing}>
             {onStage && (
               <IconButton
                 icon={Plus}
@@ -724,7 +703,7 @@ function CommitFileRow({
   return (
     <Tooltip label={path} side="left">
       <div
-        className={`${sidebar.row} ${sidebar.indent1}`}
+        className={`${styles.fileRow} ${sidebar.indent1}`}
         data-active={activeTabId === id}
         onClick={() =>
           ensureTab({
@@ -741,10 +720,14 @@ function CommitFileRow({
         <span className={styles.fileIcon}>
           <Icon size={ICON_SIZE.sm} color={color} />
         </span>
-        <span className={styles.fileName}>{name}</span>
-        {dir && <span className={styles.filePath}>{dir}</span>}
-        <span className={styles.statusGlyph} style={{ color: glyphColor }}>
-          {glyph}
+        <span className={styles.fileLabel}>
+          <span className={styles.fileName}>{name}</span>
+          {dir && <span className={styles.filePath}>{dir}</span>}
+        </span>
+        <span className={styles.trailing}>
+          <span className={styles.statusGlyph} style={{ color: glyphColor }}>
+            {glyph}
+          </span>
         </span>
       </div>
     </Tooltip>
