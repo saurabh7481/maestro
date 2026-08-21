@@ -202,6 +202,58 @@ describe("streaming text", () => {
       "Second.",
     ]);
   });
+
+  it("folds a later message that restates the prior block into it, instead of duplicating it", () => {
+    // Live-observed on cursor-agent: delayed background-task
+    // notifications arriving after a turn's "final" message trigger one
+    // more `assistant` line whose text starts by repeating the block
+    // just closed (across intervening tool/thinking items, not
+    // adjacent), then appends genuinely new content.
+    apply(
+      { type: "message", role: "assistant", text: "All done." },
+      toolCall,
+      { type: "thinking", text: "Notifications arrived late." },
+      { type: "message", role: "assistant", text: "All done. Also: cleanup finished." },
+    );
+    const texts = assistantText();
+    expect(texts).toHaveLength(1);
+    expect(texts[0].kind === "assistantText" && texts[0].text).toBe(
+      "All done. Also: cleanup finished.",
+    );
+    expect(state().items.map((item) => item.kind)).toEqual([
+      "user",
+      "assistantText",
+      "toolCall",
+      "thinking",
+    ]);
+  });
+
+  it("does not merge a repeated message across a turn boundary", () => {
+    apply(
+      { type: "message", role: "assistant", text: "All done." },
+      {
+        type: "turnResult",
+        sessionId: "s",
+        isError: false,
+        totalCostUsd: null,
+        durationMs: 10,
+        numTurns: 1,
+        inputTokens: null,
+        outputTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        contextWindow: null,
+        resultText: null,
+      },
+    );
+    useAgentSessionStore.getState().appendUserMessage(RUN, "again");
+    apply({ type: "message", role: "assistant", text: "All done. More." });
+
+    expect(assistantText().map((item) => item.kind === "assistantText" && item.text)).toEqual([
+      "All done.",
+      "All done. More.",
+    ]);
+  });
 });
 
 describe("turn results", () => {

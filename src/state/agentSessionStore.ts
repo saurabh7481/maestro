@@ -167,6 +167,25 @@ function openStreamIndex(items: TranscriptItem[]): number {
   return last >= 0 && items[last].kind === "assistantText" && items[last].streaming ? last : -1;
 }
 
+/** The most recent assistant text block in the *current* turn, even if
+ * already-closed items (tool calls, thinking, raw system events) came
+ * after it — a `turnComplete`/`user` item means whatever's on the other
+ * side belongs to a different turn and must never be merged into. Used
+ * to catch cursor-agent re-stating its whole previous block verbatim
+ * before continuing (live-observed: delayed background-task
+ * notifications arriving after a turn's "final" message trigger one
+ * more `assistant` line whose text starts by repeating the block just
+ * closed, then appends genuinely new content) — `openStreamIndex` alone
+ * only catches the same-segment fragment/consolidated-resend case. */
+function lastAssistantTextIndex(items: TranscriptItem[]): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const kind = items[i].kind;
+    if (kind === "assistantText") return i;
+    if (kind === "turnComplete" || kind === "user") return -1;
+  }
+  return -1;
+}
+
 /** Marks any open streaming item as finished, leaving its text as-is.
  * Returns the same array when there was nothing open, so callers don't
  * churn references (and re-render the transcript) for no reason. */
@@ -711,6 +730,16 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
               text: event.text,
               streaming: false,
             };
+            return { byRunId: { ...s.byRunId, [runId]: { ...tab, items: next } } };
+          }
+          const priorIndex = lastAssistantTextIndex(items);
+          const prior =
+            priorIndex !== -1
+              ? (items[priorIndex] as Extract<TranscriptItem, { kind: "assistantText" }>)
+              : null;
+          if (prior && event.text.startsWith(prior.text)) {
+            const next = items.slice();
+            next[priorIndex] = { ...prior, text: event.text, streaming: false };
             return { byRunId: { ...s.byRunId, [runId]: { ...tab, items: next } } };
           }
           return {
