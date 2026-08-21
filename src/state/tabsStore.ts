@@ -119,6 +119,20 @@ export function worktreeKey(tab: Pick<Tab, "worktreeRoot">): string {
   return tab.worktreeRoot ?? "";
 }
 
+/** A tab restored from a previous session (or handed over from a
+ * satellite window) carries whatever `type` it had when it was last
+ * saved — if that was before `"html"` existed as its own `TabType`, an
+ * `.html` file tab comes back as plain `"file"` forever, silently
+ * missing the Source/Preview toggle `PaneView.tsx` would otherwise give
+ * it. Restore paths re-run the same classification a freshly-opened tab
+ * gets, rather than trusting the persisted value. */
+function normalizeTabType(tab: Tab): Tab {
+  if (tab.type !== "file" && tab.type !== "markdown" && tab.type !== "html") return tab;
+  if (!tab.filePath) return tab;
+  const type = classifyFileTabType(tab.filePath);
+  return type === tab.type ? tab : { ...tab, type };
+}
+
 let idCounter = 0;
 /** `crypto.randomUUID` isn't guaranteed in every test environment, and a
  * pane id only has to be unique within one window's lifetime. */
@@ -492,9 +506,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       return next;
     }),
 
-  adoptTabs: (tabs, paneId) =>
+  adoptTabs: (rawTabs, paneId) =>
     set((s) => {
-      if (tabs.length === 0) return s;
+      if (rawTabs.length === 0) return s;
+      const tabs = rawTabs.map(normalizeTabType);
       let next: Snapshot = s;
       let target = paneId && s.panes[paneId] ? paneId : undefined;
       if (!target) {
@@ -510,7 +525,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   hydrate: (snapshot) =>
     set((s) => {
-      const tabs = snapshot.tabs ?? s.tabs;
+      const tabs = (snapshot.tabs ?? s.tabs).map(normalizeTabType);
       const tabIds = new Set(tabs.map((t) => t.id));
       // A restored layout is only as trustworthy as the tabs that
       // survived restore (a worktree can disappear between sessions), so
