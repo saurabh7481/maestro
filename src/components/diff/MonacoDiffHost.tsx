@@ -161,7 +161,14 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
       const prefs = useUiStore.getState();
       applyEditorTheme(monaco, prefs.editorBackgroundColor);
       const editor = monaco.editor.createDiffEditor(container, {
-        automaticLayout: true,
+        // Off, and covered by the `ResizeObserver` below instead — same
+        // tradeoff `MonacoHost.tsx` documents on its own editor: a pane
+        // resize (splitter drag, a sidebar opening alongside this diff
+        // tab) doesn't fire a `window` resize event, and `automaticLayout`
+        // polls rather than reacting immediately, which left this editor
+        // rendered at its stale, pre-resize width — wide enough to paint
+        // over a sidebar that had just opened next to it.
+        automaticLayout: false,
         theme: EDITOR_THEME_NAME,
         readOnly,
         renderSideBySide: prefs.diffSideBySide,
@@ -173,6 +180,18 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
         scrollBeyondLastLine: false,
       });
       editorRef.current = editor;
+
+      let layoutFrame: number | null = null;
+      const scheduleLayout = () => {
+        if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
+        layoutFrame = requestAnimationFrame(() => {
+          layoutFrame = null;
+          editor.layout();
+        });
+      };
+      window.addEventListener("resize", scheduleLayout);
+      const resizeObserver = new ResizeObserver(scheduleLayout);
+      resizeObserver.observe(container);
 
       function reportNavState() {
         const changes = editor.getLineChanges() ?? [];
@@ -208,6 +227,9 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
         // reliable to call after the editor itself is gone.
         diffSub.dispose();
         changeSub.dispose();
+        window.removeEventListener("resize", scheduleLayout);
+        resizeObserver.disconnect();
+        if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         const model = editor.getModel();
         editor.dispose();
@@ -242,6 +264,20 @@ export const MonacoDiffHost = forwardRef<MonacoDiffHostHandle, MonacoDiffHostPro
     useEffect(() => {
       editorRef.current?.updateOptions({ renderSideBySide: diffSideBySide });
     }, [diffSideBySide]);
+
+    // Belt-and-suspenders alongside the mount effect's `ResizeObserver`:
+    // that observer reacts to the container's own box changing, but a
+    // sidebar's width/open-state flip is also directly available here as
+    // store state, so there's no reason to wait on layout + paint to
+    // notice it. Cheap either way since `layout()` is a no-op when nothing
+    // actually changed.
+    const leftSidebarWidth = useUiStore((s) => s.leftSidebarWidth);
+    const rightSidebarWidth = useUiStore((s) => s.rightSidebarWidth);
+    const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);
+    const rightSidebarOpen = useUiStore((s) => s.rightSidebarOpen);
+    useEffect(() => {
+      editorRef.current?.layout();
+    }, [leftSidebarWidth, rightSidebarWidth, leftSidebarOpen, rightSidebarOpen]);
 
     useEffect(() => {
       const editor = editorRef.current;
