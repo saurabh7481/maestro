@@ -1,9 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  AuthMethod,
-  Authorization,
-  ProviderOverview,
-} from "../types/opencode";
+import type { AuthMethod, Authorization, ProviderOverview } from "../types/opencode";
 
 /** Thin, typed wrapper around the OpenCode provider-management command
  * surface — same pattern as `agentsApi`. Every call projects on the Rust

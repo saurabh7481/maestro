@@ -314,16 +314,15 @@ function ConnectSheet({
     return (
       <>
         <div className={styles.agentDetail}>
-          This provider exposes no sign-in methods — it may need configuration in your
-          opencode.json instead.
+          This provider exposes no sign-in methods — it may need configuration in your opencode.json
+          instead.
         </div>
         <SheetActions onCancel={onClose} />
       </>
     );
   }
 
-  const method =
-    methodIndex !== null ? methods.find((m) => m.index === methodIndex) : undefined;
+  const method = methodIndex !== null ? methods.find((m) => m.index === methodIndex) : undefined;
   if (!method) {
     return <MethodPicker methods={methods} onPick={setMethodIndex} />;
   }

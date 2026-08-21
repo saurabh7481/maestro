@@ -36,7 +36,7 @@ one thing none of the others need: **full in-app provider management**.
 4. **No new secret storage.** Credentials live in opencode's own store
    (`~/.local/share/opencode/auth.json`), written through its API.
    Maestro never holds provider keys — deliberately unlike Aider, where
-   Maestro *is* the credential store.
+   Maestro _is_ the credential store.
 
 **Non-goals**
 
@@ -59,16 +59,16 @@ plugins, web UI are all clients of an HTTP server). `opencode auth
 login` is a TUI form over the same operations the server exposes as
 REST. Verified inventory (1.18.19):
 
-| Terminal workflow | Server equivalent (verified) | Notes |
-| --- | --- | --- |
-| Browse providers | `GET /provider` → `{all: Provider[], connected: string[]}` | 193 providers in catalog; `connected` = authenticated ids |
-| See how a provider authenticates | `GET /provider/auth` → `{[id]: AuthMethod[]}` | Declarative: `{type: "oauth"\|"api", label, prompts[]}` — includes conditional form prompts (see §3.3) |
-| Paste an API key | `PUT /auth/{providerID}` | Body matches provider schema; writes `auth.json` |
-| Start OAuth/device flow | `POST /provider/{providerID}/oauth/authorize` `{method, inputs}` → authorization URL/method | `method` = index into `/provider/auth` list; `inputs` answers the declarative prompts |
-| Complete OAuth | `POST /provider/{providerID}/oauth/callback` | |
-| Logout | `DELETE /auth/{providerID}` | |
-| Models for connected providers | `GET /config/providers` | Connected only; includes default model per provider |
-| Health/version | `GET /global/health` → `{healthy, version}` | Doubles as the version gate |
+| Terminal workflow                | Server equivalent (verified)                                                                | Notes                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Browse providers                 | `GET /provider` → `{all: Provider[], connected: string[]}`                                  | 193 providers in catalog; `connected` = authenticated ids                                              |
+| See how a provider authenticates | `GET /provider/auth` → `{[id]: AuthMethod[]}`                                               | Declarative: `{type: "oauth"\|"api", label, prompts[]}` — includes conditional form prompts (see §3.3) |
+| Paste an API key                 | `PUT /auth/{providerID}`                                                                    | Body matches provider schema; writes `auth.json`                                                       |
+| Start OAuth/device flow          | `POST /provider/{providerID}/oauth/authorize` `{method, inputs}` → authorization URL/method | `method` = index into `/provider/auth` list; `inputs` answers the declarative prompts                  |
+| Complete OAuth                   | `POST /provider/{providerID}/oauth/callback`                                                |                                                                                                        |
+| Logout                           | `DELETE /auth/{providerID}`                                                                 |                                                                                                        |
+| Models for connected providers   | `GET /config/providers`                                                                     | Connected only; includes default model per provider                                                    |
+| Health/version                   | `GET /global/health` → `{healthy, version}`                                                 | Doubles as the version gate                                                                            |
 
 The decisive property is `GET /provider/auth`: providers describe their
 own auth as data — method list, labels, and form prompts with
@@ -158,20 +158,20 @@ awaitable so callers can `acquire().await` and get a ready base URL.
 
 **What holds a handle (the complete list):**
 
-| Consumer | Acquire | Release |
-| --- | --- | --- |
-| OpenCode agent tab, from open to close | tab open | tab close |
-| A running turn | turn start | turn end/kill (a turn must never outlive the server mid-stream) |
-| Settings → OpenCode pane, while visible | pane mount | pane unmount |
-| OAuth flow awaiting callback | flow start | completion/cancel |
-| Commit-message generation etc. (`commands/agents.rs` one-shots) | call | call end |
+| Consumer                                                        | Acquire    | Release                                                         |
+| --------------------------------------------------------------- | ---------- | --------------------------------------------------------------- |
+| OpenCode agent tab, from open to close                          | tab open   | tab close                                                       |
+| A running turn                                                  | turn start | turn end/kill (a turn must never outlive the server mid-stream) |
+| Settings → OpenCode pane, while visible                         | pane mount | pane unmount                                                    |
+| OAuth flow awaiting callback                                    | flow start | completion/cancel                                               |
+| Commit-message generation etc. (`commands/agents.rs` one-shots) | call       | call end                                                        |
 
 Rules that fall out of this table and must be enforced:
 
 - **Detection never acquires.** `registry::detect(OpenCode)` must be
   answerable with the sidecar stopped: binary presence via `--version`
   (as for all CLIs), auth state by reading `auth.json` directly (fast,
-  local, no process). Opening Settings' *Agents* list costs nothing.
+  local, no process). Opening Settings' _Agents_ list costs nothing.
 - **App startup never acquires.** No OpenCode tab restored from a
   previous session auto-starts the sidecar until the tab is actually
   focused/rendered — restore count, render lazily like Monaco/xterm
@@ -190,13 +190,13 @@ Rules that fall out of this table and must be enforced:
 
 ### 2.3 Resource budget (enforced, not aspirational)
 
-| Metric | Budget | How checked |
-| --- | --- | --- |
-| Idle RSS with no opencode consumers | **+0 MB** vs today | sidecar process must not exist; asserted in lifecycle test |
-| Steady-state RSS, one open tab, no turn | ≤ 400 MB (live: boots ~377 MB, **settles to ~310 MB** within 20 s) | `OPENCODE_LIVE=1 cargo test --lib live_tests` each release-hardening pass; multi-hour watch stays a manual step |
-| Boot latency (stopped → healthy) | ≤ 3 s p95 (**live-measured: 721 ms**) | lifecycle test timing; UI shows progress state meanwhile (§3.2) |
-| Turn first-token delta vs non-attach baseline | attach must not regress | Phase O5 fixture timing |
-| Event delivery to webview | batched at animation-frame cadence | existing §9 batching path reused, no per-line events |
+| Metric                                        | Budget                                                             | How checked                                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Idle RSS with no opencode consumers           | **+0 MB** vs today                                                 | sidecar process must not exist; asserted in lifecycle test                                                      |
+| Steady-state RSS, one open tab, no turn       | ≤ 400 MB (live: boots ~377 MB, **settles to ~310 MB** within 20 s) | `OPENCODE_LIVE=1 cargo test --lib live_tests` each release-hardening pass; multi-hour watch stays a manual step |
+| Boot latency (stopped → healthy)              | ≤ 3 s p95 (**live-measured: 721 ms**)                              | lifecycle test timing; UI shows progress state meanwhile (§3.2)                                                 |
+| Turn first-token delta vs non-attach baseline | attach must not regress                                            | Phase O5 fixture timing                                                                                         |
+| Event delivery to webview                     | batched at animation-frame cadence                                 | existing §9 batching path reused, no per-line events                                                            |
 
 Additional performance commitments:
 
@@ -207,7 +207,7 @@ Additional performance commitments:
   `GET /config/providers` are cached in-memory with a TTL (10 min) and
   invalidated on any successful auth write. The provider catalog also
   gets a SQLite-free fallback: if the sidecar is stopped and the user
-  opens the "Add provider" catalog, that pane-open *is* an acquire —
+  opens the "Add provider" catalog, that pane-open _is_ an acquire —
   the cache exists so re-opening the pane doesn't refetch.
 - **Model picker data** comes from the sidecar when running, else
   `opencode models --verbose` (verified: prints one JSON object per
@@ -278,7 +278,7 @@ Editor…). Two sections:
   unvirtualized, but the input takes focus on open and Enter selects
   the highlighted row — keyboard-first, like the command palette.
 - Each row shows its auth methods inline (from `/provider/auth`) so
-  users can see *how* they'd connect before committing — e.g. seeing
+  users can see _how_ they'd connect before committing — e.g. seeing
   "ChatGPT (subscription)" vs "API key" for OpenAI is the whole
   decision.
 - Loading state: skeleton rows while the catalog fetches (first open
@@ -297,7 +297,7 @@ pane uses), placeholder from the method label, footer: Cancel / Save.
 Save → `PUT /auth/{id}` → success closes the sheet, row appears in the
 pane. The key travels keyboard → Rust command → loopback HTTP body →
 `auth.json`. It is never logged, never in argv, never persisted by
-Maestro. (O1 found that GET endpoints *do* return key material — see
+Maestro. (O1 found that GET endpoints _do_ return key material — see
 §7 — so the Rust layer strips credentials from every provider-listing
 response before IPC; a response-schema test in O4 pins this.)
 
@@ -344,17 +344,17 @@ didn't say — the same honesty rule that produced `manual_gate_detail`.
 
 ### 3.4 States inventory (exhaustive, so nothing ships half-baked)
 
-| Surface | State | Treatment |
-| --- | --- | --- |
-| Pane rows | loading / loaded / error | skeleton / rows / error card + Retry |
-| Catalog modal | sidecar starting | header spinner "Starting OpenCode…" |
-| Catalog modal | empty search result | "No provider matches 'x'" + clear button |
-| Connect sheet (api) | validating | Save disabled while PUT in flight |
-| Connect sheet (api) | rejected key | inline error, verbatim API message, input keeps focus |
-| OAuth waiting | timeout (>5 min) | "Didn't complete in time — try again"; poll cancelled |
-| OAuth waiting | user cancels | poll aborted, handle released, sheet closes |
-| Disconnect | in-flight | row dims, button spins; rollback + toast on failure |
-| Whole pane | sidecar crashed | banner across pane: what died, stderr line, Restart button |
+| Surface             | State                    | Treatment                                                  |
+| ------------------- | ------------------------ | ---------------------------------------------------------- |
+| Pane rows           | loading / loaded / error | skeleton / rows / error card + Retry                       |
+| Catalog modal       | sidecar starting         | header spinner "Starting OpenCode…"                        |
+| Catalog modal       | empty search result      | "No provider matches 'x'" + clear button                   |
+| Connect sheet (api) | validating               | Save disabled while PUT in flight                          |
+| Connect sheet (api) | rejected key             | inline error, verbatim API message, input keeps focus      |
+| OAuth waiting       | timeout (>5 min)         | "Didn't complete in time — try again"; poll cancelled      |
+| OAuth waiting       | user cancels             | poll aborted, handle released, sheet closes                |
+| Disconnect          | in-flight                | row dims, button spins; rollback + toast on failure        |
+| Whole pane          | sidecar crashed          | banner across pane: what died, stderr line, Restart button |
 
 ## 4. Agent tab integration
 
@@ -384,9 +384,9 @@ capability (types/agent.ts's standing rule).
 - **Manual honesty:** `run` mode cannot prompt mid-run — an "ask"
   permission either blocks the tool (surfacing as a denial event) or is
   governed by the project's `opencode.json`. So `manual_gate:
-  ExternalConfig` with detail copy: *"OpenCode can't ask Maestro for
+ExternalConfig` with detail copy: _"OpenCode can't ask Maestro for
   approval in headless runs — allow/deny rules come from your
-  opencode.json permission config."* Same posture class as Cursor/Aider
+  opencode.json permission config."_ Same posture class as Cursor/Aider
   today. (Server-native transport is the v2 path to `Prompt`; §1.2.)
 
 ### 4.2 Transcript mapping (opencode stream → `AgentEvent`)
@@ -399,20 +399,20 @@ The stream is NDJSON, one event per line:
   "timestamp": ms, "sessionID": "ses_…", "part": { … } }
 ```
 
-| opencode event | AgentEvent | Verified shape notes |
-| --- | --- | --- |
-| `text` | `Message` (+ `MessageDelta` accumulation not needed) | `part.text` is the **complete** block; `run --format json` emits parts only when finished — even with 400 ms-spaced model chunks the text arrived as one event. `Streaming::Blocks` is a measured fact, not an assumption. |
-| `reasoning` | `Thinking` | `part.text` carries the section; emitted only when `--thinking` is passed. One event per section. |
-| `tool_use` | `ToolCall` + `ToolResult` | Arrives **once, with terminal state**: `part.tool` (`bash`, `read`, …), `part.callID`, `state.status` = `completed`\|`error`, `state.input`, `state.output`, `state.metadata.exit`, `state.time`. No pending/running transitions in run mode. |
-| `tool_use` with `state.status: "error"` | `ToolResult(is_error)` and/or `PermissionDenied {gated: false}` | Distinguish denials by `state.error` = *"The user rejected permission to use this specific tool call."* (verbatim, fixture 04). |
-| `step_finish` | usage accumulator → folded into `TurnResult` | `part.tokens: {total, input, output, reasoning, cache{read, write}}`, `part.cost`, `part.reason` = `stop`\|`tool-calls`. A turn = sum across its `step_finish` events; the last one's `reason: "stop"` marks natural completion. |
-| every event's `sessionID` | `TurnResult.session_id` | Present on all lines — resume capture is trivial. |
-| stderr lines | `Error` | JSON-CLI convention (adapter.rs). |
+| opencode event                          | AgentEvent                                                      | Verified shape notes                                                                                                                                                                                                                          |
+| --------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`                                  | `Message` (+ `MessageDelta` accumulation not needed)            | `part.text` is the **complete** block; `run --format json` emits parts only when finished — even with 400 ms-spaced model chunks the text arrived as one event. `Streaming::Blocks` is a measured fact, not an assumption.                    |
+| `reasoning`                             | `Thinking`                                                      | `part.text` carries the section; emitted only when `--thinking` is passed. One event per section.                                                                                                                                             |
+| `tool_use`                              | `ToolCall` + `ToolResult`                                       | Arrives **once, with terminal state**: `part.tool` (`bash`, `read`, …), `part.callID`, `state.status` = `completed`\|`error`, `state.input`, `state.output`, `state.metadata.exit`, `state.time`. No pending/running transitions in run mode. |
+| `tool_use` with `state.status: "error"` | `ToolResult(is_error)` and/or `PermissionDenied {gated: false}` | Distinguish denials by `state.error` = _"The user rejected permission to use this specific tool call."_ (verbatim, fixture 04).                                                                                                               |
+| `step_finish`                           | usage accumulator → folded into `TurnResult`                    | `part.tokens: {total, input, output, reasoning, cache{read, write}}`, `part.cost`, `part.reason` = `stop`\|`tool-calls`. A turn = sum across its `step_finish` events; the last one's `reason: "stop"` marks natural completion.              |
+| every event's `sessionID`               | `TurnResult.session_id`                                         | Present on all lines — resume capture is trivial.                                                                                                                                                                                             |
+| stderr lines                            | `Error`                                                         | JSON-CLI convention (adapter.rs).                                                                                                                                                                                                             |
 
 **Permission semantics (fixture 04 vs 05):** without `--auto`, a tool
 hitting an `"ask"` rule is refused (`state.status: "error"` with the
 rejection message) and **the turn terminates immediately** —
-`step_finish(reason: "tool-calls")` follows and the model is *not*
+`step_finish(reason: "tool-calls")` follows and the model is _not_
 re-consulted (verified by request counting against the mock). With
 `--auto`, the identical call completes. Consequence for Maestro:
 denials are surfaced as a terminal permission card with honest copy;
@@ -439,19 +439,19 @@ Deep-link opens Settings pre-navigated to the pane (the same
 `capabilities_for(OpenCode)` — values verified against 1.18.19 except
 where marked:
 
-| Capability | Value | Basis |
-| --- | --- | --- |
-| `streaming` | `Blocks` | **Measured** (fixture 02): parts arrive only when complete, regardless of model chunk timing |
-| `manual_gate` | `ExternalConfig` | §4.1; denials are terminal (§4.2); detail copy mandatory (test enforces) |
-| `plan_mode` | `true` | `--agent plan` |
-| `resume` | `true` | `--session <id>` |
-| `fork_session` | `true` | `--fork` (rare among the five CLIs) |
-| `reports_usage` | `true` | Verified: `step_finish.tokens` on every step (fixtures 01–06) |
-| `reports_cost` | `true` | Verified: `step_finish.cost`; report `None` rather than $0.00 where the catalog has no pricing (Aider precedent) |
-| `reports_context_window` | `true` | `opencode models --verbose` exposes `limit.context` per model (verified: Zen big-pickle = 200 000); adapter joins it at turn time |
-| `separate_option_flags` | `true` | `--variant` independent of `-m` — but see effort note below |
-| `effort_label` | `"Variant"` | the flag's own name; **picker hidden in v1** — variant sets are not enumerable from models.dev or `models --verbose` (verified: zero models expose variant metadata), and a free-text field would be a guess generator. Revisit if opencode exposes variants programmatically. |
-| `plan_exit_tool` | `None` | plan agent ends in prose |
+| Capability               | Value            | Basis                                                                                                                                                                                                                                                                          |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `streaming`              | `Blocks`         | **Measured** (fixture 02): parts arrive only when complete, regardless of model chunk timing                                                                                                                                                                                   |
+| `manual_gate`            | `ExternalConfig` | §4.1; denials are terminal (§4.2); detail copy mandatory (test enforces)                                                                                                                                                                                                       |
+| `plan_mode`              | `true`           | `--agent plan`                                                                                                                                                                                                                                                                 |
+| `resume`                 | `true`           | `--session <id>`                                                                                                                                                                                                                                                               |
+| `fork_session`           | `true`           | `--fork` (rare among the five CLIs)                                                                                                                                                                                                                                            |
+| `reports_usage`          | `true`           | Verified: `step_finish.tokens` on every step (fixtures 01–06)                                                                                                                                                                                                                  |
+| `reports_cost`           | `true`           | Verified: `step_finish.cost`; report `None` rather than $0.00 where the catalog has no pricing (Aider precedent)                                                                                                                                                               |
+| `reports_context_window` | `true`           | `opencode models --verbose` exposes `limit.context` per model (verified: Zen big-pickle = 200 000); adapter joins it at turn time                                                                                                                                              |
+| `separate_option_flags`  | `true`           | `--variant` independent of `-m` — but see effort note below                                                                                                                                                                                                                    |
+| `effort_label`           | `"Variant"`      | the flag's own name; **picker hidden in v1** — variant sets are not enumerable from models.dev or `models --verbose` (verified: zero models expose variant metadata), and a free-text field would be a guess generator. Revisit if opencode exposes variants programmatically. |
+| `plan_exit_tool`         | `None`           | plan agent ends in prose                                                                                                                                                                                                                                                       |
 
 Registry specifics:
 
@@ -497,7 +497,7 @@ Registry specifics:
   responses (`"key": "sk-…"` per connected provider — verified during
   the probe). Therefore: (a) the Rust command layer must project these
   responses down to safe fields (id, name, model counts, connected
-  flags) *before* they cross IPC — raw bodies never reach the webview;
+  flags) _before_ they cross IPC — raw bodies never reach the webview;
   (b) response bodies are never logged; (c) the sidecar password below
   is **mandatory**, not optional hardening — without it any local
   process could read the user's provider keys off the sidecar.
@@ -566,7 +566,7 @@ Tests: six lifecycle scenarios against a scripted Python fake binary
 grace reuse, concurrent acquire sharing, boot failure fail-closed,
 crash-restart-then-fail, and quit teardown; plus command/env-shape and
 port-discovery unit tests. 145/145 suite green, clippy clean.
-*Exit criteria met:* lifecycle tests prove started-only-on-demand and
+_Exit criteria met:_ lifecycle tests prove started-only-on-demand and
 stopped-after-grace; no frontend changes.
 
 **Phase O3 — Registry, capabilities, detection. COMPLETE (2026-08-21).**
@@ -586,7 +586,7 @@ are driven by a new `TAB_READY_AGENT_KINDS` subset so OpenCode becomes
 startable exactly when Phase O5 lands. Also fixed: vitest was sweeping
 stale worktrees under `.claude/worktrees/` (own node_modules, duplicate
 React) into every run — now excluded in `vite.config.ts`.
-*Exit criteria met:* card renders for installed/not-installed/no-provider
+_Exit criteria met:_ card renders for installed/not-installed/no-provider
 with zero sidecar spawns (nothing on this path calls `acquire`);
 152 Rust + 162 frontend tests green, clippy/tsc/fmt clean.
 
@@ -622,7 +622,7 @@ Honest caveat: the OAuth path is spec-verified (`ProviderAuthAuthorization`
 flow-agnostic, but no live OAuth login was performed — that needs a human
 browser round-trip and lands with real usage.
 
-*Exit criteria met:* connect-by-key and disconnect work entirely in-app
+_Exit criteria met:_ connect-by-key and disconnect work entirely in-app
 (live-verified); every §3.4 state implemented and reachable; 156 Rust +
 169 frontend tests green, clippy/tsc/fmt clean.
 
@@ -668,7 +668,7 @@ messages[].parts}` into text-only user/assistant pairs (same
 simplification as every other CLI's replay). Both live-verified: a real
 turn's session appeared scoped to its worktree and exported cleanly.
 
-*Exit criteria met:* picker lists only connected providers' models
+_Exit criteria met:_ picker lists only connected providers' models
 (sidecar path) with an honest CLI fallback; resume hydrates transcript
 (live-verified). 170 Rust tests green; tsc/fmt/clippy clean; 169
 frontend tests.
@@ -685,7 +685,7 @@ design. Version-drift posture documented (floor: verified flags of
 1.18.x; older builds fail loudly at spawn) and added to CHECKLIST.md's
 edge-case sweep alongside the sidecar lifecycle cases.
 `ARCHITECTURE.md` gained its §3.5 protocol reference.
-*Exit:* budgets met — no deviations to rationalize.
+_Exit:_ budgets met — no deviations to rationalize.
 
 ## Integration status
 

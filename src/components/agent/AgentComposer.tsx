@@ -743,9 +743,7 @@ export function AgentComposer({
   // against — excluded from pill rendering below since it isn't a
   // finished token yet (see `renderHighlightedDraft`'s doc comment).
   const mentionExclude =
-    activeMenu === "mention" && mentionMatch
-      ? { start: mentionMatch.index, end: cursorPos }
-      : null;
+    activeMenu === "mention" && mentionMatch ? { start: mentionMatch.index, end: cursorPos } : null;
 
   const [menuIndexRaw, setMenuIndex] = useState(0);
   // Clamped rather than reset-on-change: the candidate list can shrink

@@ -14,7 +14,10 @@ export function isPromptVisible(prompt: AuthPrompt, answers: Record<string, stri
 
 /** The prompts currently visible, in declaration order — what the sheet
  * renders and what "Continue" requires answers for. */
-export function visiblePrompts(prompts: AuthPrompt[], answers: Record<string, string>): AuthPrompt[] {
+export function visiblePrompts(
+  prompts: AuthPrompt[],
+  answers: Record<string, string>,
+): AuthPrompt[] {
   return prompts.filter((prompt) => isPromptVisible(prompt, answers));
 }
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AuthPrompt, ProviderSummary } from "../../types/opencode";
-import { filterCatalog, isPromptVisible, needsMethodPicker, visiblePrompts } from "./opencodeConnect";
+import {
+  filterCatalog,
+  isPromptVisible,
+  needsMethodPicker,
+  visiblePrompts,
+} from "./opencodeConnect";
 
 const CATALOG: ProviderSummary[] = [
   { id: "opencode", name: "OpenCode Zen" },
@@ -71,9 +76,7 @@ describe("isPromptVisible", () => {
 describe("needsMethodPicker", () => {
   it("is true only when several methods exist", () => {
     expect(needsMethodPicker([])).toBe(false);
-    expect(
-      needsMethodPicker([{ index: 0, kind: "api", label: "Key", prompts: [] }]),
-    ).toBe(false);
+    expect(needsMethodPicker([{ index: 0, kind: "api", label: "Key", prompts: [] }])).toBe(false);
     expect(
       needsMethodPicker([
         { index: 0, kind: "oauth", label: "ChatGPT", prompts: [] },
