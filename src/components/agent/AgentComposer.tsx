@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
+import type { ClipboardEvent, DragEvent, KeyboardEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowUp,
@@ -16,11 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
-import {
-  EMPTY_ATTACHMENTS,
-  EMPTY_QUEUE,
-  useAgentSessionStore,
-} from "../../state/agentSessionStore";
+import { EMPTY_QUEUE, useAgentSessionStore } from "../../state/agentSessionStore";
 import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
 import { agentsApi } from "../../api/agents";
 import { fsApi } from "../../api/fs";
@@ -104,6 +100,52 @@ function useSlashCommands(kind: AgentKind, worktreeRoot: string): SlashCommandOp
 }
 
 const MENU_MAX_RESULTS = 8;
+
+/** A complete `@path` token — `@` plus path-ish characters, only where
+ * followed by whitespace or the end of the string. That trailing boundary
+ * is what separates a *finished* mention (pill-worthy) from the one the
+ * user is still typing/autocompleting, without needing a second parallel
+ * "is this a real file" check — every mention this composer ever inserts
+ * (typed, dropped, attached, pasted) already goes in as `@path ` with a
+ * trailing space, so this matches all of them the same way. */
+const MENTION_TOKEN_RE = /@[\w./-]+(?=\s|$)/g;
+
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+
+/** Renders `text` as plain strings interleaved with pill `<span>`s around
+ * each complete `@mention` token — the highlight layer under the (text-
+ * transparent) textarea in `TextareaStack`. `exclude` is the current
+ * in-progress mention match (if the `@`-menu is open), rendered as plain
+ * text instead of a pill since it isn't a finished token yet. */
+function renderHighlightedDraft(
+  text: string,
+  exclude: { start: number; end: number } | null,
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let key = 0;
+  MENTION_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MENTION_TOKEN_RE.exec(text))) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (exclude && start < exclude.end && end > exclude.start) continue;
+    if (start > cursor) nodes.push(text.slice(cursor, start));
+    const path = match[0].slice(1);
+    nodes.push(
+      <span
+        key={key++}
+        className={styles.pill}
+        data-kind={IMAGE_EXT_RE.test(path) ? "image" : "file"}
+      >
+        {match[0]}
+      </span>,
+    );
+    cursor = end;
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
 
 /** The full worktree file list (same `git ls-files`-backed source
  * quick-open uses — `CommandPalette.tsx`'s `useWorktreeFiles`), fetched
@@ -552,10 +594,6 @@ export function AgentComposer({
 }) {
   const draft = useAgentSessionStore((s) => s.draftByRunId[runId] ?? "");
   const setDraft = useAgentSessionStore((s) => s.setDraft);
-  const attachedPaths = useAgentSessionStore((s) => s.attachedByRunId[runId] ?? EMPTY_ATTACHMENTS);
-  const addAttachment = useAgentSessionStore((s) => s.addAttachment);
-  const removeAttachment = useAgentSessionStore((s) => s.removeAttachment);
-  const clearAttachments = useAgentSessionStore((s) => s.clearAttachments);
   const queueMessage = useAgentSessionStore((s) => s.queueMessage);
   const unqueueMessage = useAgentSessionStore((s) => s.unqueueMessage);
   const queued = useAgentSessionStore((s) => s.byRunId[runId]?.queued ?? EMPTY_QUEUE);
@@ -573,7 +611,9 @@ export function AgentComposer({
   const [fast, setFast] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   // Cursor position is tracked via state (updated from event handlers),
   // not read from `textareaRef.current` during render — reading a ref's
   // value at render time is unsafe (react-hooks/refs).
@@ -582,6 +622,10 @@ export function AgentComposer({
   useLayoutEffect(() => {
     const element = textareaRef.current;
     if (element) resizeComposerTextarea(element);
+    // The highlight overlay sits behind the (text-transparent) textarea and
+    // needs to stay pixel-aligned with it, including scroll position — a
+    // resize can change how much of a long draft is scrolled out of view.
+    if (overlayRef.current && element) overlayRef.current.scrollTop = element.scrollTop;
   }, [draft]);
 
   // A run only ever needs to pick up the last-used model once, right after
@@ -695,6 +739,13 @@ export function AgentComposer({
   const menuMatch =
     activeMenu === "slash" ? slashMatch : activeMenu === "mention" ? mentionMatch : null;
   const menuLength = activeMenu === "slash" ? slashCandidates.length : mentionCandidates.length;
+  // The in-progress `@partial` the mention menu is currently matching
+  // against — excluded from pill rendering below since it isn't a
+  // finished token yet (see `renderHighlightedDraft`'s doc comment).
+  const mentionExclude =
+    activeMenu === "mention" && mentionMatch
+      ? { start: mentionMatch.index, end: cursorPos }
+      : null;
 
   const [menuIndexRaw, setMenuIndex] = useState(0);
   // Clamped rather than reset-on-change: the candidate list can shrink
@@ -727,6 +778,57 @@ export function AgentComposer({
     });
   }
 
+  /** Splices one or more `@path` tokens in at the current cursor position
+   * (or the end, if the textarea isn't mounted yet) as a single edit —
+   * the shared landing point for every non-typed way context enters the
+   * draft: file-tree drag/drop, the "Add context" picker, browsed files,
+   * and pasted files/images. Batching multiple paths into one call (rather
+   * than one `insertMention` call per path) matters for the multi-file
+   * cases: each call reads `draft`/`selectionStart` fresh, so looping
+   * single-path insertions in the same tick would each compute their
+   * splice against the same stale `draft` and only the last one would
+   * stick. */
+  function insertMentionTokens(paths: string[]) {
+    if (paths.length === 0) return;
+    const token = `${paths.map((p) => `@${p}`).join(" ")} `;
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? start;
+    const next = `${draft.slice(0, start)}${token}${draft.slice(end)}`;
+    setDraft(runId, next);
+    const pos = start + token.length;
+    setCursorPos(pos);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      });
+    }
+  }
+
+  function insertMention(path: string) {
+    insertMentionTokens([path]);
+  }
+
+  /** Only reacts to drags carrying the file tree's own custom MIME type
+   * (set in `FileTreeRow.tsx`) — checked before `preventDefault` so an
+   * unrelated drag (a text selection, something from outside the app)
+   * passes through instead of being silently swallowed here. */
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!event.dataTransfer.types.includes("application/x-maestro-file-path")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragOver(true);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    const path = event.dataTransfer.getData("application/x-maestro-file-path");
+    if (!path) return;
+    event.preventDefault();
+    setDragOver(false);
+    insertMention(path);
+  }
+
   /** Files come off the clipboard one of two ways depending on how they
    * got there: `clipboardData.files` holds real bytes (a screenshot, or
    * an image copied directly), while a file manager's "Copy" instead
@@ -756,10 +858,9 @@ export function AgentComposer({
     });
   }
 
-  async function stageAndAttach(base64: string, fileName: string) {
-    if (!worktreeRoot) return;
-    const relPath = await fsApi.savePastedAttachment(worktreeRoot, fileName, base64);
-    addAttachment(runId, relPath);
+  async function stagePastedContent(base64: string, fileName: string): Promise<string | null> {
+    if (!worktreeRoot) return null;
+    return fsApi.savePastedAttachment(worktreeRoot, fileName, base64);
   }
 
   /** "Browse files…" in the Add context menu. The worktree list above it
@@ -783,10 +884,11 @@ export function AgentComposer({
     if (paths.length === 0) return;
     setAttaching(true);
     try {
+      const relPaths: string[] = [];
       for (const path of paths) {
-        const relPath = await fsApi.copyFileIntoAttachments(worktreeRoot, path);
-        addAttachment(runId, relPath);
+        relPaths.push(await fsApi.copyFileIntoAttachments(worktreeRoot, path));
       }
+      insertMentionTokens(relPaths);
     } catch (err) {
       setAttachError(String(err));
     } finally {
@@ -870,7 +972,8 @@ export function AgentComposer({
         const imagePng = await tryReadClipboardImageAsPng();
         if (imagePng) {
           const base64 = await readBlobAsBase64(imagePng);
-          await stageAndAttach(base64, "pasted-image.png");
+          const relPath = await stagePastedContent(base64, "pasted-image.png");
+          if (relPath) insertMention(relPath);
         } else if (plainText) {
           insertPlainText(plainText);
         }
@@ -887,14 +990,16 @@ export function AgentComposer({
     setAttaching(true);
     setAttachError(null);
     try {
+      const relPaths: string[] = [];
       for (const file of files) {
         const base64 = await readBlobAsBase64(file);
-        await stageAndAttach(base64, file.name || "pasted-file");
+        const relPath = await stagePastedContent(base64, file.name || "pasted-file");
+        if (relPath) relPaths.push(relPath);
       }
       for (const path of fileUris) {
-        const relPath = await fsApi.copyFileIntoAttachments(worktreeRoot, path);
-        addAttachment(runId, relPath);
+        relPaths.push(await fsApi.copyFileIntoAttachments(worktreeRoot, path));
       }
+      insertMentionTokens(relPaths);
     } catch (err) {
       setAttachError(String(err));
     } finally {
@@ -903,16 +1008,9 @@ export function AgentComposer({
   }
 
   function submit() {
-    const text = draft.trim();
-    if (!text) return;
-    // Attached-via-button files become the same `@path` mentions typing
-    // them inline would — reuses the one proven attachment mechanism
-    // instead of a separate, unverified protocol. Prepended so they read
-    // as context set up before the message, not part of its wording.
-    const attachmentPrefix = attachedPaths.map((p) => `@${p}`).join(" ");
-    const fullText = attachmentPrefix ? `${attachmentPrefix}\n${text}` : text;
+    const fullText = draft.trim();
+    if (!fullText) return;
     setDraft(runId, "");
-    clearAttachments(runId);
     // Each turn is its own CLI process, so there is nothing to hand a
     // mid-turn message to. Hold it until the agent is free rather than
     // dropping it — the composer accepted the keystrokes, so silently
@@ -1016,7 +1114,13 @@ export function AgentComposer({
               ))}
           </div>
         )}
-        <div className={styles.box}>
+        <div
+          className={styles.box}
+          data-drag-over={dragOver}
+          onDragOver={handleDragOver}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+        >
           {editingId && (
             <div className={styles.editingBanner}>
               <span className={styles.editingLabel}>Editing</span>
@@ -1053,25 +1157,9 @@ export function AgentComposer({
               ))}
             </div>
           )}
-          {(attachedPaths.length > 0 || attaching) && (
+          {attaching && (
             <div className={styles.chips}>
-              {attachedPaths.map((path) => (
-                <span key={path} className={styles.chip}>
-                  <span className={styles.rowIcon}>
-                    <At size={11} color="var(--text-mute)" />
-                  </span>
-                  {path}
-                  <button
-                    type="button"
-                    className={styles.chipRemove}
-                    aria-label={`Remove ${path}`}
-                    onClick={() => removeAttachment(runId, path)}
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              ))}
-              {attaching && <span className={styles.chip}>Attaching…</span>}
+              <span className={styles.chip}>Attaching…</span>
             </div>
           )}
           {attachError && (
@@ -1079,30 +1167,38 @@ export function AgentComposer({
               Couldn't attach that: {attachError}
             </div>
           )}
-          <textarea
-            ref={textareaRef}
-            className={styles.textarea}
-            rows={1}
-            placeholder={
-              disabled
-                ? "Working… type to queue a follow-up"
-                : "Reply, or ask a follow-up… (@ file, / command, paste to attach)"
-            }
-            value={draft}
-            onChange={(e) => {
-              setDraft(runId, e.target.value);
-              setMenuIndex(0);
-              syncCursor(e.target);
-            }}
-            onKeyDown={handleKeyDown}
-            onKeyUp={(e) => syncCursor(e.currentTarget)}
-            onClick={(e) => syncCursor(e.currentTarget)}
-            onPaste={(e) => void handlePaste(e)}
-          />
+          <div className={styles.textareaStack}>
+            <div ref={overlayRef} className={styles.highlightOverlay} aria-hidden="true">
+              {renderHighlightedDraft(draft, mentionExclude)}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className={styles.textarea}
+              rows={1}
+              placeholder={
+                disabled
+                  ? "Working… type to queue a follow-up"
+                  : "Reply, or ask a follow-up… (@ file, / command, paste to attach)"
+              }
+              value={draft}
+              onChange={(e) => {
+                setDraft(runId, e.target.value);
+                setMenuIndex(0);
+                syncCursor(e.target);
+              }}
+              onKeyDown={handleKeyDown}
+              onKeyUp={(e) => syncCursor(e.currentTarget)}
+              onClick={(e) => syncCursor(e.currentTarget)}
+              onPaste={(e) => void handlePaste(e)}
+              onScroll={(e) => {
+                if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
+              }}
+            />
+          </div>
           <div className={styles.toolbar}>
             <AttachFileButton
               worktreeFiles={worktreeFiles}
-              onAttach={(path) => addAttachment(runId, path)}
+              onAttach={(path) => insertMention(path)}
               onBrowse={() => void browseForAttachments()}
             />
             {modelOptions.length > 0 && (

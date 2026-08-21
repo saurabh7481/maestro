@@ -23,6 +23,13 @@
     0 6px 26px rgba(0, 0, 0, 0.35),
     0 0 0 3px var(--accent-soft);
 }
+.box[data-drag-over="true"] {
+  border-color: var(--accent);
+  border-style: dashed;
+  box-shadow:
+    0 6px 26px rgba(0, 0, 0, 0.35),
+    0 0 0 3px var(--accent-soft);
+}
 
 .chips {
   display: flex;
@@ -143,16 +150,30 @@
   color: var(--text-dim);
 }
 
+/* Positioning context for the highlight overlay + textarea pair — see
+   `.highlightOverlay`'s comment for why they have to line up exactly. */
+.textareaStack {
+  position: relative;
+}
+
 .textarea {
+  position: relative;
   width: 100%;
   resize: none;
   background: transparent;
+  /* Text itself is invisible — the styled overlay underneath is what's
+     actually read. Only the caret (and the browser's native selection
+     paint, which isn't affected by `color`) still comes from this element,
+     which is why it stays the real, focused, editable one. */
+  color: transparent;
+  caret-color: var(--text);
   border: none;
   outline: none;
-  color: var(--text);
   font: inherit;
   font-size: var(--text-md);
   line-height: var(--leading-normal);
+  overflow-wrap: break-word;
+  word-break: break-word;
   min-height: 1.375rem;
   max-height: 12rem;
   overflow-y: hidden;
@@ -160,6 +181,43 @@
 }
 .textarea::placeholder {
   color: var(--text-mute);
+}
+
+/* Renders the same text as `.textarea`, styled — every metric here
+   (font, size, line-height, wrapping) has to match `.textarea` exactly,
+   character for character, or the visible glyphs drift out from under
+   the invisible caret/selection sitting on top of them. Pills are styled
+   via `box-shadow`/`background` rather than `padding` for the same
+   reason: padding would widen a token here without widening the matching
+   run of plain text in the textarea underneath, breaking that alignment
+   for everything later on the same line. */
+.highlightOverlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text);
+}
+
+.pill {
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--pill-bg);
+  background: var(--pill-bg);
+  color: var(--pill-fg);
+}
+.pill[data-kind="file"] {
+  --pill-bg: var(--accent-soft);
+  --pill-fg: var(--accent-2);
+}
+.pill[data-kind="image"] {
+  --pill-bg: color-mix(in srgb, var(--purple, #c678dd) 22%, transparent);
+  --pill-fg: var(--purple, #c678dd);
 }
 
 .toolbar {
@@ -367,16 +425,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* A bare `<Icon>` as a direct flex child can render invisible in this
-   app's WebKitGTK build once space gets tight — see
-   `ExplorerSidebar.module.css`'s `.fileIcon` comment for the full
-   explanation. */
-.rowIcon {
-  flex: none;
-  display: flex;
-  align-items: center;
 }
 
 .chipRemove {

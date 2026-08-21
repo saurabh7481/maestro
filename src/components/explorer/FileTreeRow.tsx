@@ -135,6 +135,20 @@ export function FileTreeRow({
       <div
         className={`${sidebar.row} ${styles.row}`}
         data-active={active}
+        draggable={!row.isDir && !isRenaming}
+        onDragStart={
+          row.isDir
+            ? undefined
+            : (e) => {
+                // Custom type first so the composer's drop handler can
+                // tell "a file from our own tree" apart from any other
+                // drag source without guessing from content — `text/plain`
+                // stays a fallback for anything reading the drag generically.
+                e.dataTransfer.setData("application/x-maestro-file-path", row.relPath);
+                e.dataTransfer.setData("text/plain", row.relPath);
+                e.dataTransfer.effectAllowed = "copy";
+              }
+        }
         onClick={row.isDir ? onToggle : onOpen}
         onDoubleClick={beginRename}
       >

@@ -16,21 +16,15 @@ function notifyIfBackgrounded(runId: string, tone: "success" | "error", title: s
   useToastStore.getState().push({ tone, title, description: tab?.title });
 }
 
-/** A stable, module-scoped empty array for `attachedByRunId[id] ??
- * EMPTY_ATTACHMENTS` selectors — never `?? []`. A fresh `[]` literal as
- * a selector's fallback returns a new reference on every read, which
+/** A stable, module-scoped empty array for `queueByRunId[id] ?? EMPTY_QUEUE`-
+ * style selectors — never `?? []`. A fresh `[]` literal as a selector's
+ * fallback returns a new reference on every read, which
  * `useSyncExternalStore` (what zustand's hook is built on) treats as
- * "the subscribed value changed" on every single store notification,
- * not just ones that actually touch this run's attachments — re-render,
- * re-select, new `[]` again, forever. Same trap `workspaceStore.ts`'s
+ * "the subscribed value changed" on every single store notification, not
+ * just ones that actually touch this run's queue — re-render, re-select,
+ * new `[]` again, forever. Same trap `workspaceStore.ts`'s
  * `EMPTY_WORKTREES` and `agentAvailabilityStore.ts`'s `useReadyAgentKinds`
- * already document; confirmed live here too (`AgentComposer.tsx`'s
- * attachment selector crashed every fresh agent tab with "Maximum update
- * depth exceeded" before this fix). */
-export const EMPTY_ATTACHMENTS: string[] = [];
-
-/** Same stable-reference requirement as `EMPTY_ATTACHMENTS` — see its
- * comment for what a `?? []` fallback does to a zustand selector. */
+ * already document. */
 export const EMPTY_QUEUE: string[] = [];
 
 export type PermissionState =
@@ -265,18 +259,6 @@ interface AgentSessionState {
   draftByRunId: Record<string, string>;
   setDraft: (runId: string, text: string) => void;
 
-  /** Files staged via the composer's "Add context" attach button (as
-   * opposed to an inline `@mention` typed directly into the draft) —
-   * same survives-remount reasoning as `draftByRunId`. Turned into
-   * `@path` mentions prepended to the message text on send (see
-   * `AgentComposer.tsx::submit`), reusing the exact mechanism inline
-   * mentions already use rather than inventing a second, unverified
-   * attachment protocol. */
-  attachedByRunId: Record<string, string[]>;
-  addAttachment: (runId: string, path: string) => void;
-  removeAttachment: (runId: string, path: string) => void;
-  clearAttachments: (runId: string) => void;
-
   /** Idempotent — sets up the `agent://{runId}/event` listener once per
    * run id. Safe to call from a component's mount effect every render. */
   openRun: (runId: string) => void;
@@ -337,23 +319,6 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
   unlistenByRunId: {},
   draftByRunId: {},
   setDraft: (runId, text) => set((s) => ({ draftByRunId: { ...s.draftByRunId, [runId]: text } })),
-
-  attachedByRunId: {},
-  addAttachment: (runId, path) =>
-    set((s) => {
-      const existing = s.attachedByRunId[runId] ?? [];
-      if (existing.includes(path)) return s;
-      return { attachedByRunId: { ...s.attachedByRunId, [runId]: [...existing, path] } };
-    }),
-  removeAttachment: (runId, path) =>
-    set((s) => ({
-      attachedByRunId: {
-        ...s.attachedByRunId,
-        [runId]: (s.attachedByRunId[runId] ?? []).filter((p) => p !== path),
-      },
-    })),
-  clearAttachments: (runId) =>
-    set((s) => ({ attachedByRunId: { ...s.attachedByRunId, [runId]: [] } })),
 
   openRun: (runId) => {
     if (get().unlistenByRunId[runId]) return;
@@ -466,12 +431,10 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
       const byRunId = { ...s.byRunId };
       const unlistenByRunId = { ...s.unlistenByRunId };
       const draftByRunId = { ...s.draftByRunId };
-      const attachedByRunId = { ...s.attachedByRunId };
       delete byRunId[runId];
       delete unlistenByRunId[runId];
       delete draftByRunId[runId];
-      delete attachedByRunId[runId];
-      return { byRunId, unlistenByRunId, draftByRunId, attachedByRunId };
+      return { byRunId, unlistenByRunId, draftByRunId };
     });
   },
 
