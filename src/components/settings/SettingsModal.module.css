@@ -414,3 +414,66 @@
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+
+/* ---- OpenCode providers (Phase O4) -------------------------------- */
+
+.ocRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.ocRow:last-child {
+  border-bottom: none;
+}
+
+.ocRowName {
+  font-weight: 500;
+}
+
+.ocRowMeta {
+  opacity: 0.65;
+  font-size: 12px;
+}
+
+.ocRowSpacer {
+  flex: 1;
+}
+
+.ocCatalogList {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 6px;
+  margin-top: var(--space-2);
+}
+
+.ocCatalogRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+}
+
+.ocCatalogRow:hover,
+.ocCatalogRow[data-active="true"] {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.ocSheetField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}

@@ -54,6 +54,17 @@ const AGENT_OPTIONS: AgentOption[] = [
     subtitle: "bring your own model",
     shortcut: "⌘4",
   },
+  {
+    kind: "openCode",
+    iconTone: "outline",
+    color: "var(--accent-2)",
+    // Same arrangement as Aider, different store: providers live in
+    // opencode's own credential store, managed on its settings card.
+    subtitle: "bring your own provider",
+    // No keyboard shortcut exists for a fifth agent yet; an empty string
+    // renders nothing rather than a fake binding (V1_SCOPE §6).
+    shortcut: "",
+  },
 ];
 
 /** The `+` at the end of a pane's tab strip. Takes the pane it belongs to
@@ -150,9 +161,9 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
                 </div>
                 {!ready && reason ? (
                   <WarningCircle size={13} color="var(--text-mute)" />
-                ) : (
+                ) : agent.shortcut ? (
                   <Kbd>{agent.shortcut}</Kbd>
-                )}
+                ) : null}
               </DropdownMenu.Item>
             );
 

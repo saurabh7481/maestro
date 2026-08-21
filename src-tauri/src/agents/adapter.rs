@@ -16,7 +16,6 @@ use crate::agents::{aider, claude, codex, cursor_agent};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::process::Command;
-
 /// Correlates a tool call's later result/denial back to the call that
 /// requested it (name + original input) — needed because at least one
 /// CLI (Claude) reports a denial without re-including the input. Shared
@@ -70,6 +69,12 @@ pub struct TurnCtx<'a> {
     /// this, to hold the chat-history file that stands in for the session
     /// id it doesn't have (see `aider/mod.rs`).
     pub session_dir: &'a std::path::Path,
+    /// OpenCode only: attach this run to Maestro's managed sidecar
+    /// instead of letting it cold-boot its own internal server per turn
+    /// (`run --attach`, docs/OPENCODE_INTEGRATION.md §1.2). `None` falls
+    /// back to self-boot — slower, but works even when the sidecar
+    /// couldn't start.
+    pub attach: Option<&'a crate::agents::opencode::client::Endpoint>,
 }
 
 pub struct TurnSpawn {
@@ -97,7 +102,9 @@ pub struct TurnSpawn {
 /// `\n`, so the reader asks here first.
 pub fn uses_json_lines(kind: AgentKind) -> bool {
     match kind {
-        AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex => true,
+        AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex | AgentKind::OpenCode => {
+            true
+        }
         // Aider has no structured output mode at all.
         AgentKind::Aider => false,
     }
@@ -112,7 +119,7 @@ pub fn uses_json_lines(kind: AgentKind) -> bool {
 /// the transcript with a wall of red text that wasn't an error at all.
 pub fn parse_stderr_line(kind: AgentKind, line: &str, cache: &mut ToolUseCache) -> Vec<AgentEvent> {
     match kind {
-        AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex => {
+        AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex | AgentKind::OpenCode => {
             vec![AgentEvent::Error {
                 message: line.to_string(),
             }]
@@ -147,6 +154,14 @@ pub fn finish(
             duration_ms,
             interrupted,
         ),
+        // opencode has no final result line — its TurnResult is
+        // synthesized from accumulated step_finish totals.
+        AgentKind::OpenCode => crate::agents::opencode::finish(
+            cache,
+            session_id.unwrap_or_default(),
+            duration_ms,
+            interrupted,
+        ),
     }
 }
 
@@ -156,6 +171,7 @@ pub fn build_turn(kind: AgentKind, ctx: &TurnCtx, text: &str) -> TurnSpawn {
         AgentKind::CursorAgent => cursor_agent::build_turn(ctx, text),
         AgentKind::Codex => codex::build_turn(ctx, text),
         AgentKind::Aider => aider::build_turn(ctx, text),
+        AgentKind::OpenCode => crate::agents::opencode::build_turn(ctx, text),
     }
 }
 
@@ -175,5 +191,6 @@ pub fn parse_line(
         AgentKind::CursorAgent => cursor_agent::parse_line(line, cache, stream_deltas),
         AgentKind::Codex => codex::parse_line(line, cache),
         AgentKind::Aider => aider::parse_line(line, cache, stream_deltas),
+        AgentKind::OpenCode => crate::agents::opencode::parse_line(line, cache, stream_deltas),
     }
 }

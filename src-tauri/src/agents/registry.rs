@@ -15,15 +15,17 @@ pub enum AgentKind {
     Codex,
     CursorAgent,
     Aider,
+    OpenCode,
 }
 
 impl AgentKind {
-    pub fn all() -> [AgentKind; 4] {
+    pub fn all() -> [AgentKind; 5] {
         [
             AgentKind::ClaudeCode,
             AgentKind::Codex,
             AgentKind::CursorAgent,
             AgentKind::Aider,
+            AgentKind::OpenCode,
         ]
     }
 
@@ -35,6 +37,7 @@ impl AgentKind {
             AgentKind::Codex => "codex",
             AgentKind::CursorAgent => "cursor-agent",
             AgentKind::Aider => "aider",
+            AgentKind::OpenCode => "opencode",
         }
     }
 
@@ -44,6 +47,7 @@ impl AgentKind {
             AgentKind::Codex => "Codex CLI",
             AgentKind::CursorAgent => "Cursor Agent",
             AgentKind::Aider => "Aider",
+            AgentKind::OpenCode => "OpenCode",
         }
     }
 
@@ -54,6 +58,7 @@ impl AgentKind {
             AgentKind::Codex => "codex",
             AgentKind::CursorAgent => "cursor-agent",
             AgentKind::Aider => "aider",
+            AgentKind::OpenCode => "opencode",
         }
     }
 }
@@ -220,6 +225,15 @@ fn remedy_for(kind: AgentKind, binary_path: &str) -> AuthRemedy {
         AgentKind::Aider => AuthRemedy::ConfigureProvider {
             label: "Add a provider".to_string(),
         },
+        // Like Aider, opencode has no account of its own — readiness
+        // means at least one LLM provider is connected. Unlike Aider,
+        // the credentials live in opencode's own store and the editor
+        // for them is Phase O4's provider pane (docs/
+        // OPENCODE_INTEGRATION.md §3); until that lands the button is
+        // withheld in the settings card rather than scrolling nowhere.
+        AgentKind::OpenCode => AuthRemedy::ConfigureProvider {
+            label: "Add a provider".to_string(),
+        },
     }
 }
 
@@ -228,7 +242,7 @@ fn remedy_for(kind: AgentKind, binary_path: &str) -> AuthRemedy {
 fn pill_label_for(kind: AgentKind) -> &'static str {
     match kind {
         AgentKind::ClaudeCode | AgentKind::CursorAgent | AgentKind::Codex => "Needs login",
-        AgentKind::Aider => "Needs provider",
+        AgentKind::Aider | AgentKind::OpenCode => "Needs provider",
     }
 }
 
@@ -319,6 +333,11 @@ async fn probe_auth(kind: AgentKind, binary_path: &str) -> (AuthState, Option<St
             AuthState::NotAuthenticated,
             Some("No LLM provider configured yet.".to_string()),
         ),
+        // opencode owns its credential store (`auth.json`), so unlike
+        // Aider this is answerable right here — by reading that file,
+        // never by starting the sidecar (docs/OPENCODE_INTEGRATION.md
+        // §2.2's detection rule; see `opencode::auth` for the trade-offs).
+        AgentKind::OpenCode => crate::agents::opencode::auth::auth_state_from_disk().await,
     }
 }
 

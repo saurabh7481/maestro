@@ -16,7 +16,14 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
-    exclude: ["**/node_modules/**", "**/src-tauri/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/src-tauri/**",
+      // Stale agent worktrees under `.claude/worktrees/` carry their own
+      // node_modules; sweeping them in runs a different snapshot of the
+      // tests against mismatched React instances and fails confusingly.
+      "**/.claude/**",
+    ],
   },
 
   build: {

@@ -23,7 +23,10 @@ pub fn binary_path_for(conn: &rusqlite::Connection, kind: AgentKind) -> Result<S
     Ok(read_binary_override(conn, kind)?.unwrap_or_else(|| kind.default_binary().to_string()))
 }
 
-fn read_binary_override(
+/// The stored binary-path override, if any. `pub(crate)` because the
+/// OpenCode commands re-detect after auth changes and need the same
+/// override chain detection uses.
+pub(crate) fn read_binary_override(
     conn: &rusqlite::Connection,
     kind: AgentKind,
 ) -> Result<Option<String>, String> {
@@ -114,14 +117,15 @@ pub async fn detect_all_agent_clis(
     state: State<'_, AppState>,
     force: bool,
 ) -> Result<Vec<CliStatus>, String> {
-    let [claude_kind, codex_kind, cursor_kind, aider_kind] = AgentKind::all();
-    let (claude, codex, cursor, aider) = tokio::join!(
+    let [claude_kind, codex_kind, cursor_kind, aider_kind, opencode_kind] = AgentKind::all();
+    let (claude, codex, cursor, aider, opencode) = tokio::join!(
         detect_agent_cli(state.clone(), claude_kind, force),
         detect_agent_cli(state.clone(), codex_kind, force),
         detect_agent_cli(state.clone(), cursor_kind, force),
         detect_agent_cli(state.clone(), aider_kind, force),
+        detect_agent_cli(state.clone(), opencode_kind, force),
     );
-    Ok(vec![claude?, codex?, cursor?, aider?])
+    Ok(vec![claude?, codex?, cursor?, aider?, opencode?])
 }
 
 #[tauri::command]
@@ -304,6 +308,7 @@ pub async fn list_agent_models(
                 &["low", "medium", "high", "xhigh", "max"],
             ),
         ]),
+        AgentKind::OpenCode => list_opencode_models(&state).await,
         AgentKind::CursorAgent => {
             let binary_path = {
                 let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -518,4 +523,100 @@ pub async fn generate_commit_message(
     );
     let message = one_shot::run_one_shot(kind, &binary_path, &prompt, &worktree_root).await?;
     Ok(message.trim().to_string())
+}
+
+/// OpenCode's model options: one entry per connected provider's model,
+/// labeled `Provider · Model` so the composer's flat searchable menu
+/// self-groups under search without bespoke grouping UI.
+///
+/// Source priority: the managed sidecar's `/config/providers` when it is
+/// already running (rich names, authoritative connected set), else
+/// `opencode models` — which needs no server at all, so opening a
+/// model picker never boots one (§2.2). The CLI fallback's labels are
+/// the raw `provider/model` ids; plainer than the sidecar path, equally
+/// honest.
+async fn list_opencode_models(state: &State<'_, AppState>) -> Result<Vec<ModelOption>, String> {
+    // `try_acquire_running`, not `endpoint()` directly: this holds a
+    // guard for the duration of the HTTP calls below, so a server that's
+    // already up can't be pulled out from under this request by the idle
+    // reaper mid-flight — while still never starting one on its own.
+    if let Some((endpoint, _guard)) = state.opencode_sidecar.try_acquire_running() {
+        let timeout = std::time::Duration::from_secs(15);
+        let config =
+            crate::agents::opencode::client::get_json_for(&endpoint, "/config/providers", timeout)
+                .await;
+        let provider_list =
+            crate::agents::opencode::client::get_json_for(&endpoint, "/provider", timeout)
+                .await
+                .unwrap_or_else(|_| serde_json::json!({}));
+        if let Ok(config) = config {
+            let names: std::collections::HashMap<String, String> = provider_list
+                .pointer("/all")
+                .and_then(|v| v.as_array())
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|entry| {
+                            Some((
+                                entry.get("id")?.as_str()?.to_string(),
+                                entry.get("name")?.as_str()?.to_string(),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut models: Vec<ModelOption> = Vec::new();
+            for entry in config
+                .get("providers")
+                .and_then(|v| v.as_array())
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+            {
+                let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let provider_name = names.get(id).map(String::as_str).unwrap_or(id);
+                for (model_id, model) in entry
+                    .get("models")
+                    .and_then(|m| m.as_object())
+                    .map(std::collections::BTreeMap::from_iter)
+                    .unwrap_or_default()
+                {
+                    let display = model
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(model_id.as_str());
+                    models.push(simple_model(
+                        &format!("{id}/{model_id}"),
+                        &format!("{provider_name} · {display}"),
+                        &[],
+                    ));
+                }
+            }
+            return Ok(models);
+        }
+    }
+
+    // Fallback: plain id list from the CLI, no server required.
+    let binary_path = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        binary_path_for(&conn, AgentKind::OpenCode)?
+    };
+    let output = tokio::process::Command::new(resolve_executable(&binary_path))
+        .args(["models"])
+        .stdin(Stdio::null())
+        .hide_window()
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.contains('/'))
+        .map(|id| simple_model(id, id, &[]))
+        .collect())
 }

@@ -111,4 +111,34 @@ pub struct AppState {
     /// rather than a `oneshot::Sender` like the hook-cancel path, since a
     /// search isn't a single child process to kill, just a loop to stop.
     pub search_cancel_flags: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// The lazy `opencode serve` supervisor (docs/OPENCODE_INTEGRATION.md
+    /// §2). App-global, not per worktree — the server is project-agnostic
+    /// for auth/provider purposes and turns scope themselves via `--dir`.
+    /// Starts `Stopped` and must only ever be acquired by opencode
+    /// features; detection and app startup never touch it.
+    pub opencode_sidecar: crate::agents::opencode::OpencodeSidecar,
+    /// Guards held on behalf of the frontend — one per OpenCode settings
+    /// pane currently mounted (§2.2's "pane visible" consumer). Commands
+    /// that can't hold a guard across IPC mint a token here instead:
+    /// `opencode_sidecar_acquire` stores the guard, the pane releases it
+    /// on unmount. Keyed by token so two panes (satellite windows) don't
+    /// cancel each other out.
+    pub opencode_guards: Mutex<HashMap<u64, crate::agents::opencode::SidecarGuard>>,
+    /// In-memory provider catalog cache with TTL (§2.3) — 193 entries
+    /// shouldn't refetch because the user closed and reopened the modal,
+    /// but must never outlive its usefulness. Invalidated by every
+    /// connect/disconnect.
+    pub opencode_provider_cache: Mutex<
+        Option<(
+            std::time::Instant,
+            crate::agents::opencode::providers::ProviderOverview,
+        )>,
+    >,
+    /// Providers successfully disconnected recently. Phase O4 live
+    /// testing found that a running server's `/provider.connected` list
+    /// reflects *additions* instantly but keeps removed ids until
+    /// restart — without this, a just-disconnected row would resurrect
+    /// in the pane on every refresh. Entries age out; a fresh server
+    /// (after app restart) makes them moot.
+    pub opencode_recent_disconnects: Mutex<HashMap<String, std::time::Instant>>,
 }

@@ -992,6 +992,7 @@ mod tests {
             stream_deltas: true,
             extra_env: &[],
             session_dir: dir,
+            attach: None,
         };
         build_turn(&ctx, "hi")
             .command
@@ -1060,6 +1061,7 @@ mod tests {
             stream_deltas: false,
             extra_env: &[],
             session_dir: dir.path(),
+            attach: None,
         };
         let minted = build_turn(&base, "hi")
             .assigned_session_id
@@ -1093,6 +1095,7 @@ mod tests {
             stream_deltas: false,
             extra_env: &env,
             session_dir: dir.path(),
+            attach: None,
         };
         let spawn = build_turn(&ctx, "hi");
         let command = spawn.command.as_std();

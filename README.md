@@ -19,10 +19,13 @@ feature code has been written yet. Start here:
 1. [`docs/V1_SCOPE.md`](./docs/V1_SCOPE.md) — what v1 is and isn't.
 2. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — tech stack, process
    model, and the researched protocol details for wrapping each agent CLI.
-3. [`docs/ROADMAP.md`](./docs/ROADMAP.md) — phased build plan and sequencing.
-4. [`docs/CHECKLIST.md`](./docs/CHECKLIST.md) — actionable checklist,
+3. [`docs/OPENCODE_INTEGRATION.md`](./docs/OPENCODE_INTEGRATION.md) — plan
+   for the fifth agent (opencode): managed sidecar, in-app provider
+   management, lazy lifecycle.
+4. [`docs/ROADMAP.md`](./docs/ROADMAP.md) — phased build plan and sequencing.
+5. [`docs/CHECKLIST.md`](./docs/CHECKLIST.md) — actionable checklist,
    including a dedicated edge-case sweep.
-5. [`docs/design/`](./docs/design/) — the baseline visual design system
+6. [`docs/design/`](./docs/design/) — the baseline visual design system
    (`Maestro IDE.dc.html` + `support.js`): layout, spacing, component shape,
    and the three baseline themes (Maestro Dark, VS Code Dark+, One Dark
    Pro). This is the source of truth for v1's look — port it, don't

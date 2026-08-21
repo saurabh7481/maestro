@@ -452,6 +452,7 @@ mod tests {
                 stream_deltas: false,
                 extra_env: &[],
                 session_dir: std::path::Path::new("/tmp"),
+                attach: None,
             };
             build_turn(&ctx, "hi")
                 .command

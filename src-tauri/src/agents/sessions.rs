@@ -8,9 +8,12 @@
 //! CLI's own resume picker, not only sessions from worktrees Maestro has open.
 
 use crate::agents::registry::AgentKind;
+use crate::process_ext::HiddenCommandExt;
+use crate::state::AppState;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use tauri::State;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Clone, Serialize)]
@@ -694,6 +697,9 @@ async fn find_global_session_file(
                 }
             }
         }
+        // OpenCode session replay (`opencode export`) lands in Phase O6
+        // (docs/OPENCODE_INTEGRATION.md).
+        AgentKind::OpenCode => {}
     }
     None
 }
@@ -707,6 +713,7 @@ pub async fn read_transcript(
     kind: AgentKind,
     worktree_root: &str,
     session_id: &str,
+    state: &AppState,
 ) -> Vec<TranscriptTurn> {
     let Ok(home) = std::env::var("HOME") else {
         return Vec::new();
@@ -731,6 +738,9 @@ pub async fn read_transcript(
             jsonl_files(&base).await.into_iter().next()
         }
         AgentKind::Codex | AgentKind::Aider => None,
+        // Phase O6: resolve via `opencode session list --format json`'s
+        // verified `directory` field instead of on-disk layout.
+        AgentKind::OpenCode => None,
     };
     let path = match direct {
         Some(path) => Some(path),
@@ -745,6 +755,11 @@ pub async fn read_transcript(
         // user/assistant pairs this returns. It is still what gives Aider
         // working resume — it is replayed to *Aider*, not to Maestro.
         (AgentKind::Aider, Some(_)) => Vec::new(),
+        // Phase O6: `opencode export <id>` → `{info, messages[].parts}`
+        // (verified shape) maps cleanly onto these turns.
+        (AgentKind::OpenCode, Some(_)) => {
+            read_opencode_transcript(session_id, &opencode_binary_path(state).await).await
+        }
         (_, None) => Vec::new(),
     }
 }
@@ -754,11 +769,16 @@ pub async fn get_session_transcript(
     kind: AgentKind,
     worktree_root: String,
     session_id: String,
+    state: State<'_, AppState>,
 ) -> Result<Vec<TranscriptTurn>, String> {
-    Ok(read_transcript(kind, &worktree_root, &session_id).await)
+    Ok(read_transcript(kind, &worktree_root, &session_id, &state).await)
 }
 
-async fn list_for_worktree(kind: AgentKind, worktree_root: &str) -> Vec<ResumableSession> {
+async fn list_for_worktree(
+    kind: AgentKind,
+    worktree_root: &str,
+    state: &AppState,
+) -> Vec<ResumableSession> {
     match kind {
         AgentKind::ClaudeCode => list_claude_sessions(worktree_root).await,
         AgentKind::CursorAgent => list_cursor_sessions(worktree_root).await,
@@ -771,11 +791,20 @@ async fn list_for_worktree(kind: AgentKind, worktree_root: &str) -> Vec<Resumabl
             Err(_) => Vec::new(),
         },
         AgentKind::Aider => Vec::new(),
+        // opencode is the one CLI with a first-class session list —
+        // `session list --format json` rows carry `directory` directly
+        // (Phase O1), so worktree scoping needs no path sanitizing.
+        AgentKind::OpenCode => {
+            list_opencode_sessions(Some(worktree_root), &opencode_binary_path(state).await).await
+        }
     }
 }
 
 #[tauri::command]
-pub async fn list_all_resumable_sessions(kind: AgentKind) -> Result<Vec<ResumableSession>, String> {
+pub async fn list_all_resumable_sessions(
+    kind: AgentKind,
+    state: State<'_, AppState>,
+) -> Result<Vec<ResumableSession>, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
     let home = Path::new(&home);
     let mut sessions = match kind {
@@ -783,6 +812,9 @@ pub async fn list_all_resumable_sessions(kind: AgentKind) -> Result<Vec<Resumabl
         AgentKind::CursorAgent => list_all_cursor_sessions(home).await,
         AgentKind::Codex => list_all_codex_sessions(home).await,
         AgentKind::Aider => Vec::new(),
+        AgentKind::OpenCode => {
+            list_opencode_sessions(None, &opencode_binary_path(&state).await).await
+        }
     };
     sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
     Ok(sessions)
@@ -792,8 +824,9 @@ pub async fn list_all_resumable_sessions(kind: AgentKind) -> Result<Vec<Resumabl
 pub async fn list_resumable_sessions(
     kind: AgentKind,
     worktree_root: String,
+    state: State<'_, AppState>,
 ) -> Result<Vec<ResumableSession>, String> {
-    Ok(list_for_worktree(kind, &worktree_root).await)
+    Ok(list_for_worktree(kind, &worktree_root, &state).await)
 }
 
 /// Same as `list_resumable_sessions`, but across every worktree the
@@ -807,10 +840,11 @@ pub async fn list_resumable_sessions(
 pub async fn list_resumable_sessions_for_roots(
     kind: AgentKind,
     worktree_roots: Vec<String>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<ResumableSession>, String> {
     let mut all = Vec::new();
     for root in worktree_roots {
-        all.extend(list_for_worktree(kind, &root).await);
+        all.extend(list_for_worktree(kind, &root, &state).await);
     }
     all.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
     Ok(all)
@@ -832,4 +866,153 @@ mod tests {
             "Diagnose why the build is failing"
         ));
     }
+}
+
+// ---------------------------------------------------------------- opencode
+
+#[derive(serde::Deserialize)]
+struct OpencodeExport {
+    #[serde(default)]
+    messages: Vec<OpencodeExportMessage>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpencodeSessionRow {
+    id: String,
+    #[serde(default)]
+    title: String,
+    /// Epoch milliseconds (verified field type).
+    #[serde(default)]
+    updated: i64,
+    #[serde(default)]
+    directory: String,
+}
+
+/// The configured binary-path override for OpenCode, same chain
+/// `build_turn`/`detect`/`probe_auth` already resolve through — unlike
+/// those, session discovery here shells out to the CLI directly (every
+/// other kind just reads files off disk), so it needs this too. Falls
+/// back to the bare default name on any DB error, matching the "empty
+/// list rather than a hard failure" stance the rest of this module takes
+/// for session discovery.
+async fn opencode_binary_path(state: &AppState) -> String {
+    let Ok(conn) = state.db.lock() else {
+        return AgentKind::OpenCode.default_binary().to_string();
+    };
+    crate::commands::agents::binary_path_for(&conn, AgentKind::OpenCode)
+        .unwrap_or_else(|_| AgentKind::OpenCode.default_binary().to_string())
+}
+
+/// Runs `opencode session list --format json` — the one CLI here with a
+/// real session-list command. `filter_directory` scopes to a worktree;
+/// `None` returns everything (the all-sessions picker).
+async fn list_opencode_sessions(
+    filter_directory: Option<&str>,
+    binary_path: &str,
+) -> Vec<ResumableSession> {
+    let output = tokio::process::Command::new(crate::process_ext::resolve_executable(binary_path))
+        .args(["session", "list", "--format", "json"])
+        .stdin(std::process::Stdio::null())
+        .hide_window()
+        .output()
+        .await;
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let Ok(rows) = serde_json::from_slice::<Vec<OpencodeSessionRow>>(&output.stdout) else {
+        return Vec::new();
+    };
+    rows.into_iter()
+        .filter(|row| match filter_directory {
+            Some(directory) => row.directory == directory,
+            None => true,
+        })
+        .map(|row| ResumableSession {
+            session_id: row.id,
+            title: if row.title.is_empty() {
+                "Untitled session".to_string()
+            } else {
+                row.title
+            },
+            last_active_at: chrono::DateTime::from_timestamp_millis(row.updated)
+                .unwrap_or_default()
+                .to_rfc3339(),
+            // The list endpoint carries no per-session turn count; the
+            // resume menu doesn't promise one for opencode rather than
+            // paying an export per row to fake it.
+            turn_count: 0,
+            worktree_root: row.directory,
+        })
+        .collect()
+}
+
+/// One exported message: `{info: {role}, parts: [{type, text, …}]}`.
+#[derive(serde::Deserialize)]
+struct OpencodeExportMessage {
+    info: OpencodeExportMessageInfo,
+    #[serde(default)]
+    parts: Vec<OpencodeExportPart>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpencodeExportMessageInfo {
+    role: String,
+}
+
+#[derive(serde::Deserialize)]
+struct OpencodeExportPart {
+    #[serde(rename = "type")]
+    part_type: String,
+    #[serde(default)]
+    text: String,
+}
+
+/// Hydrates a resumed tab's transcript from `opencode export <id>` —
+/// text-only user/assistant pairs, the same simplification every other
+/// CLI's replay makes (tool calls and reasoning stay in the CLI's own
+/// history; they aren't re-rendered into the new tab).
+async fn read_opencode_transcript(session_id: &str, binary_path: &str) -> Vec<TranscriptTurn> {
+    // An interactive picker is never triggered: this always passes an id.
+    let output = tokio::process::Command::new(crate::process_ext::resolve_executable(binary_path))
+        .args(["export", session_id])
+        .stdin(std::process::Stdio::null())
+        .hide_window()
+        .output()
+        .await;
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let Ok(exported) = serde_json::from_slice::<OpencodeExport>(&output.stdout) else {
+        return Vec::new();
+    };
+    exported
+        .messages
+        .into_iter()
+        .filter_map(|message| {
+            let role: &str = match message.info.role.as_str() {
+                "user" => "user",
+                "assistant" => "assistant",
+                _ => return None,
+            };
+            let text: String = message
+                .parts
+                .into_iter()
+                .filter(|part| part.part_type == "text" && !part.text.trim().is_empty())
+                .map(|part| part.text)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(TranscriptTurn { role, text })
+            }
+        })
+        .collect()
 }

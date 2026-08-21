@@ -225,6 +225,49 @@ pub fn capabilities_for(kind: AgentKind) -> AgentCapabilities {
             // it simply answers in prose.
             plan_exit_tool: None,
         },
+        // Verified against opencode 1.18.19, including live fixture
+        // capture (docs/OPENCODE_INTEGRATION.md §5; fixtures under
+        // `tests/fixtures/opencode/`).
+        AgentKind::OpenCode => AgentCapabilities {
+            // Measured, not assumed (fixture 02): `run --format json`
+            // emits parts only when complete — text held in 400 ms
+            // chunks still landed as one event.
+            streaming: Streaming::Blocks,
+            // A tool hitting an "ask" rule is refused with a verbatim
+            // rejection and *terminates the run* — the model is never
+            // re-consulted (fixture 04). Allow/deny lives in the
+            // project's opencode.json; Maestro can't gate mid-run.
+            manual_gate: ManualGate::ExternalConfig,
+            manual_gate_detail: Some(
+                "OpenCode can't ask Maestro for approval in headless runs — allow/deny rules come from your opencode.json permission config."
+                    .to_string(),
+            ),
+            // `--agent plan` ships as a real read-only agent.
+            plan_mode: true,
+            // `--session <id>`.
+            resume: true,
+            // `--fork` — rare among the five CLIs.
+            fork_session: true,
+            // `step_finish.tokens` on every step (fixtures 01–06).
+            reports_usage: true,
+            // `step_finish.cost`; absent pricing reports None rather
+            // than a misleading $0.00. A completed turn's true $0.00
+            // (free models) ships as Some(0.0).
+            reports_cost: true,
+            // The number exists in `opencode models --verbose` metadata,
+            // but the turn stream never carries it — wiring the picker's
+            // metadata into TurnResult is Phase O6 work. `false` until
+            // then; claiming it now would render "context: unknown" as
+            // if it were real.
+            reports_context_window: false,
+            // `--variant` is its own flag — but no variant picker is
+            // offered: variant sets aren't enumerable anywhere public,
+            // and a free-text field would be a guess generator.
+            separate_option_flags: true,
+            effort_label: "Variant".to_string(),
+            // The plan agent ends its turn in prose.
+            plan_exit_tool: None,
+        },
     }
 }
 

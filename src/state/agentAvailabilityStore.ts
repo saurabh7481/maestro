@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { agentsApi } from "../api/agents";
-import { AGENT_KINDS, CONSERVATIVE_CAPABILITIES, isReady } from "../types/agent";
+import { TAB_READY_AGENT_KINDS, CONSERVATIVE_CAPABILITIES, isReady } from "../types/agent";
 import type { AgentCapabilities, AgentKind, CliStatus } from "../types/agent";
 
 interface AgentAvailabilityState {
@@ -62,6 +62,13 @@ export const useAgentAvailabilityStore = create<AgentAvailabilityState>((set, ge
 /** Ready CLIs (installed + authenticated) in a stable display order —
  * used by `CommitBox`'s "Generate with AI" picker and the new-tab menu.
  *
+ * Filtered from `TAB_READY_AGENT_KINDS`, not `AGENT_KINDS`: a detected CLI
+ * whose turn path isn't wired yet must not be startable or offered for
+ * commit messages, even though its settings card renders. Every current
+ * `AgentKind` has since caught up to `TAB_READY_AGENT_KINDS` (most
+ * recently OpenCode) — this filter is what a future kind added to
+ * `AGENT_KINDS` ahead of its own turn-path work would fall back on.
+ *
  * `useShallow` is required here, not optional: the selector builds a new
  * array via `.filter()` on every call, and without shallow-comparing the
  * *contents* zustand/`useSyncExternalStore` sees a new reference every
@@ -70,7 +77,7 @@ export const useAgentAvailabilityStore = create<AgentAvailabilityState>((set, ge
  * more than one subscriber re-rendering off of it. */
 export function useReadyAgentKinds(): AgentKind[] {
   return useAgentAvailabilityStore(
-    useShallow((s) => AGENT_KINDS.filter((k) => isReady(s.statusByKind[k]))),
+    useShallow((s) => TAB_READY_AGENT_KINDS.filter((k) => isReady(s.statusByKind[k]))),
   );
 }
 

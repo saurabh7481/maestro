@@ -8,6 +8,7 @@ import { AGENT_KINDS, AGENT_DISPLAY_NAME } from "../../types/agent";
 import type { AgentKind, CliStatus } from "../../types/agent";
 import { Button, TextInput } from "../primitives";
 import { AiderProviders } from "./AiderProvidersPane";
+import { OpenCodeProviders } from "./OpenCodeProviders";
 import styles from "./SettingsModal.module.css";
 
 function statusPill(status: CliStatus | undefined) {
@@ -92,6 +93,10 @@ function AgentCard({ kind }: { kind: AgentKind }) {
               {remedy.label}
             </Button>
           )}
+          {/* Only a kind with an inline provider section may offer this
+              button — it scrolls to that section. Aider's is its own
+              credential editor; OpenCode's manages providers through
+              opencode's server (Phase O4). */}
           {remedy?.kind === "configureProvider" && (
             <Button
               variant="secondary"
@@ -137,10 +142,18 @@ function AgentCard({ kind }: { kind: AgentKind }) {
       {/* Aider's providers live inside Aider's own card rather than in a
           separate section: they *are* its configuration, and the CLI is
           not usable until one is set up. Split out, the card said "Needs
-          provider" with the fix somewhere else on the page. */}
+          provider" with the fix somewhere else on the page. OpenCode's
+          section is the same idea — its providers live in opencode's own
+          store, managed through its server (docs/OPENCODE_INTEGRATION.md
+          §3). */}
       {kind === "aider" && status?.installed && (
         <div ref={providersRef} className={styles.providerSection}>
           <AiderProviders />
+        </div>
+      )}
+      {kind === "openCode" && status?.installed && (
+        <div ref={providersRef} className={styles.providerSection}>
+          <OpenCodeProviders />
         </div>
       )}
     </div>
@@ -155,7 +168,7 @@ export function AgentsPane() {
         Detected once at startup and cached — used here, in the new-tab menu, and by "Generate with
         AI" in Source Control. Claude Code, Codex and Cursor Agent each sign in through their own
         CLI. Aider has no account of its own: it talks to whichever LLM provider you configure on
-        its card.
+        its card. OpenCode reads the providers you've connected through opencode itself.
       </p>
       {AGENT_KINDS.map((kind) => (
         <AgentCard key={kind} kind={kind} />

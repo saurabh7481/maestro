@@ -12,11 +12,18 @@ const OPENAI_PATH =
 const AIDER_PATH =
   "M3 3h18a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1m1.8 4.2v2.05l3.2 2.25-3.2 2.25v2.05l6-4.3v-.05zM12.5 15h6.7v-1.8h-6.7z";
 
+// Same reasoning as Aider's: opencode's real mark doesn't reduce to
+// monochrome 24px, so this is a neutral pair of code chevrons rather
+// than a guess at its branding.
+const OPENCODE_PATH =
+  "M9.9 4.9 3.4 12l6.5 7.1 1.8-1.6L6.7 12l5-5.5zM14.1 4.9 20.6 12l-6.5 7.1-1.8-1.6 5-5.5-5-5.5z";
+
 const PATH_BY_KIND: Record<AgentKind, string> = {
   claudeCode: CLAUDE_CODE_PATH,
   cursorAgent: CURSOR_PATH,
   codex: OPENAI_PATH,
   aider: AIDER_PATH,
+  openCode: OPENCODE_PATH,
 };
 
 export function AgentBrandIcon({

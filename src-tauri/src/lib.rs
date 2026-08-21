@@ -77,6 +77,10 @@ pub fn run() {
                 agent_runs: Mutex::new(HashMap::new()),
                 terminals: Mutex::new(HashMap::new()),
                 search_cancel_flags: Mutex::new(HashMap::new()),
+                opencode_sidecar: agents::opencode::OpencodeSidecar::new(),
+                opencode_guards: Mutex::new(HashMap::new()),
+                opencode_provider_cache: Mutex::new(None),
+                opencode_recent_disconnects: Mutex::new(HashMap::new()),
             });
             Ok(())
         })
@@ -146,6 +150,15 @@ pub fn run() {
             commands::aider::save_aider_provider,
             commands::aider::forget_aider_provider,
             commands::aider::aider_keychain_status,
+            commands::opencode::opencode_sidecar_status,
+            commands::opencode::opencode_sidecar_acquire,
+            commands::opencode::opencode_sidecar_release,
+            commands::opencode::opencode_list_providers,
+            commands::opencode::opencode_provider_auth_methods,
+            commands::opencode::opencode_connect_with_key,
+            commands::opencode::opencode_begin_oauth,
+            commands::opencode::opencode_oauth_status,
+            commands::opencode::opencode_disconnect,
             commands::lsp::get_global_lsp_settings,
             commands::lsp::set_global_lsp_settings,
             commands::lsp::get_project_lsp_settings,
@@ -201,6 +214,10 @@ pub fn run() {
                 terminal::kill_all(&state);
                 agents::manager::kill_all(&state);
                 lsp::kill_all(&state);
+                // The opencode sidecar is the one long-lived server this
+                // app owns — quitting without this would orphan a ~366 MB
+                // process (docs/OPENCODE_INTEGRATION.md §2.2).
+                state.opencode_sidecar.shutdown_now();
             }
         });
 }

@@ -74,6 +74,13 @@ fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
                 ])
                 .arg(prompt);
         }
+        AgentKind::OpenCode => {
+            // Deliberately unattached: one-shot generation is occasional,
+            // so a self-booting `run` (its own throwaway internal server)
+            // beats keeping Maestro's sidecar alive for it. `--format
+            // json` makes the answer extractable as the last text event.
+            command.args(["run", "--format", "json"]).arg(prompt);
+        }
     }
     command.stdin(Stdio::null());
     command
@@ -130,6 +137,35 @@ fn extract_result_text(kind: AgentKind, stdout: &[u8]) -> Result<String, String>
                 .collect();
             let joined = body.join("\n");
             let trimmed = joined.trim();
+            if trimmed.is_empty() {
+                Err(format!("{} produced no output", kind.display_name()))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        AgentKind::OpenCode => {
+            // The answer is the last non-empty `text` event in the NDJSON
+            // stream (fixture shape: `{type:"text", part:{text}}`).
+            // Everything else — steps, tool parts, usage — is chrome for
+            // this purpose. Falls back to raw stdout rather than failing
+            // outright if the shape drifts.
+            for line in text.lines().rev() {
+                let Ok(value) = serde_json::from_str::<Value>(line) else {
+                    continue;
+                };
+                if value.get("type").and_then(|v| v.as_str()) != Some("text") {
+                    continue;
+                }
+                if let Some(answer) = value
+                    .pointer("/part/text")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    return Ok(answer.to_string());
+                }
+            }
+            let trimmed = text.trim();
             if trimmed.is_empty() {
                 Err(format!("{} produced no output", kind.display_name()))
             } else {

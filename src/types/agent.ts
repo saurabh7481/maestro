@@ -1,16 +1,29 @@
 /** Mirrors `src-tauri/src/agents/registry.rs`'s `AgentKind` 1:1 (its
  * `#[serde(rename_all = "camelCase")]` renames the fieldless variants to
  * these exact strings). */
-export type AgentKind = "claudeCode" | "codex" | "cursorAgent" | "aider";
+export type AgentKind = "claudeCode" | "codex" | "cursorAgent" | "aider" | "openCode";
 
-export const AGENT_KINDS: AgentKind[] = ["claudeCode", "codex", "cursorAgent", "aider"];
+export const AGENT_KINDS: AgentKind[] = ["claudeCode", "codex", "cursorAgent", "aider", "openCode"];
 
 export const AGENT_DISPLAY_NAME: Record<AgentKind, string> = {
   claudeCode: "Claude Code",
   codex: "Codex CLI",
   cursorAgent: "Cursor Agent",
   aider: "Aider",
+  openCode: "OpenCode",
 };
+
+/** The kinds whose *turn path* is wired end to end — what may appear in
+ * the new-tab menu and the commit-message picker. Detection/settings
+ * cover all of `AGENT_KINDS`; a kind joins this list only when sending it
+ * a message actually works. */
+export const TAB_READY_AGENT_KINDS: AgentKind[] = [
+  "claudeCode",
+  "codex",
+  "cursorAgent",
+  "aider",
+  "openCode",
+];
 
 /** Mirrors `registry.rs`'s `AuthState`. `unknown` means installed but
  * auth couldn't be positively confirmed or denied (currently only

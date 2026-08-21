@@ -152,6 +152,29 @@ async fn run_turn(
         crate::agents::capabilities::capabilities_for(kind).streaming == Streaming::Deltas;
 
     let session_dir = crate::agents::aider::session_dir(&state.app_data_dir);
+    // OpenCode turns attach to the managed sidecar when it can be
+    // acquired — one warm server across turns instead of a cold boot per
+    // message. The guard lives for this whole function, i.e. exactly as
+    // long as the child: that's what stops the idle reaper from killing
+    // the server mid-turn. Failure to acquire is a fallback to self-boot,
+    // not an error (docs/OPENCODE_INTEGRATION.md §1.2).
+    let _sidecar_guard;
+    let attach = if kind == AgentKind::OpenCode {
+        match state.opencode_sidecar.acquire(&binary_path).await {
+            Ok(guard) => {
+                _sidecar_guard = Some(guard);
+                state.opencode_sidecar.endpoint()
+            }
+            Err(error) => {
+                log::warn!("opencode sidecar unavailable, self-booting this run: {error}");
+                _sidecar_guard = None;
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let ctx = TurnCtx {
         binary_path: &binary_path,
         worktree_root: &worktree_root,
@@ -165,6 +188,7 @@ async fn run_turn(
         stream_deltas,
         extra_env: &extra_env,
         session_dir: &session_dir,
+        attach: attach.as_ref(),
     };
     let turn_started = std::time::Instant::now();
     let spawn = adapter::build_turn(kind, &ctx, &text);
@@ -623,7 +647,10 @@ pub async fn respond_to_permission(
                     }
                     false
                 }
-                AgentKind::CursorAgent | AgentKind::Codex | AgentKind::Aider => {
+                AgentKind::CursorAgent
+                | AgentKind::Codex
+                | AgentKind::Aider
+                | AgentKind::OpenCode => {
                     let already_auto = entry.permission_mode == PermissionMode::Auto;
                     entry.permission_mode = PermissionMode::Auto;
                     !already_auto

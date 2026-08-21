@@ -280,5 +280,9 @@ pub async fn list_slash_commands(
         // interpreted inside its own REPL and aren't reachable from
         // the `--message` one-shot invocation Maestro uses.
         AgentKind::Aider => Vec::new(),
+        // Phase O6+: opencode has its own custom-command system
+        // (`.opencode/command/*.md`); enumerate it when the sessions
+        // work lands, not before.
+        AgentKind::OpenCode => Vec::new(),
     })
 }

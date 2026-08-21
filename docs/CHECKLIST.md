@@ -425,6 +425,35 @@ cli-config.json`'s `approvalMode`/`permissions.allow`/`deny`), not
       underlying process/command is actually terminated, not just the UI
       state
 
+### OpenCode (docs/OPENCODE_INTEGRATION.md)
+
+- [ ] Sidecar killed externally mid-turn (`pkill opencode`) → supervisor
+      restarts onto a fresh pid and the turn's fallback self-boots;
+      covered live by `OPENCODE_LIVE=1 cargo test --lib live_tests`
+- [ ] Sidecar crashes twice inside the crash window → `Failed` state with
+      captured stderr, honest error to the tab, self-heals after the
+      window — no infinite restart loop
+- [ ] Idle sidecar actually stops → no `opencode serve` process exists
+      after grace with zero consumers; +0 MB idle budget asserted in
+      lifecycle tests
+- [ ] External `auth.json` edits while Maestro runs → detection re-reads
+      on next Recheck; malformed file degrades to `Unknown`, never a
+      guessed `Authenticated`
+- [ ] Server's stale `connected` list after disconnect → pane trusts a
+      recent successful DELETE over `/provider` (removed ids linger
+      server-side until restart; Phase O4 live finding)
+- [ ] Provider keys in GET responses never reach the webview → every
+      provider command returns projected structs; projection tests carry
+      fake secrets that must not survive
+- [ ] Denied permission ("ask" rule) terminates the run → surfaced as a
+      denial card + failed tool result, not a hung spinner (model is
+      never re-consulted; fixture 04)
+- [ ] Version drift: flags verified against opencode 1.18.x (`--attach`,
+      `--variant`, `--thinking`, `--fork`, `session list --format json`)
+      → re-verify against installed version before release; older builds
+      fail at spawn with the CLI's own unknown-flag error rather than
+      silently misbehaving
+
 ### File editor
 
 - [ ] Open a very large file (e.g. >5MB or >50k lines) → warned/degraded
