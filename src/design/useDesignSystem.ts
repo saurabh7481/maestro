@@ -20,6 +20,7 @@ export function useDesignSystem(): void {
   const autoSaveEnabled = useUiStore((s) => s.autoSaveEnabled);
   const minimapEnabled = useUiStore((s) => s.minimapEnabled);
   const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
+  const stickyScrollEnabled = useUiStore((s) => s.stickyScrollEnabled);
   const diffSideBySide = useUiStore((s) => s.diffSideBySide);
   const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
@@ -80,6 +81,7 @@ export function useDesignSystem(): void {
       autoSaveEnabled,
       minimapEnabled,
       wordWrapEnabled,
+      stickyScrollEnabled,
       diffSideBySide,
       formatOnSaveEnabled,
       gitBlameEnabled,
@@ -102,6 +104,7 @@ export function useDesignSystem(): void {
     autoSaveEnabled,
     minimapEnabled,
     wordWrapEnabled,
+    stickyScrollEnabled,
     diffSideBySide,
     formatOnSaveEnabled,
     gitBlameEnabled,

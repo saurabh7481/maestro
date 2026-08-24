@@ -14,6 +14,7 @@ export interface UiPrefs {
   autoSaveEnabled: boolean;
   minimapEnabled: boolean;
   wordWrapEnabled: boolean;
+  stickyScrollEnabled: boolean;
   diffSideBySide: boolean;
   formatOnSaveEnabled: boolean;
   gitBlameEnabled: boolean;

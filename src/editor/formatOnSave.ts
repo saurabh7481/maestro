@@ -133,10 +133,17 @@ async function formatWithPrettier(model: monaco.editor.ITextModel): Promise<void
  * if `textDocument/formatting` is available, otherwise the bundled
  * Prettier fallback for the languages it supports (JS/TS, JSON,
  * CSS/SCSS/LESS, HTML, Markdown, YAML) — Prettier runs entirely
- * client-side (`prettier/standalone`), no language server needed. A
- * no-op for everything else (Rust, Python, Go, ...): no Prettier plugin
- * exists for them, and shelling out to their own formatters
- * (rustfmt/black/gofmt) isn't wired up.
+ * client-side (`prettier/standalone`), no language server needed.
+ *
+ * Rust/Python/Go have no Prettier plugin, so they only ever go through
+ * the LSP path — which does cover them once a session is actually
+ * attached (rust-analyzer shells out to `rustfmt` internally; `lsp.rs`
+ * supports it like any other server). Two things gate that in practice:
+ * Language Intelligence is off by default (Settings → Language
+ * Intelligence — see `commands/lsp.rs`'s `GlobalLspSettings`), and the
+ * server binary itself (`rust-analyzer`, `gopls`, ...) has to be
+ * installed. Neither on yet means this is a no-op for those languages,
+ * not that they're unsupported.
  *
  * Takes a model rather than an editor instance deliberately — models are
  * shared app-wide (`monacoModelRegistry`) independent of which pane, if

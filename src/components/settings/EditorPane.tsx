@@ -6,6 +6,7 @@ import {
   MagnifyingGlassPlus,
   MapTrifold,
   PaintBucket,
+  PushPin,
   TextAlignLeft,
   UserFocus,
 } from "@phosphor-icons/react";
@@ -40,6 +41,8 @@ export function EditorPane() {
   const setMinimapEnabled = useUiStore((s) => s.setMinimapEnabled);
   const wordWrapEnabled = useUiStore((s) => s.wordWrapEnabled);
   const setWordWrapEnabled = useUiStore((s) => s.setWordWrapEnabled);
+  const stickyScrollEnabled = useUiStore((s) => s.stickyScrollEnabled);
+  const setStickyScrollEnabled = useUiStore((s) => s.setStickyScrollEnabled);
   const formatOnSaveEnabled = useUiStore((s) => s.formatOnSaveEnabled);
   const setFormatOnSaveEnabled = useUiStore((s) => s.setFormatOnSaveEnabled);
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
@@ -160,6 +163,22 @@ export function EditorPane() {
             label="Word wrap"
             checked={wordWrapEnabled}
             onCheckedChange={setWordWrapEnabled}
+          />
+        </div>
+
+        <div className={styles.presetRow}>
+          <PushPin size={18} color="var(--accent-2)" />
+          <div className={styles.presetText}>
+            <div className={styles.presetTitle}>Sticky scroll</div>
+            <div className={styles.presetDescription}>
+              Pin the enclosing function or class header at the top of the editor while you scroll
+              through its body.
+            </div>
+          </div>
+          <Switch
+            label="Sticky scroll"
+            checked={stickyScrollEnabled}
+            onCheckedChange={setStickyScrollEnabled}
           />
         </div>
       </div>

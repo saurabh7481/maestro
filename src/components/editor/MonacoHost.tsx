@@ -182,6 +182,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
       // hence off by default — Settings → Editor → Minimap opts back in.
       minimap: { enabled: prefs.minimapEnabled },
       wordWrap: prefs.wordWrapEnabled ? "on" : "off",
+      stickyScroll: { enabled: prefs.stickyScrollEnabled },
       // WebKitGTK can retain enormous compositor surfaces for Monaco's
       // promoted text/margin layers. Monaco exposes this specifically for
       // browsers where layer hinting causes high GPU memory usage.
@@ -305,6 +306,11 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
   useEffect(() => {
     editorRef.current?.updateOptions({ wordWrap: wordWrapEnabled ? "on" : "off" });
   }, [wordWrapEnabled]);
+
+  const stickyScrollEnabled = useUiStore((s) => s.stickyScrollEnabled);
+  useEffect(() => {
+    editorRef.current?.updateOptions({ stickyScroll: { enabled: stickyScrollEnabled } });
+  }, [stickyScrollEnabled]);
 
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
   useEffect(() => {
