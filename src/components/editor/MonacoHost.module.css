@@ -17,6 +17,19 @@
   min-width: 0;
 }
 
+.vimStatusBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+  background: var(--bg-3);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
 /* Inline "ghost text" decoration for the cursor's current-line git blame
    (Settings → General → Inline git blame) — Monaco injects this as a
    real `<span>` via the decoration's `after.inlineClassName`, so it's a

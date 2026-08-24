@@ -60,6 +60,10 @@ interface UiState {
    * function/class header at the top of the viewport while scrolling
    * through its body. See Settings → Editor. */
   stickyScrollEnabled: boolean;
+  /** Off by default — swaps Monaco's own keybindings for `monaco-vim`'s
+   * modal editing (normal/insert/visual) on every open file/diff/merge
+   * editor. See Settings → Editor. */
+  vimModeEnabled: boolean;
   /** How `MonacoDiffHost` lays out a diff — two columns (default,
    * matching VS Code) or one inline column with +/− lines interleaved.
    * A per-tab override wouldn't survive switching tabs, so this is a
@@ -119,6 +123,7 @@ interface UiState {
   setMinimapEnabled: (enabled: boolean) => void;
   setWordWrapEnabled: (enabled: boolean) => void;
   setStickyScrollEnabled: (enabled: boolean) => void;
+  setVimModeEnabled: (enabled: boolean) => void;
   setDiffSideBySide: (enabled: boolean) => void;
   setFormatOnSaveEnabled: (enabled: boolean) => void;
   setGitBlameEnabled: (enabled: boolean) => void;
@@ -144,6 +149,7 @@ interface UiState {
         | "minimapEnabled"
         | "wordWrapEnabled"
         | "stickyScrollEnabled"
+        | "vimModeEnabled"
         | "diffSideBySide"
         | "formatOnSaveEnabled"
         | "gitBlameEnabled"
@@ -178,6 +184,7 @@ export const useUiStore = create<UiState>((set) => ({
   minimapEnabled: false,
   wordWrapEnabled: true,
   stickyScrollEnabled: true,
+  vimModeEnabled: false,
   diffSideBySide: true,
   formatOnSaveEnabled: false,
   gitBlameEnabled: true,
@@ -225,6 +232,7 @@ export const useUiStore = create<UiState>((set) => ({
   setMinimapEnabled: (minimapEnabled) => set({ minimapEnabled }),
   setWordWrapEnabled: (wordWrapEnabled) => set({ wordWrapEnabled }),
   setStickyScrollEnabled: (stickyScrollEnabled) => set({ stickyScrollEnabled }),
+  setVimModeEnabled: (vimModeEnabled) => set({ vimModeEnabled }),
   setDiffSideBySide: (diffSideBySide) => set({ diffSideBySide }),
   setFormatOnSaveEnabled: (formatOnSaveEnabled) => set({ formatOnSaveEnabled }),
   setGitBlameEnabled: (gitBlameEnabled) => set({ gitBlameEnabled }),

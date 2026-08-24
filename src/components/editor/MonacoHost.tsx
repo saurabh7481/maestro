@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor/editor/editor.api";
+import { initVimMode } from "monaco-vim";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useFileLoadStore } from "../../state/fileLoadStore";
@@ -45,6 +46,7 @@ function blameLabel(info: BlameLine): string {
  * editor view, not a second copy of any file. */
 export function MonacoHost({ tabId }: { tabId: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const vimStatusBarRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const loadedTabIdRef = useRef<string | null>(null);
@@ -312,6 +314,21 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
     editorRef.current?.updateOptions({ stickyScroll: { enabled: stickyScrollEnabled } });
   }, [stickyScrollEnabled]);
 
+  // `monaco-vim` takes over the editor's keybindings entirely while
+  // active, so this is init/dispose rather than an `updateOptions` call —
+  // there's no partial "vim-ish" state in between. Depends only on the
+  // toggle, not on which file is loaded: the same editor instance is
+  // reused across tabs in this pane (see the `display: none` comment on
+  // the returned JSX below), so a mode switch mid-session shouldn't need
+  // a remount to take effect.
+  const vimModeEnabled = useUiStore((s) => s.vimModeEnabled);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !vimModeEnabled) return;
+    const vimMode = initVimMode(editor, vimStatusBarRef.current);
+    return () => vimMode.dispose();
+  }, [vimModeEnabled]);
+
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
   useEffect(() => {
     if (!gitBlameEnabled) {
@@ -494,6 +511,7 @@ export function MonacoHost({ tabId }: { tabId: string | null }) {
         />
       )}
       <div ref={containerRef} className={styles.host} />
+      {vimModeEnabled && <div ref={vimStatusBarRef} className={styles.vimStatusBar} />}
     </div>
   );
 }

@@ -15,6 +15,7 @@ export interface UiPrefs {
   minimapEnabled: boolean;
   wordWrapEnabled: boolean;
   stickyScrollEnabled: boolean;
+  vimModeEnabled: boolean;
   diffSideBySide: boolean;
   formatOnSaveEnabled: boolean;
   gitBlameEnabled: boolean;

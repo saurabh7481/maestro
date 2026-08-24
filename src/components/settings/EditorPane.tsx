@@ -2,6 +2,7 @@ import {
   ArrowCounterClockwise,
   ArrowsLeftRight,
   FloppyDisk,
+  Keyboard,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
   MapTrifold,
@@ -47,6 +48,8 @@ export function EditorPane() {
   const setFormatOnSaveEnabled = useUiStore((s) => s.setFormatOnSaveEnabled);
   const gitBlameEnabled = useUiStore((s) => s.gitBlameEnabled);
   const setGitBlameEnabled = useUiStore((s) => s.setGitBlameEnabled);
+  const vimModeEnabled = useUiStore((s) => s.vimModeEnabled);
+  const setVimModeEnabled = useUiStore((s) => s.setVimModeEnabled);
 
   return (
     <>
@@ -232,6 +235,19 @@ export function EditorPane() {
             checked={gitBlameEnabled}
             onCheckedChange={setGitBlameEnabled}
           />
+        </div>
+
+        <div className={styles.presetRow}>
+          <Keyboard size={18} color="var(--accent-2)" />
+          <div className={styles.presetText}>
+            <div className={styles.presetTitle}>Vim mode</div>
+            <div className={styles.presetDescription}>
+              Modal editing (normal/insert/visual) via monaco-vim, replacing Monaco's own
+              keybindings in the file editor. A status bar along the bottom shows the current mode.
+              Diff and merge views aren't wired up yet.
+            </div>
+          </div>
+          <Switch label="Vim mode" checked={vimModeEnabled} onCheckedChange={setVimModeEnabled} />
         </div>
       </div>
     </>
