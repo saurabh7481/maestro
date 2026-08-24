@@ -335,3 +335,40 @@ pub async fn get_stash_files(
 ) -> Result<Vec<(String, StatusKind)>, String> {
     git::stash_files(&PathBuf::from(worktree_root), &reference).await
 }
+
+/// Switches which branch this worktree has checked out — a status-bar
+/// branch switcher, not the worktree switcher (`Titlebar.tsx`'s
+/// `WorktreeSwitcher`, which only changes what the UI is looking at).
+/// `worktree_id`/emitting `scm://` on success matches every other
+/// working-tree-mutating command here: checking out a different branch
+/// changes the working tree contents just as staging or a pull would.
+#[tauri::command]
+pub async fn checkout_branch(
+    app: AppHandle,
+    worktree_id: String,
+    worktree_root: String,
+    branch: String,
+) -> Result<(), String> {
+    let root = PathBuf::from(worktree_root);
+    git::checkout_branch(&root, &branch).await?;
+    emit_scm_status(&app, &worktree_id, &root).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_branch(
+    worktree_root: String,
+    branch: String,
+    base_ref: String,
+) -> Result<(), String> {
+    git::create_branch(&PathBuf::from(worktree_root), &branch, &base_ref).await
+}
+
+#[tauri::command]
+pub async fn delete_branch(
+    worktree_root: String,
+    branch: String,
+    force: bool,
+) -> Result<(), String> {
+    git::delete_branch(&PathBuf::from(worktree_root), &branch, force).await
+}

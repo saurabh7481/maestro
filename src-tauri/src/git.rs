@@ -121,6 +121,37 @@ pub async fn list_branches(repo_dir: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Switches which branch `repo_dir` (a specific worktree) has checked
+/// out — distinct from switching *which worktree* is active in the
+/// frontend (`WorktreeSwitcher` in `Titlebar.tsx`, which only changes
+/// what the UI is looking at). Git itself refuses when `branch` is
+/// already checked out in a different worktree of the same repo, or when
+/// the checkout would overwrite uncommitted changes; both errors already
+/// name the conflict clearly, so they're surfaced as-is rather than
+/// reworded.
+pub async fn checkout_branch(repo_dir: &Path, branch: &str) -> Result<(), String> {
+    run_git(repo_dir, &["checkout", branch]).await?;
+    Ok(())
+}
+
+/// Creates `branch` off `base_ref` without switching to it (`git branch`,
+/// not `git checkout -b`) — the frontend composes create-then-checkout
+/// itself for a "new branch" action that wants both, so each stays one
+/// plain git operation here rather than a compound command hiding two.
+pub async fn create_branch(repo_dir: &Path, branch: &str, base_ref: &str) -> Result<(), String> {
+    run_git(repo_dir, &["branch", branch, base_ref]).await?;
+    Ok(())
+}
+
+/// Deletes `branch`. `force` maps to `-D` (skip the "already merged"
+/// check); git's own refusal when the branch is checked out anywhere
+/// (this worktree or another one in the same repo) is surfaced as-is.
+pub async fn delete_branch(repo_dir: &Path, branch: &str, force: bool) -> Result<(), String> {
+    let flag = if force { "-D" } else { "-d" };
+    run_git(repo_dir, &["branch", flag, branch]).await?;
+    Ok(())
+}
+
 /// Creates a new worktree. When `create_branch` is true, creates
 /// `branch_name` off `base_ref` (`git worktree add -b`); otherwise checks
 /// out the already-existing `branch_name`.
@@ -1323,6 +1354,52 @@ mod tests {
         worktree_remove(dir.path(), &wt_path, false).await.unwrap();
         let entries = list_worktrees(dir.path()).await.unwrap();
         assert_eq!(entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn creates_a_branch_without_switching_to_it() {
+        let dir = init_repo().await;
+        create_branch(dir.path(), "feature", "main").await.unwrap();
+
+        assert!(list_branches(dir.path())
+            .await
+            .unwrap()
+            .contains(&"feature".to_string()));
+        // Still on the original branch — `create_branch` never checks out.
+        let current = run_git(dir.path(), &["branch", "--show-current"])
+            .await
+            .unwrap();
+        assert_eq!(current.trim(), "main");
+    }
+
+    #[tokio::test]
+    async fn checkout_switches_the_current_branch() {
+        let dir = init_repo().await;
+        create_branch(dir.path(), "feature", "main").await.unwrap();
+        checkout_branch(dir.path(), "feature").await.unwrap();
+
+        let current = run_git(dir.path(), &["branch", "--show-current"])
+            .await
+            .unwrap();
+        assert_eq!(current.trim(), "feature");
+    }
+
+    #[tokio::test]
+    async fn deletes_a_branch() {
+        let dir = init_repo().await;
+        create_branch(dir.path(), "feature", "main").await.unwrap();
+        delete_branch(dir.path(), "feature", false).await.unwrap();
+
+        assert!(!list_branches(dir.path())
+            .await
+            .unwrap()
+            .contains(&"feature".to_string()));
+    }
+
+    #[tokio::test]
+    async fn deleting_the_currently_checked_out_branch_fails() {
+        let dir = init_repo().await;
+        assert!(delete_branch(dir.path(), "main", false).await.is_err());
     }
 
     #[tokio::test]

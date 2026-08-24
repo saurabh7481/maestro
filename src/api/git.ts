@@ -97,4 +97,14 @@ export const gitApi = {
     invoke<void>("drop_stash", { worktreeRoot, reference }),
   getStashFiles: (worktreeRoot: string, reference: string) =>
     invoke<CommitFileEntry[]>("get_stash_files", { worktreeRoot, reference }),
+
+  /** Switches which branch this worktree has checked out — distinct from
+   * `workspaceApi.selectWorktree`, which only changes which worktree the
+   * UI is looking at. */
+  checkoutBranch: (worktreeId: string, worktreeRoot: string, branch: string) =>
+    invoke<void>("checkout_branch", { worktreeId, worktreeRoot, branch }),
+  createBranch: (worktreeRoot: string, branch: string, baseRef: string) =>
+    invoke<void>("create_branch", { worktreeRoot, branch, baseRef }),
+  deleteBranch: (worktreeRoot: string, branch: string, force = false) =>
+    invoke<void>("delete_branch", { worktreeRoot, branch, force }),
 };

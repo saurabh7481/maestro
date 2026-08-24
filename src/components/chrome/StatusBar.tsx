@@ -3,7 +3,6 @@ import {
   Bell,
   CircleHalf,
   Code,
-  GitBranch,
   Info,
   Sparkle,
   WarningCircle,
@@ -22,6 +21,7 @@ import {
   useProblemsStore,
 } from "../../state/problemsStore";
 import { ProcessPopover } from "../processes/ProcessPopover";
+import { BranchSwitcher } from "./BranchSwitcher";
 import styles from "./StatusBar.module.css";
 
 /** Reflects whatever's actually happening in the active tab — an agent
@@ -121,10 +121,7 @@ export function StatusBar() {
     <div className={styles.bar}>
       {activeWorktree ? (
         <>
-          <span className={styles.item} style={{ color: "var(--accent)" }}>
-            <GitBranch size={13} />
-            {activeWorktree.branch}
-          </span>
+          <BranchSwitcher />
           <span className={styles.item}>
             <ArrowsClockwise size={12} />
             {activeWorktree.ahead}↑ {activeWorktree.behind}↓
