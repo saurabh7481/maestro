@@ -1,21 +1,17 @@
 import { useMemo, useState } from "react";
 import { Info, WarningCircle, XCircle } from "@phosphor-icons/react";
 import { useActiveWorktree } from "../../state/workspaceStore";
-import { problemsForWorktree, useProblemsStore } from "../../state/problemsStore";
-import { classifyFileTabType, fileTabId, useTabsStore } from "../../state/tabsStore";
-import { useEditorNavigationStore } from "../../state/editorNavigationStore";
+import {
+  openProblem,
+  problemsForWorktree,
+  sortProblems,
+  useProblemsStore,
+} from "../../state/problemsStore";
 import type { Problem, ProblemSeverity } from "../../types/problem";
 import sidebar from "../chrome/Sidebar.module.css";
 import styles from "./ProblemsPanel.module.css";
 
 type SeverityFilter = "all" | "error" | "warning";
-
-const SEVERITY_RANK: Record<ProblemSeverity, number> = {
-  error: 0,
-  warning: 1,
-  info: 2,
-  hint: 3,
-};
 
 function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
   if (severity === "error") return <XCircle size={14} weight="fill" />;
@@ -26,19 +22,12 @@ function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
 export function ProblemsPanel() {
   const activeWorktree = useActiveWorktree();
   const byOwner = useProblemsStore((state) => state.byOwner);
-  const ensureTab = useTabsStore((state) => state.ensureTab);
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const problems = useMemo(() => {
     const scoped = problemsForWorktree(byOwner, activeWorktree?.id).filter((problem) =>
       filter === "all" ? true : problem.severity === filter,
     );
-    return scoped.sort(
-      (a, b) =>
-        SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-        a.relativePath.localeCompare(b.relativePath) ||
-        a.range.startLineNumber - b.range.startLineNumber ||
-        a.range.startColumn - b.range.startColumn,
-    );
+    return sortProblems(scoped);
   }, [activeWorktree?.id, byOwner, filter]);
   const groups = useMemo(() => {
     const grouped = new Map<string, Problem[]>();
@@ -49,20 +38,6 @@ export function ProblemsPanel() {
     }
     return [...grouped.entries()];
   }, [problems]);
-
-  function openProblem(problem: Problem) {
-    if (!activeWorktree || !problem.relativePath) return;
-    const tabId = fileTabId(activeWorktree.id, problem.relativePath);
-    ensureTab({
-      id: tabId,
-      type: classifyFileTabType(problem.relativePath),
-      title: problem.relativePath.split("/").pop() ?? problem.relativePath,
-      filePath: problem.relativePath,
-      worktreeId: activeWorktree.id,
-      worktreeRoot: activeWorktree.path,
-    });
-    useEditorNavigationStore.getState().request({ tabId, selection: problem.range });
-  }
 
   return (
     <div className={sidebar.panel} data-side="right">
@@ -101,7 +76,7 @@ export function ProblemsPanel() {
                   className={styles.problem}
                   data-severity={problem.severity}
                   data-stale={problem.stale}
-                  onClick={() => openProblem(problem)}
+                  onClick={() => activeWorktree && openProblem(activeWorktree, problem)}
                   title={problem.message}
                 >
                   <span className={styles.severity}>

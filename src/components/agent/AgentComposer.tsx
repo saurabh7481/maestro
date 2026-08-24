@@ -17,6 +17,7 @@ import {
 import type { Icon } from "@phosphor-icons/react";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { EMPTY_QUEUE, useAgentSessionStore } from "../../state/agentSessionStore";
+import { useFocusRequest } from "../../state/focusRequestStore";
 import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
 import { agentsApi } from "../../api/agents";
 import { fsApi } from "../../api/fs";
@@ -618,6 +619,8 @@ export function AgentComposer({
   // not read from `textareaRef.current` during render — reading a ref's
   // value at render time is unsafe (react-hooks/refs).
   const [cursorPos, setCursorPos] = useState(0);
+
+  useFocusRequest(runId, () => textareaRef.current?.focus());
 
   useLayoutEffect(() => {
     const element = textareaRef.current;

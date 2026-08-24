@@ -1,6 +1,7 @@
 import { fsApi } from "../api/fs";
 import { useOpenFilesStore } from "../state/openFilesStore";
 import { useUiStore } from "../state/uiStore";
+import { useTabsStore } from "../state/tabsStore";
 import { getEditorModel, notifyEditorModelSaved } from "./modelBridge";
 import { getModel } from "./monacoModelRegistry";
 import { formatModelBeforeSave } from "./formatOnSave";
@@ -36,4 +37,28 @@ export async function saveFileTab(
   useOpenFilesStore.getState().registerSaved(tabId, result.mtimeMs);
   notifyEditorModelSaved(tabId);
   return true;
+}
+
+/** Every dirty file/markdown tab across every worktree, not just the active
+ * one — same "background worktrees keep running" reasoning `tabsStore.ts`
+ * already applies to agent/terminal processes. A tab whose write conflicts
+ * (stale mtime) surfaces the same external-change prompt the single-file
+ * Cmd/Ctrl+S handler falls back to, and doesn't block the rest from saving. */
+export async function saveAllDirtyTabs(): Promise<void> {
+  const { tabs } = useTabsStore.getState();
+  const dirtyByTabId = useOpenFilesStore.getState().byTabId;
+  const targets = tabs.filter(
+    (tab) =>
+      (tab.type === "file" || tab.type === "markdown") &&
+      tab.worktreeRoot &&
+      tab.filePath &&
+      dirtyByTabId[tab.id]?.dirty,
+  );
+  await Promise.all(
+    targets.map((tab) =>
+      saveFileTab(tab.id, tab.worktreeRoot!, tab.filePath!).catch(() => {
+        useOpenFilesStore.getState().setExternalChangePending(tab.id, true);
+      }),
+    ),
+  );
 }

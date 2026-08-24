@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDesignSystem } from "../../design/useDesignSystem";
 import { useSessionPersistence } from "../../design/useSessionPersistence";
-import { useActiveWorktree, useWorkspaceStore } from "../../state/workspaceStore";
+import { activeWorktreeOf, useActiveWorktree, useWorkspaceStore } from "../../state/workspaceStore";
 import { useExplorerStore } from "../../state/explorerStore";
 import { useScmStore } from "../../state/scmStore";
 import { useTabsStore } from "../../state/tabsStore";
@@ -12,8 +12,12 @@ import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { useUiStore } from "../../state/uiStore";
 import { useKeybindingsStore } from "../../state/keybindingsStore";
+import { useFocusRequestStore } from "../../state/focusRequestStore";
 import { comboMatchesEvent } from "../../design/keymap";
-import { saveFileTab } from "../../editor/saveFile";
+import { goToNextProblem, goToPreviousProblem } from "../../design/problemNavigation";
+import { saveFileTab, saveAllDirtyTabs } from "../../editor/saveFile";
+import { openProcessesTab } from "../processes/openProcessesTab";
+import { closeTabs } from "./TabStrip";
 import { TooltipProvider } from "../primitives";
 import { SettingsModal } from "../settings/SettingsModal";
 import { CommandPalette } from "../command-palette/CommandPalette";
@@ -268,6 +272,84 @@ function useNavigationShortcuts() {
   }, []);
 }
 
+/** The rest of `KEYBINDING_ACTIONS` that don't need a dedicated hook of
+ * their own — each a one-line dispatch to logic that already lives
+ * elsewhere (the command palette exposes the same actions, see
+ * `command-palette/commands.ts`, so a shortcut here is just a faster path
+ * to the identical behavior, not a second implementation of it). */
+function useMiscShortcuts() {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const comboFor = useKeybindingsStore.getState().comboFor;
+
+      if (comboMatchesEvent(comboFor("file.saveAll"), event)) {
+        event.preventDefault();
+        void saveAllDirtyTabs();
+        return;
+      }
+      if (comboMatchesEvent(comboFor("search.findInFiles"), event)) {
+        event.preventDefault();
+        useUiStore.getState().setSidebarView("search");
+        useFocusRequestStore.getState().requestFocus("search");
+        return;
+      }
+      if (comboMatchesEvent(comboFor("view.toggleProblems"), event)) {
+        event.preventDefault();
+        useUiStore.getState().toggleSidebarView("problems");
+        return;
+      }
+      if (comboMatchesEvent(comboFor("view.toggleProcesses"), event)) {
+        event.preventDefault();
+        openProcessesTab();
+        return;
+      }
+      if (comboMatchesEvent(comboFor("problems.next"), event)) {
+        const activeWorktree = activeWorktreeOf(useWorkspaceStore.getState());
+        if (activeWorktree) {
+          event.preventDefault();
+          goToNextProblem(activeWorktree);
+        }
+        return;
+      }
+      if (comboMatchesEvent(comboFor("problems.previous"), event)) {
+        const activeWorktree = activeWorktreeOf(useWorkspaceStore.getState());
+        if (activeWorktree) {
+          event.preventDefault();
+          goToPreviousProblem(activeWorktree);
+        }
+        return;
+      }
+      if (comboMatchesEvent(comboFor("composer.focus"), event)) {
+        const state = useTabsStore.getState();
+        const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
+        if (activeTab?.type === "agent") {
+          event.preventDefault();
+          useFocusRequestStore.getState().requestFocus(activeTab.id);
+        }
+        return;
+      }
+      if (comboMatchesEvent(comboFor("tab.closeOthers"), event)) {
+        const state = useTabsStore.getState();
+        const pane = Object.values(state.panes).find((candidate) =>
+          candidate.tabIds.includes(state.activeTabId ?? ""),
+        );
+        const others = pane ? pane.tabIds.filter((id) => id !== state.activeTabId) : [];
+        if (others.length > 0) {
+          event.preventDefault();
+          closeTabs(others);
+        }
+        return;
+      }
+      if (comboMatchesEvent(comboFor("tab.reopenClosed"), event)) {
+        event.preventDefault();
+        useTabsStore.getState().reopenLastClosedTab();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
+
 /** The main window is the one that owns detached windows: it hands tabs
  * over when one opens and takes them back when one docks or closes
  * (`chrome/satelliteWindows.ts`). Registered once, here, since the
@@ -299,6 +381,7 @@ export function AppShell() {
   useAgentAvailabilitySync();
   useLayoutShortcuts();
   useNavigationShortcuts();
+  useMiscShortcuts();
   useSatelliteHost();
 
   const leftSidebarOpen = useUiStore((s) => s.leftSidebarOpen);

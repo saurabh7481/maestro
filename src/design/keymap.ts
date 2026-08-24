@@ -71,6 +71,50 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: "zoom.in", label: "Zoom In", group: "View", defaultCombo: "mod+=" },
   { id: "zoom.out", label: "Zoom Out", group: "View", defaultCombo: "mod+-" },
   { id: "zoom.reset", label: "Reset Zoom", group: "View", defaultCombo: "mod+0" },
+  { id: "file.saveAll", label: "Save All Files", group: "Editor", defaultCombo: "mod+alt+s" },
+  {
+    id: "search.findInFiles",
+    label: "Find in Files",
+    group: "Navigation",
+    defaultCombo: "mod+shift+f",
+  },
+  {
+    id: "view.toggleProblems",
+    label: "Toggle Problems Panel",
+    group: "View",
+    defaultCombo: "mod+shift+m",
+  },
+  {
+    id: "view.toggleProcesses",
+    label: "Toggle Processes Panel",
+    group: "View",
+    defaultCombo: "mod+shift+u",
+  },
+  {
+    id: "problems.next",
+    label: "Next Problem",
+    group: "Navigation",
+    defaultCombo: "alt+f8",
+  },
+  {
+    id: "problems.previous",
+    label: "Previous Problem",
+    group: "Navigation",
+    defaultCombo: "alt+shift+f8",
+  },
+  {
+    id: "composer.focus",
+    label: "Focus Chat Composer",
+    group: "Navigation",
+    defaultCombo: "mod+shift+j",
+  },
+  { id: "tab.closeOthers", label: "Close Other Tabs", group: "General", defaultCombo: "mod+alt+t" },
+  {
+    id: "tab.reopenClosed",
+    label: "Reopen Closed Tab",
+    group: "General",
+    defaultCombo: "mod+shift+t",
+  },
 ];
 
 const MODIFIER_KEYS = new Set(["control", "meta", "shift", "alt"]);

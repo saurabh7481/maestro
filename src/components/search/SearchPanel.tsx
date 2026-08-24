@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useSearchStore } from "../../state/searchStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
+import { useFocusRequest } from "../../state/focusRequestStore";
 import { iconForFile } from "../explorer/fileIcons";
 import { ICON_SIZE } from "../../design/iconSize";
 import { AlertDialog, Button, IconButton, TextInput, Tooltip } from "../primitives";
@@ -103,6 +104,8 @@ export function SearchPanel() {
   const confirmReplaceAll = useSearchStore((s) => s.confirmReplaceAll);
   const dismissConfirmDirty = useSearchStore((s) => s.dismissConfirmDirty);
   const reveal = useSearchStore((s) => s.reveal);
+  const queryInputRef = useRef<HTMLInputElement>(null);
+  useFocusRequest("search", () => queryInputRef.current?.focus());
 
   const worktreeRoot = activeWorktree?.path;
   const worktreeId = activeWorktree?.id;
@@ -155,6 +158,7 @@ export function SearchPanel() {
       <div className={styles.controls}>
         <div className={styles.inputRow}>
           <TextInput
+            ref={queryInputRef}
             placeholder="Search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

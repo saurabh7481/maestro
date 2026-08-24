@@ -5,216 +5,45 @@ import { useUiStore } from "../../state/uiStore";
 import { useTabsStore, fileTabId, classifyFileTabType } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useKeybindingsStore } from "../../state/keybindingsStore";
-import { useScmStore } from "../../state/scmStore";
-import { useReadyAgentKinds } from "../../state/agentAvailabilityStore";
-import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import { searchApi } from "../../api/search";
-import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
+import { applyTheme } from "../../design/themes";
+import type { ThemeId } from "../../design/themes";
 import { fuzzyMatch, fuzzyScore } from "../../design/fuzzy";
 import { comboMatchesEvent } from "../../design/keymap";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
-import type { SplitEdge } from "../../state/paneLayout";
-import { detachTabToNewWindow } from "../chrome/satelliteWindows";
-import { openProcessesTab } from "../processes/openProcessesTab";
+import { loadCommandRecency, recordCommandRun } from "../../design/persistence";
 import { iconForFile } from "../explorer/fileIcons";
 import { ICON_SIZE } from "../../design/iconSize";
+import { useCommands, type Command } from "./commands";
 import styles from "./CommandPalette.module.css";
 
 const QUICK_OPEN_MAX_RESULTS = 50;
 
-/** Splits whichever pane currently has focus, moving its active tab into
- * the new one — the palette's equivalent of dragging that tab to the
- * pane's edge (docs/V2_ROADMAP.md Phase 13). */
-function splitActivePane(edge: SplitEdge): void {
-  const state = useTabsStore.getState();
-  const activeTabId = state.activeTabId;
-  const pane = Object.values(state.panes).find((candidate) =>
-    candidate.tabIds.includes(activeTabId ?? ""),
-  );
-  if (pane) state.splitPane(pane.id, edge);
+/** Recently-run command ids, newest first, loaded once and kept in memory
+ * so re-opening the palette doesn't wait on a disk read — commands run
+ * often enough (and this is small enough) that an in-memory cache never
+ * meaningfully drifts from what's on disk within one app session. */
+function useCommandRecency(): { recentIds: string[]; record: (id: string) => void } {
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  useEffect(() => {
+    void loadCommandRecency().then(setRecentIds);
+  }, []);
+  function record(id: string) {
+    setRecentIds((prev) => [id, ...prev.filter((existing) => existing !== id)].slice(0, 10));
+    void recordCommandRun(id);
+  }
+  return { recentIds, record };
 }
 
-interface Command {
-  id: string;
-  label: string;
-  group: string;
-  run: () => void;
-}
-
-function useCommands(): Command[] {
-  const setTheme = useUiStore((s) => s.setTheme);
-  const setZoom = useUiStore((s) => s.setZoom);
-  const zoom = useUiStore((s) => s.zoom);
-  const toggleLeftSidebar = useUiStore((s) => s.toggleLeftSidebar);
-  const toggleRightSidebar = useUiStore((s) => s.toggleRightSidebar);
-  const setSidebarView = useUiStore((s) => s.setSidebarView);
-  const openSettings = useUiStore((s) => s.openSettings);
-  const openQuickOpen = useUiStore((s) => s.openQuickOpen);
-  const openTab = useTabsStore((s) => s.openTab);
-  const activeWorktree = useActiveWorktree();
-  const fetchRemote = useScmStore((s) => s.fetch);
-  const pull = useScmStore((s) => s.pull);
-  const push = useScmStore((s) => s.push);
-  const readyAgentKinds = useReadyAgentKinds();
-
-  return useMemo(() => {
-    const commands: Command[] = [
-      {
-        id: "view.explorer",
-        label: "Show Explorer",
-        group: "view",
-        run: () => setSidebarView("explorer"),
-      },
-      {
-        id: "view.scm",
-        label: "Show Source Control",
-        group: "view",
-        run: () => setSidebarView("scm"),
-      },
-      {
-        id: "view.history",
-        label: "Show History",
-        group: "view",
-        run: () => setSidebarView("history"),
-      },
-      {
-        id: "view.search",
-        label: "Show Search",
-        group: "view",
-        run: () => setSidebarView("search"),
-      },
-      { id: "view.left", label: "Toggle Workspace Sidebar", group: "view", run: toggleLeftSidebar },
-      { id: "view.right", label: "Toggle Right Panel", group: "view", run: toggleRightSidebar },
-      {
-        id: "nav.quickOpen",
-        label: "Go to File…",
-        group: "navigate",
-        run: openQuickOpen,
-      },
-      {
-        id: "theme.maestro",
-        label: "Theme: Maestro Dark",
-        group: "theme",
-        run: () => setTheme("maestro"),
-      },
-      {
-        id: "theme.darkplus",
-        label: "Theme: VS Code Dark+",
-        group: "theme",
-        run: () => setTheme("darkplus"),
-      },
-      {
-        id: "theme.onedark",
-        label: "Theme: One Dark Pro",
-        group: "theme",
-        run: () => setTheme("onedark"),
-      },
-      {
-        id: "theme.oled",
-        label: "Theme: OLED",
-        group: "theme",
-        run: () => setTheme("oled"),
-      },
-      {
-        id: "zoom.in",
-        label: "Zoom In",
-        group: "zoom",
-        run: () => setZoom(clampZoom(zoom + ZOOM_STEP)),
-      },
-      {
-        id: "zoom.out",
-        label: "Zoom Out",
-        group: "zoom",
-        run: () => setZoom(clampZoom(zoom - ZOOM_STEP)),
-      },
-      { id: "zoom.reset", label: "Reset Zoom", group: "zoom", run: () => setZoom(ZOOM_DEFAULT) },
-      { id: "settings.open", label: "Open Settings", group: "app", run: openSettings },
-      {
-        id: "tab.processes",
-        label: "Open Process Manager",
-        group: "tab",
-        run: openProcessesTab,
-      },
-      {
-        id: "layout.splitRight",
-        label: "Split Editor Right",
-        group: "layout",
-        run: () => splitActivePane("right"),
-      },
-      {
-        id: "layout.splitDown",
-        label: "Split Editor Down",
-        group: "layout",
-        run: () => splitActivePane("bottom"),
-      },
-      {
-        id: "layout.detach",
-        label: "Move Tab to New Window",
-        group: "layout",
-        run: () => {
-          const activeTabId = useTabsStore.getState().activeTabId;
-          if (activeTabId) void detachTabToNewWindow(activeTabId);
-        },
-      },
-    ];
-
-    // Anything that opens a tab bound to "the active worktree" or acts on
-    // its git remote has no sensible target without one — omitted rather
-    // than shown disabled, same reasoning `NewTabMenu` already applies to
-    // its own agent/terminal entries.
-    if (activeWorktree) {
-      commands.push(
-        {
-          id: "tab.terminal",
-          label: "New Terminal",
-          group: "tab",
-          run: () =>
-            openTab({
-              id: crypto.randomUUID(),
-              type: "terminal",
-              title: `Terminal — ${activeWorktree.branch}`,
-              worktreeRoot: activeWorktree.path,
-            }),
-        },
-        { id: "git.fetch", label: "Git: Fetch", group: "git", run: () => void fetchRemote() },
-        { id: "git.pull", label: "Git: Pull", group: "git", run: () => void pull() },
-        { id: "git.push", label: "Git: Push", group: "git", run: () => void push() },
-      );
-      for (const kind of readyAgentKinds) {
-        commands.push({
-          id: `tab.agent.${kind}`,
-          label: `New ${AGENT_DISPLAY_NAME[kind]} Session`,
-          group: "tab",
-          run: () =>
-            openTab({
-              id: crypto.randomUUID(),
-              type: "agent",
-              title: AGENT_DISPLAY_NAME[kind],
-              agentKind: kind,
-              worktreeId: activeWorktree.id,
-              worktreeRoot: activeWorktree.path,
-            }),
-        });
-      }
-    }
-
-    return commands;
-  }, [
-    setTheme,
-    setZoom,
-    zoom,
-    toggleLeftSidebar,
-    toggleRightSidebar,
-    setSidebarView,
-    openSettings,
-    openQuickOpen,
-    openTab,
-    activeWorktree,
-    fetchRemote,
-    pull,
-    push,
-    readyAgentKinds,
-  ]);
+/** Recent commands first (most-recent first), everything else after in
+ * whatever order it was already in — only applied to the empty-query
+ * "browse" list; a real search query ranks by match quality instead. */
+function withRecencyOrder(commands: Command[], recentIds: string[]): Command[] {
+  if (recentIds.length === 0) return commands;
+  const byId = new Map(commands.map((c) => [c.id, c]));
+  const recent = recentIds.map((id) => byId.get(id)).filter((c): c is Command => !!c);
+  const recentIdSet = new Set(recent.map((c) => c.id));
+  return [...recent, ...commands.filter((c) => !recentIdSet.has(c.id))];
 }
 
 function splitPath(path: string): { name: string; dir: string } {
@@ -250,12 +79,16 @@ function PaletteBody({
   commands,
   mode,
   worktreeRoot,
+  recentIds,
+  currentTheme,
   onRunCommand,
   onOpenFile,
 }: {
   commands: Command[];
   mode: "commands" | "quickOpen";
   worktreeRoot: string | undefined;
+  recentIds: string[];
+  currentTheme: ThemeId;
   onRunCommand: (c: Command) => void;
   onOpenFile: (path: string) => void;
 }) {
@@ -265,10 +98,21 @@ function PaletteBody({
   const inputRef = useRef<HTMLInputElement>(null);
   const files = useWorktreeFiles(worktreeRoot, mode === "quickOpen");
 
-  const commandResults = useMemo(
-    () => (mode === "commands" ? commands.filter((c) => fuzzyMatch(query, c.label)) : []),
-    [mode, commands, query],
-  );
+  const commandResults = useMemo(() => {
+    if (mode !== "commands") return [];
+    if (query === "") return withRecencyOrder(commands, recentIds);
+    return commands.filter((c) => fuzzyMatch(query, c.label));
+  }, [mode, commands, query, recentIds]);
+
+  // Live-previews the highlighted `theme.*` command directly on the DOM
+  // (not through `setTheme`, which would write the whole prefs blob to
+  // disk on every arrow-key move) — reverted on close in `CommandPalette`
+  // below unless the user actually commits to it via Enter/click.
+  useEffect(() => {
+    if (mode !== "commands") return;
+    const highlightedCommand = commandResults[highlighted];
+    applyTheme(document.documentElement, highlightedCommand?.previewTheme ?? currentTheme);
+  }, [mode, commandResults, highlighted, currentTheme]);
 
   const fileResults = useMemo(() => {
     if (mode !== "quickOpen") return [];
@@ -383,9 +227,19 @@ export function CommandPalette() {
   const quickOpenMode = useUiStore((s) => s.quickOpenMode);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const openQuickOpen = useUiStore((s) => s.openQuickOpen);
+  const theme = useUiStore((s) => s.theme);
   const commands = useCommands();
   const activeWorktree = useActiveWorktree();
   const ensureTab = useTabsStore((s) => s.ensureTab);
+  const { recentIds, record } = useCommandRecency();
+
+  // Whatever got previewed while the palette was open (see `PaletteBody`)
+  // is only real once committed via `runCommand` below — closing any other
+  // way (Escape, outside click, a non-theme command) snaps the DOM back to
+  // the actually-persisted theme.
+  useEffect(() => {
+    if (!open) applyTheme(document.documentElement, theme);
+  }, [open, theme]);
 
   useEffect(() => {
     function onGlobalKeyDown(event: KeyboardEvent): void {
@@ -422,6 +276,7 @@ export function CommandPalette() {
 
   function runCommand(command: Command) {
     command.run();
+    record(command.id);
     setOpen(false);
   }
 
@@ -450,6 +305,8 @@ export function CommandPalette() {
               commands={commands}
               mode={mode}
               worktreeRoot={activeWorktree?.path}
+              recentIds={recentIds}
+              currentTheme={theme}
               onRunCommand={runCommand}
               onOpenFile={openFile}
             />

@@ -295,8 +295,19 @@ interface TabsState extends Snapshot {
    * decided by the panes of the active worktree's layout. */
   tabs: Tab[];
 
+  /** Recently closed editor-like tabs, most recent last — capped, not
+   * persisted across restarts. Agent/terminal/processes/merge tabs are
+   * never pushed here: closing one tears down a real backend process
+   * (`TabStrip.tsx`'s `teardownProcess`), so "reopening" it would just be
+   * a fresh, unrelated tab wearing the old one's title — misleading
+   * rather than useful. */
+  closedTabHistory: Tab[];
+
   setActiveTab: (id: string) => void;
   closeTab: (id: string) => void;
+  /** Pops the most recently closed editor-like tab and reopens it. No-op
+   * if there isn't one. */
+  reopenLastClosedTab: () => void;
   openTab: (tab: Tab) => void;
   openTabInPane: (tab: Tab, paneId: string, index?: number) => void;
   ensureTab: (tab: Tab) => void;
@@ -335,6 +346,9 @@ interface TabsState extends Snapshot {
   hydrate: (snapshot: Partial<Snapshot>) => void;
 }
 
+const REOPENABLE_TAB_TYPES: TabType[] = ["file", "markdown", "html", "diff", "review"];
+const MAX_CLOSED_TAB_HISTORY = 20;
+
 export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: [],
   panes: {},
@@ -342,6 +356,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   activePaneByWorktree: {},
   activeTabId: null,
   activeTabIdByWorktree: {},
+  closedTabHistory: [],
 
   setActiveTab: (id) =>
     set((s) => {
@@ -353,10 +368,26 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   closeTab: (id) =>
     set((s) => {
       const pane = paneOf(s, id);
+      const closing = s.tabs.find((t) => t.id === id);
+      const closedTabHistory =
+        closing && REOPENABLE_TAB_TYPES.includes(closing.type)
+          ? [...s.closedTabHistory, closing].slice(-MAX_CLOSED_TAB_HISTORY)
+          : s.closedTabHistory;
       const withoutTab: Snapshot = { ...s, tabs: s.tabs.filter((t) => t.id !== id) };
       const unlinked = unlinkTab(withoutTab, id);
-      return pane ? collapseIfEmpty(unlinked, pane.id) : unlinked;
+      return { ...(pane ? collapseIfEmpty(unlinked, pane.id) : unlinked), closedTabHistory };
     }),
+
+  reopenLastClosedTab: () => {
+    const { closedTabHistory } = get();
+    const tab = closedTabHistory[closedTabHistory.length - 1];
+    if (!tab) return;
+    set((s) => ({ closedTabHistory: s.closedTabHistory.slice(0, -1) }));
+    // `ensureTab`, not `openTab` — the same file may already have been
+    // reopened through the normal route since this one closed, and two
+    // tabs sharing an id would break every id-keyed lookup in this store.
+    get().ensureTab(tab);
+  },
 
   openTab: (tab) =>
     set((s) => {

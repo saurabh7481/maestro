@@ -1,8 +1,12 @@
 import { create } from "zustand";
+import { classifyFileTabType, fileTabId, useTabsStore } from "./tabsStore";
+import { useEditorNavigationStore } from "./editorNavigationStore";
+import type { Worktree } from "../types/workspace";
 import type { Problem, ProblemSeverity, ProblemSourceKind, ProblemSummary } from "../types/problem";
 
 const MAX_PROBLEMS_PER_OWNER = 10_000;
 const SEVERITY_ORDER: ProblemSeverity[] = ["error", "warning", "info", "hint"];
+const SEVERITY_RANK: Record<ProblemSeverity, number> = { error: 0, warning: 1, info: 2, hint: 3 };
 
 export interface ProblemOwner {
   worktreeId: string;
@@ -113,6 +117,36 @@ export function buildProblemPathSummaries(
     }
   }
   return result;
+}
+
+/** Error, then warning, then info/hint; ties broken by file path then
+ * position — the single ordering `ProblemsPanel`'s list and the
+ * next/prev-problem keybindings both walk, so the two always agree on
+ * what "next" means. */
+export function sortProblems(problems: Problem[]): Problem[] {
+  return [...problems].sort(
+    (a, b) =>
+      SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+      a.relativePath.localeCompare(b.relativePath) ||
+      a.range.startLineNumber - b.range.startLineNumber ||
+      a.range.startColumn - b.range.startColumn,
+  );
+}
+
+/** Opens (or focuses) the tab for `problem.relativePath` and jumps the
+ * editor to its range — shared by `ProblemsPanel`'s row click and the
+ * next/prev-problem keybindings. */
+export function openProblem(worktree: Worktree, problem: Problem): void {
+  const tabId = fileTabId(worktree.id, problem.relativePath);
+  useTabsStore.getState().ensureTab({
+    id: tabId,
+    type: classifyFileTabType(problem.relativePath),
+    title: problem.relativePath.split("/").pop() ?? problem.relativePath,
+    filePath: problem.relativePath,
+    worktreeId: worktree.id,
+    worktreeRoot: worktree.path,
+  });
+  useEditorNavigationStore.getState().request({ tabId, selection: problem.range });
 }
 
 export const useProblemsStore = create<ProblemsState>((set) => ({

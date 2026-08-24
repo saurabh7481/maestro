@@ -100,6 +100,37 @@ export async function saveAgentModelPref(kind: AgentKind, modelId: string): Prom
   await store.set(AGENT_MODEL_KEY, { ...existing, [kind]: modelId });
 }
 
+const COMMAND_RECENCY_STORE_FILE = "command-recency.json";
+const COMMAND_RECENCY_KEY = "recentIds";
+const MAX_RECENT_COMMANDS = 10;
+
+let commandRecencyStorePromise: Promise<Store> | null = null;
+
+function getCommandRecencyStore(): Promise<Store> {
+  if (!commandRecencyStorePromise) {
+    commandRecencyStorePromise = load(COMMAND_RECENCY_STORE_FILE, { autoSave: true });
+  }
+  return commandRecencyStorePromise;
+}
+
+/** Most-recently-run command ids, newest first — read by the command
+ * palette to rank recent commands above the rest when the query is empty.
+ * See `CommandPalette.tsx`'s `useCommandRecency`, the only reader/writer. */
+export async function loadCommandRecency(): Promise<string[]> {
+  const store = await getCommandRecencyStore();
+  return (await store.get<string[]>(COMMAND_RECENCY_KEY)) ?? [];
+}
+
+export async function recordCommandRun(commandId: string): Promise<void> {
+  const store = await getCommandRecencyStore();
+  const existing = (await store.get<string[]>(COMMAND_RECENCY_KEY)) ?? [];
+  const next = [commandId, ...existing.filter((id) => id !== commandId)].slice(
+    0,
+    MAX_RECENT_COMMANDS,
+  );
+  await store.set(COMMAND_RECENCY_KEY, next);
+}
+
 export interface SessionPrefs {
   activeProjectId: string | null;
   activeWorktreeId: string | null;
