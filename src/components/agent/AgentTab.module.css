@@ -569,15 +569,14 @@
   background: color-mix(in srgb, var(--bg-3) 55%, transparent);
 }
 
+/** The row itself is a flex container, not a button — `.resumeRowMain`
+ * (the actual clickable "resume this session" control) shares it with
+ * `.resumeRowActions` (pin/rename/export/delete), which a nested button
+ * couldn't do without an invalid button-in-button. */
 .resumeRow {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-  padding: var(--space-4) var(--space-5);
   border-bottom: var(--border-width) solid var(--border);
-  cursor: pointer;
-  text-align: left;
 }
 .resumeRow:last-child {
   border-bottom: 0;
@@ -585,14 +584,60 @@
 .resumeRow:hover {
   background: var(--hover);
 }
-.resumeRow:focus-visible {
+.resumeRow[data-disabled="true"] {
+  opacity: 0.6;
+}
+
+.resumeRowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  text-align: left;
+}
+.resumeRowMain:focus-visible {
   position: relative;
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
-.resumeRow:disabled {
+.resumeRowMain:disabled {
   cursor: default;
-  opacity: 0.6;
+}
+
+.resumeRowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding-right: var(--space-5);
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease-out;
+}
+.resumeRow:hover .resumeRowActions,
+.resumeRowActions:focus-within,
+.resumeRowActions[data-pinned="true"] {
+  opacity: 1;
+}
+
+.resumeRowActionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-md);
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.resumeRowActionButton:hover {
+  background: var(--active);
+  color: var(--text);
+}
+.resumeRowActionButton[data-active="true"] {
+  color: var(--accent);
 }
 
 .resumeRowText {
@@ -601,11 +646,56 @@
 }
 
 .resumeRowTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resumeRenameInput {
+  width: 100%;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+}
+
+.resumeMenu {
+  min-width: 11rem;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.resumeMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.resumeMenuItem:hover,
+.resumeMenuItem:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
+.resumeMenuItemDanger {
+  color: var(--red);
+}
+.resumeMenuItemDanger:hover,
+.resumeMenuItemDanger:focus-visible {
+  background: rgba(224, 108, 117, 0.12);
+  color: var(--red);
 }
 
 .resumeRowMeta {
@@ -646,7 +736,7 @@
 }
 
 .resumeRow:hover .resumeAction,
-.resumeRow:focus-visible .resumeAction {
+.resumeRowMain:focus-visible .resumeAction {
   opacity: 1;
   transform: translateX(0);
 }

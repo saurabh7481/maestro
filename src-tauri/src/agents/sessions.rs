@@ -31,6 +31,10 @@ pub struct ResumableSession {
     /// multiple worktrees into one list while still knowing which
     /// worktree each one has to be resumed against.
     pub worktree_root: String,
+    /// Local-only, from `session_overrides` (`agents/session_overrides.rs`)
+    /// — never discovered from the CLI's own files, applied afterward by
+    /// `session_overrides::apply_overrides`.
+    pub pinned: bool,
 }
 
 /// Both Claude Code and Cursor Agent sanitize a worktree's absolute path
@@ -169,6 +173,7 @@ async fn summarize_claude_session_file(
         last_active_at,
         turn_count,
         worktree_root: worktree_root.to_string(),
+        pinned: false,
     })
 }
 
@@ -316,6 +321,7 @@ async fn summarize_cursor_session_file(
         last_active_at,
         turn_count,
         worktree_root: worktree_root.to_string(),
+        pinned: false,
     })
 }
 
@@ -489,6 +495,7 @@ async fn summarize_codex_session_file(path: &Path) -> Option<ResumableSession> {
         },
         turn_count,
         worktree_root: cwd.unwrap_or_default(),
+        pinned: false,
     })
 }
 
@@ -709,18 +716,24 @@ async fn find_global_session_file(
 /// session/file can't be found — mirrors `list_for_worktree`'s "unknown
 /// is honest, not a guess" stance, since Codex has no known on-disk
 /// layout to read from at all yet.
-pub async fn read_transcript(
+/// Resolves `(kind, worktree_root, session_id)` to the one on-disk file
+/// that session lives in — Claude/Cursor first check the exact directory
+/// that worktree's cwd sanitizes to, then (like Codex, which has no
+/// per-worktree layout at all) fall back to scanning every project
+/// directory for a matching session id. Shared by `read_transcript` and
+/// `session_overrides::delete_resumable_session` so a delete can never
+/// resolve to a different file than a resume of the same session would.
+/// `None` for Aider (no global store to search) and OpenCode (session
+/// storage isn't a Rust-visible file layout — see the Phase O6 note below).
+pub(crate) async fn resolve_session_file(
+    home: &Path,
     kind: AgentKind,
     worktree_root: &str,
     session_id: &str,
-    state: &AppState,
-) -> Vec<TranscriptTurn> {
-    let Ok(home) = std::env::var("HOME") else {
-        return Vec::new();
-    };
+) -> Option<PathBuf> {
     let direct = match kind {
         AgentKind::ClaudeCode => {
-            let path = PathBuf::from(&home)
+            let path = home
                 .join(".claude/projects")
                 .join(sanitize_cwd(worktree_root))
                 .join(format!("{session_id}.jsonl"));
@@ -730,7 +743,7 @@ pub async fn read_transcript(
                 .then_some(path)
         }
         AgentKind::CursorAgent => {
-            let base = PathBuf::from(&home)
+            let base = home
                 .join(".cursor/projects")
                 .join(sanitize_cwd(worktree_root))
                 .join("agent-transcripts")
@@ -742,10 +755,22 @@ pub async fn read_transcript(
         // verified `directory` field instead of on-disk layout.
         AgentKind::OpenCode => None,
     };
-    let path = match direct {
+    match direct {
         Some(path) => Some(path),
-        None => find_global_session_file(Path::new(&home), kind, session_id).await,
+        None => find_global_session_file(home, kind, session_id).await,
+    }
+}
+
+pub async fn read_transcript(
+    kind: AgentKind,
+    worktree_root: &str,
+    session_id: &str,
+    state: &AppState,
+) -> Vec<TranscriptTurn> {
+    let Ok(home) = std::env::var("HOME") else {
+        return Vec::new();
     };
+    let path = resolve_session_file(Path::new(&home), kind, worktree_root, session_id).await;
     match (kind, path) {
         (AgentKind::ClaudeCode, Some(path)) => read_claude_transcript(&path).await,
         (AgentKind::CursorAgent, Some(path)) => read_cursor_transcript(&path).await,
@@ -772,6 +797,67 @@ pub async fn get_session_transcript(
     state: State<'_, AppState>,
 ) -> Result<Vec<TranscriptTurn>, String> {
     Ok(read_transcript(kind, &worktree_root, &session_id, &state).await)
+}
+
+/// Formats a session's replayed turns as a plain-text-friendly Markdown
+/// document and prompts the user for where to save it — text only, same
+/// "replayed as `TranscriptTurn`s" limit `read_transcript`'s callers
+/// already carry (no tool calls/diffs, see this module's doc comment).
+/// A shareable transcript for handing off or filing an issue doesn't need
+/// those anyway; the full rendered version with everything intact is
+/// already what `agents/transcripts.rs` restores a tab from.
+#[tauri::command]
+pub async fn export_session_markdown(
+    app: tauri::AppHandle,
+    kind: AgentKind,
+    worktree_root: String,
+    session_id: String,
+    title: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let turns = read_transcript(kind, &worktree_root, &session_id, &state).await;
+    if turns.is_empty() {
+        return Err("This session has no replayable turns to export.".to_string());
+    }
+
+    let mut markdown = format!("# {title}\n\n");
+    for turn in &turns {
+        let heading = if turn.role == "user" {
+            "User"
+        } else {
+            "Assistant"
+        };
+        markdown.push_str(&format!("**{heading}:**\n\n{}\n\n", turn.text.trim()));
+    }
+
+    use tauri_plugin_dialog::DialogExt;
+    let safe_title: String = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Export session as Markdown")
+        .set_file_name(format!("{}.md", safe_title.trim()))
+        .add_filter("Markdown", &["md"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let Some(path) = rx.await.map_err(|e| e.to_string())? else {
+        return Ok(false); // user cancelled the dialog
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, markdown)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 async fn list_for_worktree(
@@ -817,6 +903,7 @@ pub async fn list_all_resumable_sessions(
         }
     };
     sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    crate::agents::session_overrides::apply_overrides(&state, &mut sessions)?;
     Ok(sessions)
 }
 
@@ -826,7 +913,9 @@ pub async fn list_resumable_sessions(
     worktree_root: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ResumableSession>, String> {
-    Ok(list_for_worktree(kind, &worktree_root, &state).await)
+    let mut sessions = list_for_worktree(kind, &worktree_root, &state).await;
+    crate::agents::session_overrides::apply_overrides(&state, &mut sessions)?;
+    Ok(sessions)
 }
 
 /// Same as `list_resumable_sessions`, but across every worktree the
@@ -847,6 +936,7 @@ pub async fn list_resumable_sessions_for_roots(
         all.extend(list_for_worktree(kind, &root, &state).await);
     }
     all.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    crate::agents::session_overrides::apply_overrides(&state, &mut all)?;
     Ok(all)
 }
 
@@ -945,6 +1035,7 @@ async fn list_opencode_sessions(
             // paying an export per row to fake it.
             turn_count: 0,
             worktree_root: row.directory,
+            pinned: false,
         })
         .collect()
 }

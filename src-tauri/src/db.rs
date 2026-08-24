@@ -129,5 +129,37 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         [],
     );
 
+    // Additive migration: `agent_transcripts` predates cost/context
+    // surfacing (`agents/transcripts.rs`) — same "swallow the duplicate
+    // column error" approach as above.
+    for column in [
+        "total_cost_usd REAL",
+        "duration_ms INTEGER",
+        "input_tokens INTEGER",
+        "output_tokens INTEGER",
+        "cache_read_tokens INTEGER",
+        "cache_write_tokens INTEGER",
+        "context_window INTEGER",
+    ] {
+        let _ = conn.execute(
+            &format!("ALTER TABLE agent_transcripts ADD COLUMN {column}"),
+            [],
+        );
+    }
+
+    // Local-only metadata over CLI-native sessions (title override, pin) —
+    // see `agents/session_overrides.rs`. Never the source of truth for
+    // which sessions exist, only how Maestro's own UI labels/orders them.
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS session_overrides (
+            session_id TEXT PRIMARY KEY,
+            title      TEXT,
+            pinned     INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        );
+        ",
+    )?;
+
     Ok(())
 }

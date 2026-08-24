@@ -9,6 +9,7 @@ pub mod manager;
 pub mod one_shot;
 pub mod opencode;
 pub mod registry;
+pub mod session_overrides;
 pub mod sessions;
 pub mod slash_commands;
 pub mod transcripts;

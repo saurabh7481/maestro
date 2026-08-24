@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { agentsApi } from "../api/agents";
 import { listenToAgentEvents } from "../api/agentEvents";
-import type { AgentEvent, TranscriptTurn } from "../types/agent";
+import type { AgentEvent, LastResultPayload, TranscriptTurn } from "../types/agent";
 import { useTabsStore } from "./tabsStore";
 import { useToastStore, isAppFocused } from "./toastStore";
 
@@ -103,17 +103,7 @@ export interface AgentTabState {
   items: TranscriptItem[];
   status: AgentRunStatus;
   errorMessage: string | null;
-  lastResult: {
-    sessionId: string;
-    totalCostUsd: number | null;
-    durationMs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    cacheReadTokens: number | null;
-    cacheWriteTokens: number | null;
-    /** The model's context window, for showing usage as a fraction. */
-    contextWindow: number | null;
-  } | null;
+  lastResult: ({ sessionId: string } & LastResultPayload) | null;
   permissionMode: import("../types/agent").PermissionMode;
   turnStartedAtMs: number | null;
   /** When the last event of the current turn arrived, so a thinking block
@@ -236,6 +226,17 @@ async function persistNow(runId: string): Promise<void> {
   if (!tab || tab.items.length === 0) return;
   const info = useTabsStore.getState().tabs.find((t) => t.id === runId);
   if (!info?.agentKind) return;
+  const lastResult: LastResultPayload | null = tab.lastResult
+    ? {
+        totalCostUsd: tab.lastResult.totalCostUsd,
+        durationMs: tab.lastResult.durationMs,
+        inputTokens: tab.lastResult.inputTokens,
+        outputTokens: tab.lastResult.outputTokens,
+        cacheReadTokens: tab.lastResult.cacheReadTokens,
+        cacheWriteTokens: tab.lastResult.cacheWriteTokens,
+        contextWindow: tab.lastResult.contextWindow,
+      }
+    : null;
   try {
     await agentsApi.saveAgentTranscript(
       runId,
@@ -243,6 +244,7 @@ async function persistNow(runId: string): Promise<void> {
       info.agentKind,
       tab.lastResult?.sessionId ?? null,
       JSON.stringify(forPersistence(tab.items)),
+      lastResult,
     );
   } catch {
     // Persistence is a convenience; a failed write must never take down
@@ -347,7 +349,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
     // from a previous launch with nothing in it.
     if ((get().byRunId[runId]?.items.length ?? 0) > 0) return;
 
-    let stored: { items: string; cliSessionId: string | null } | null = null;
+    let stored: Awaited<ReturnType<typeof agentsApi.loadAgentTranscript>> = null;
     try {
       stored = await agentsApi.loadAgentTranscript(runId);
     } catch {
@@ -406,13 +408,13 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             lastResult: stored.cliSessionId
               ? {
                   sessionId: stored.cliSessionId,
-                  totalCostUsd: null,
-                  durationMs: 0,
-                  inputTokens: null,
-                  outputTokens: null,
-                  cacheReadTokens: null,
-                  cacheWriteTokens: null,
-                  contextWindow: null,
+                  totalCostUsd: stored.lastResult?.totalCostUsd ?? null,
+                  durationMs: stored.lastResult?.durationMs ?? 0,
+                  inputTokens: stored.lastResult?.inputTokens ?? null,
+                  outputTokens: stored.lastResult?.outputTokens ?? null,
+                  cacheReadTokens: stored.lastResult?.cacheReadTokens ?? null,
+                  cacheWriteTokens: stored.lastResult?.cacheWriteTokens ?? null,
+                  contextWindow: stored.lastResult?.contextWindow ?? null,
                 }
               : null,
           },

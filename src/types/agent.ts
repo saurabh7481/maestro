@@ -220,6 +220,20 @@ export interface SlashCommandOption {
   source: "skill" | "command" | "builtin";
 }
 
+/** Mirrors `agents/transcripts.rs`'s `LastResultPayload` — the most recent
+ * turn's cost/duration/token accounting, persisted alongside a tab's
+ * transcript so a restored tab's status-bar readout isn't blank until the
+ * next turn completes. */
+export interface LastResultPayload {
+  totalCostUsd: number | null;
+  durationMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  contextWindow: number | null;
+}
+
 /** Mirrors `agents/sessions.rs`'s `ResumableSession`. */
 export interface ResumableSession {
   sessionId: string;
@@ -227,6 +241,8 @@ export interface ResumableSession {
   lastActiveAt: string;
   turnCount: number;
   worktreeRoot: string;
+  /** Local-only (`agents/session_overrides.rs`) — never from the CLI. */
+  pinned: boolean;
 }
 
 /** Mirrors `agents/sessions.rs`'s `TranscriptTurn` — a simplified,

@@ -5,14 +5,19 @@ import {
   ArrowDown,
   ArrowsClockwise,
   ClockCounterClockwise,
+  DotsThree,
+  DownloadSimple,
   FolderSimple,
   GearSix,
   MagnifyingGlass,
   PencilSimple,
+  PushPin,
   Stop,
+  TrashSimple,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { agentsApi } from "../../api/agents";
 import { gitApi } from "../../api/git";
 import {
@@ -25,7 +30,7 @@ import type { Tab } from "../../state/tabsStore";
 import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind, PermissionMode, ResumableSession } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
-import { Switch } from "../primitives";
+import { AlertDialog, Switch } from "../primitives";
 import { AgentComposer } from "./AgentComposer";
 import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
@@ -276,6 +281,13 @@ function NotReadyCard({ title, detail }: { title: string; detail: string | null 
   );
 }
 
+/** Kinds `delete_resumable_session` can actually act on (see
+ * `session_overrides.rs`'s doc comment) — Codex's global session-file
+ * scan resolves single files as cleanly as Claude's, but OpenCode's
+ * storage isn't a Rust-visible file layout and Aider keeps no session
+ * store to delete from at all. */
+const DELETE_SUPPORTED_KINDS: AgentKind[] = ["claudeCode", "cursorAgent", "codex"];
+
 /** Lists this tab's agent kind's resumable sessions (Claude Code, Cursor
  * Agent — Codex has no on-disk session layout Maestro can read yet, see
  * `sessions.rs`) and, on pick, both switches the backend run to that
@@ -301,6 +313,11 @@ function ResumeSessionPicker({
   const [query, setQuery] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const resumeSession = useAgentSessionStore((s) => s.resumeSession);
 
   useEffect(() => {
@@ -323,11 +340,82 @@ function ResumeSessionPicker({
   }, [kind]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleSessions = (sessions ?? []).filter((session) =>
-    `${session.title} ${session.worktreeRoot} ${session.sessionId}`
-      .toLocaleLowerCase()
-      .includes(normalizedQuery),
-  );
+  // Stable sort — pinned first, otherwise the load order (`last_active_at`
+  // descending, from the backend) is preserved within each group.
+  const visibleSessions = (sessions ?? [])
+    .filter((session) =>
+      `${session.title} ${session.worktreeRoot} ${session.sessionId}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery),
+    )
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
+
+  function patchSession(sessionId: string, patch: Partial<ResumableSession>) {
+    setSessions((prev) =>
+      (prev ?? []).map((s) => (s.sessionId === sessionId ? { ...s, ...patch } : s)),
+    );
+  }
+
+  async function togglePin(session: ResumableSession) {
+    const next = !session.pinned;
+    patchSession(session.sessionId, { pinned: next }); // optimistic
+    try {
+      await agentsApi.setSessionPinned(session.sessionId, next);
+    } catch (error) {
+      patchSession(session.sessionId, { pinned: session.pinned }); // revert
+      setActionError(String(error));
+    }
+  }
+
+  function startRename(session: ResumableSession) {
+    setRenamingId(session.sessionId);
+    setRenameValue(session.title);
+  }
+
+  async function submitRename(session: ResumableSession) {
+    const title = renameValue.trim();
+    setRenamingId(null);
+    if (!title || title === session.title) return;
+    patchSession(session.sessionId, { title }); // optimistic
+    try {
+      await agentsApi.setSessionTitle(session.sessionId, title);
+    } catch (error) {
+      patchSession(session.sessionId, { title: session.title }); // revert
+      setActionError(String(error));
+    }
+  }
+
+  async function exportSession(session: ResumableSession) {
+    setBusyId(session.sessionId);
+    setActionError(null);
+    try {
+      await agentsApi.exportSessionMarkdown(
+        kind,
+        session.worktreeRoot,
+        session.sessionId,
+        session.title,
+      );
+    } catch (error) {
+      setActionError(String(error));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmDelete() {
+    const session = (sessions ?? []).find((s) => s.sessionId === pendingDeleteId);
+    setPendingDeleteId(null);
+    if (!session) return;
+    setBusyId(session.sessionId);
+    try {
+      await agentsApi.deleteResumableSession(kind, session.worktreeRoot, session.sessionId);
+      setSessions((prev) => (prev ?? []).filter((s) => s.sessionId !== session.sessionId));
+    } catch (error) {
+      setActionError(String(error));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function resume(session: ResumableSession) {
     setResumingId(session.sessionId);
@@ -381,33 +469,124 @@ function ResumeSessionPicker({
               <div className={styles.resumeStatus}>No sessions match “{query}”.</div>
             ) : (
               visibleSessions.map((session) => (
-                <button
+                <div
                   key={session.sessionId}
-                  type="button"
                   className={styles.resumeRow}
-                  disabled={disabled || resumingId !== null}
-                  onClick={() => void resume(session)}
+                  data-disabled={disabled || resumingId !== null}
                 >
-                  <ClockCounterClockwise size={15} className={styles.resumeIcon} />
-                  <div className={styles.resumeRowText}>
-                    <div className={styles.resumeRowTitle}>{session.title}</div>
-                    <div className={styles.resumeRowMeta}>
-                      <span>{relativeTime(session.lastActiveAt)}</span>
-                      <span>{session.turnCount} turns</span>
-                      {session.worktreeRoot && (
-                        <span className={styles.sessionPath} title={session.worktreeRoot}>
-                          <FolderSimple size={11} />
-                          {folderName(session.worktreeRoot)}
-                        </span>
+                  <button
+                    type="button"
+                    className={styles.resumeRowMain}
+                    disabled={disabled || resumingId !== null}
+                    onClick={() => void resume(session)}
+                  >
+                    <ClockCounterClockwise size={15} className={styles.resumeIcon} />
+                    <div className={styles.resumeRowText}>
+                      {renamingId === session.sessionId ? (
+                        <input
+                          autoFocus
+                          className={styles.resumeRenameInput}
+                          value={renameValue}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => void submitRename(session)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void submitRename(session);
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              setRenamingId(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className={styles.resumeRowTitle}>
+                          {session.pinned && (
+                            <PushPin size={11} weight="fill" color="var(--accent)" />
+                          )}
+                          {session.title}
+                        </div>
                       )}
+                      <div className={styles.resumeRowMeta}>
+                        <span>{relativeTime(session.lastActiveAt)}</span>
+                        <span>{session.turnCount} turns</span>
+                        {session.worktreeRoot && (
+                          <span className={styles.sessionPath} title={session.worktreeRoot}>
+                            <FolderSimple size={11} />
+                            {folderName(session.worktreeRoot)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    {resumingId === session.sessionId ? (
+                      <ArrowsClockwise size={13} className="mo-spin" />
+                    ) : (
+                      <span className={styles.resumeAction}>Resume</span>
+                    )}
+                  </button>
+                  <div
+                    className={styles.resumeRowActions}
+                    data-pinned={session.pinned}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {busyId === session.sessionId ? (
+                      <ArrowsClockwise size={13} className="mo-spin" />
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.resumeRowActionButton}
+                          data-active={session.pinned}
+                          aria-label={session.pinned ? "Unpin session" : "Pin session"}
+                          title={session.pinned ? "Unpin session" : "Pin session"}
+                          onClick={() => void togglePin(session)}
+                        >
+                          <PushPin size={13} weight={session.pinned ? "fill" : "regular"} />
+                        </button>
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger asChild>
+                            <button
+                              type="button"
+                              className={styles.resumeRowActionButton}
+                              aria-label="More session actions"
+                            >
+                              <DotsThree size={15} weight="bold" />
+                            </button>
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              className={`${styles.resumeMenu} mo-glass`}
+                              align="end"
+                              sideOffset={4}
+                            >
+                              <DropdownMenu.Item
+                                className={styles.resumeMenuItem}
+                                onSelect={() => startRename(session)}
+                              >
+                                <PencilSimple size={13} /> Rename
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item
+                                className={styles.resumeMenuItem}
+                                onSelect={() => void exportSession(session)}
+                              >
+                                <DownloadSimple size={13} /> Export as Markdown
+                              </DropdownMenu.Item>
+                              {DELETE_SUPPORTED_KINDS.includes(kind) && (
+                                <DropdownMenu.Item
+                                  className={`${styles.resumeMenuItem} ${styles.resumeMenuItemDanger}`}
+                                  onSelect={() => setPendingDeleteId(session.sessionId)}
+                                >
+                                  <TrashSimple size={13} /> Delete
+                                </DropdownMenu.Item>
+                              )}
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
+                      </>
+                    )}
                   </div>
-                  {resumingId === session.sessionId ? (
-                    <ArrowsClockwise size={13} className="mo-spin" />
-                  ) : (
-                    <span className={styles.resumeAction}>Resume</span>
-                  )}
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -418,6 +597,20 @@ function ResumeSessionPicker({
           No saved {AGENT_DISPLAY_NAME[kind]} sessions found.
         </div>
       )}
+      {actionError && (
+        <div className={styles.resumeError} onClick={() => setActionError(null)}>
+          {actionError}
+        </div>
+      )}
+      <AlertDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+        title="Delete this session?"
+        description="This permanently deletes the CLI's own session file — the conversation won't be resumable or listed here again. This can't be undone."
+        confirmLabel="Delete session"
+        destructive
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

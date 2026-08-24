@@ -59,6 +59,40 @@ function ActiveTabStatus() {
   );
 }
 
+/** The active agent tab's last-reported cost and context usage — renders
+ * nothing when there's no result yet, or when this CLI reports neither
+ * (Cursor Agent/Codex report no cost at all; see `cursor_agent.rs`/
+ * `codex.rs`), same "nothing rather than a stale placeholder" stance as
+ * `ActiveTabStatus`. Context usage sums every token category that counts
+ * against the window for the *last* turn (fresh input, cache read, cache
+ * write) — not a running session total, since context isn't cumulative
+ * the way cost is. */
+function CostContextStatus() {
+  const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId));
+  const lastResult = useAgentSessionStore((s) =>
+    activeTab?.type === "agent" ? s.byRunId[activeTab.id]?.lastResult : undefined,
+  );
+  if (!lastResult) return null;
+
+  const { totalCostUsd, inputTokens, cacheReadTokens, cacheWriteTokens, contextWindow } =
+    lastResult;
+  const usedTokens = (inputTokens ?? 0) + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
+  const contextLeftPct =
+    contextWindow && contextWindow > 0
+      ? Math.max(0, Math.min(100, Math.round((1 - usedTokens / contextWindow) * 100)))
+      : null;
+
+  if (totalCostUsd == null && contextLeftPct == null) return null;
+
+  return (
+    <span className={styles.item} title="Cost and context usage for this session's last turn">
+      {totalCostUsd != null && `$${totalCostUsd.toFixed(2)}`}
+      {totalCostUsd != null && contextLeftPct != null && " · "}
+      {contextLeftPct != null && `${contextLeftPct}% context left`}
+    </span>
+  );
+}
+
 // Branch/ahead-behind/changes reflect the real active worktree (Phase 2).
 export function StatusBar() {
   const theme = useUiStore((s) => s.theme);
@@ -109,6 +143,7 @@ export function StatusBar() {
       <div className={styles.spacer} />
 
       <ActiveTabStatus />
+      <CostContextStatus />
       {problemSummary.total > 0 && (
         <span className={styles.item} title={`${problemSummary.total} total problems`}>
           <XCircle size={12} color="var(--red)" /> {problemSummary.error}

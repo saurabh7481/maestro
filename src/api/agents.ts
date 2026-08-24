@@ -3,6 +3,7 @@ import type {
   AgentKind,
   AiderProviderStatus,
   CliStatus,
+  LastResultPayload,
   ModelOption,
   PermissionDecision,
   PermissionMode,
@@ -45,6 +46,24 @@ export const agentsApi = {
     invoke<ResumableSession[]>("list_resumable_sessions_for_roots", { kind, worktreeRoots }),
   getSessionTranscript: (kind: AgentKind, worktreeRoot: string, sessionId: string) =>
     invoke<TranscriptTurn[]>("get_session_transcript", { kind, worktreeRoot, sessionId }),
+  /** `null` title clears a rename back to the CLI's own title. */
+  setSessionTitle: (sessionId: string, title: string | null) =>
+    invoke<void>("set_session_title", { sessionId, title }),
+  setSessionPinned: (sessionId: string, pinned: boolean) =>
+    invoke<void>("set_session_pinned", { sessionId, pinned }),
+  /** Deletes the CLI's own on-disk session file — real, permanent data
+   * loss; callers must confirm with the user first. Only ClaudeCode/
+   * CursorAgent/Codex are supported (see `session_overrides.rs`). */
+  deleteResumableSession: (kind: AgentKind, worktreeRoot: string, sessionId: string) =>
+    invoke<void>("delete_resumable_session", { kind, worktreeRoot, sessionId }),
+  /** Prompts for a save location and writes the session as Markdown.
+   * Resolves `false` if the user cancels the dialog. */
+  exportSessionMarkdown: (
+    kind: AgentKind,
+    worktreeRoot: string,
+    sessionId: string,
+    title: string,
+  ) => invoke<boolean>("export_session_markdown", { kind, worktreeRoot, sessionId, title }),
   resumeAgentSession: (
     runId: string,
     worktreeId: string,
@@ -83,18 +102,32 @@ export const agentsApi = {
     fast: boolean,
   ) => invoke<void>("set_agent_configuration", { runId, model, effort, fast }),
   /** Persisted rendering of a conversation — see `agents/transcripts.rs`
-   * for why the CLI's own session history isn't a substitute. */
+   * for why the CLI's own session history isn't a substitute. `lastResult`
+   * mirrors `AgentTabState.lastResult` (`agentSessionStore.ts`) so a
+   * restored tab's status-bar cost/context readout doesn't sit blank until
+   * the next turn completes. */
   saveAgentTranscript: (
     runId: string,
     worktreeId: string,
     agent: AgentKind,
     cliSessionId: string | null,
     items: string,
-  ) => invoke<void>("save_agent_transcript", { runId, worktreeId, agent, cliSessionId, items }),
-  loadAgentTranscript: (runId: string) =>
-    invoke<{ items: string; cliSessionId: string | null } | null>("load_agent_transcript", {
+    lastResult: LastResultPayload | null,
+  ) =>
+    invoke<void>("save_agent_transcript", {
       runId,
+      worktreeId,
+      agent,
+      cliSessionId,
+      items,
+      lastResult,
     }),
+  loadAgentTranscript: (runId: string) =>
+    invoke<{
+      items: string;
+      cliSessionId: string | null;
+      lastResult: LastResultPayload | null;
+    } | null>("load_agent_transcript", { runId }),
   deleteAgentTranscript: (runId: string) => invoke<void>("delete_agent_transcript", { runId }),
   pruneAgentTranscripts: (keepRunIds: string[]) =>
     invoke<number>("prune_agent_transcripts", { keepRunIds }),

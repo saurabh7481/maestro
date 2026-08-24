@@ -34,11 +34,28 @@ pub const TRANSCRIPT_VERSION: i64 = 1;
 /// trims tool output before it ever gets here.
 const MAX_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 
+/// The most recent turn's cost/duration/token accounting — mirrors
+/// `AgentTabState.lastResult` on the frontend (`agentSessionStore.ts`).
+/// `None` when saved before any turn has completed (a fresh tab, or a CLI
+/// that reports none of this at all — see `cursor_agent.rs`/`codex.rs`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastResultPayload {
+    pub total_cost_usd: Option<f64>,
+    pub duration_ms: i64,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
+    pub context_window: Option<i64>,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredTranscript {
     pub items: String,
     pub cli_session_id: Option<String>,
+    pub last_result: Option<LastResultPayload>,
 }
 
 #[tauri::command]
@@ -49,6 +66,7 @@ pub async fn save_agent_transcript(
     agent: String,
     cli_session_id: Option<String>,
     items: String,
+    last_result: Option<LastResultPayload>,
 ) -> Result<(), String> {
     if items.len() > MAX_PAYLOAD_BYTES {
         // Not an error the user can act on, and losing the *persisted*
@@ -59,15 +77,24 @@ pub async fn save_agent_transcript(
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO agent_transcripts
-             (run_id, worktree_id, agent, cli_session_id, version, items, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             (run_id, worktree_id, agent, cli_session_id, version, items, updated_at,
+              total_cost_usd, duration_ms, input_tokens, output_tokens,
+              cache_read_tokens, cache_write_tokens, context_window)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(run_id) DO UPDATE SET
-             worktree_id    = excluded.worktree_id,
-             agent          = excluded.agent,
-             cli_session_id = excluded.cli_session_id,
-             version        = excluded.version,
-             items          = excluded.items,
-             updated_at     = excluded.updated_at",
+             worktree_id       = excluded.worktree_id,
+             agent             = excluded.agent,
+             cli_session_id    = excluded.cli_session_id,
+             version           = excluded.version,
+             items             = excluded.items,
+             updated_at        = excluded.updated_at,
+             total_cost_usd    = excluded.total_cost_usd,
+             duration_ms       = excluded.duration_ms,
+             input_tokens      = excluded.input_tokens,
+             output_tokens     = excluded.output_tokens,
+             cache_read_tokens = excluded.cache_read_tokens,
+             cache_write_tokens = excluded.cache_write_tokens,
+             context_window    = excluded.context_window",
         rusqlite::params![
             run_id,
             worktree_id,
@@ -76,6 +103,13 @@ pub async fn save_agent_transcript(
             TRANSCRIPT_VERSION,
             items,
             chrono::Utc::now().to_rfc3339(),
+            last_result.as_ref().and_then(|r| r.total_cost_usd),
+            last_result.as_ref().map(|r| r.duration_ms),
+            last_result.as_ref().and_then(|r| r.input_tokens),
+            last_result.as_ref().and_then(|r| r.output_tokens),
+            last_result.as_ref().and_then(|r| r.cache_read_tokens),
+            last_result.as_ref().and_then(|r| r.cache_write_tokens),
+            last_result.as_ref().and_then(|r| r.context_window),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -90,13 +124,25 @@ pub async fn load_agent_transcript(
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     let row = conn
         .query_row(
-            "SELECT items, cli_session_id FROM agent_transcripts
+            "SELECT items, cli_session_id, total_cost_usd, duration_ms, input_tokens,
+                    output_tokens, cache_read_tokens, cache_write_tokens, context_window
+             FROM agent_transcripts
              WHERE run_id = ?1 AND version = ?2",
             rusqlite::params![run_id, TRANSCRIPT_VERSION],
             |row| {
+                let duration_ms: Option<i64> = row.get(3)?;
                 Ok(StoredTranscript {
                     items: row.get(0)?,
                     cli_session_id: row.get(1)?,
+                    last_result: duration_ms.map(|duration_ms| LastResultPayload {
+                        total_cost_usd: row.get(2).unwrap_or(None),
+                        duration_ms,
+                        input_tokens: row.get(4).unwrap_or(None),
+                        output_tokens: row.get(5).unwrap_or(None),
+                        cache_read_tokens: row.get(6).unwrap_or(None),
+                        cache_write_tokens: row.get(7).unwrap_or(None),
+                        context_window: row.get(8).unwrap_or(None),
+                    }),
                 })
             },
         )
@@ -158,7 +204,9 @@ mod tests {
             "CREATE TABLE agent_transcripts (
                 run_id TEXT PRIMARY KEY, worktree_id TEXT NOT NULL, agent TEXT NOT NULL,
                 cli_session_id TEXT, version INTEGER NOT NULL, items TEXT NOT NULL,
-                updated_at TEXT NOT NULL);",
+                updated_at TEXT NOT NULL, total_cost_usd REAL, duration_ms INTEGER,
+                input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+                cache_write_tokens INTEGER, context_window INTEGER);",
         )
         .unwrap();
         conn
@@ -166,7 +214,9 @@ mod tests {
 
     fn save(conn: &rusqlite::Connection, run_id: &str, items: &str, version: i64) {
         conn.execute(
-            "INSERT INTO agent_transcripts VALUES (?1,'w','claudeCode','sess',?2,?3,'now')
+            "INSERT INTO agent_transcripts
+                 (run_id, worktree_id, agent, cli_session_id, version, items, updated_at)
+             VALUES (?1,'w','claudeCode','sess',?2,?3,'now')
              ON CONFLICT(run_id) DO UPDATE SET items = excluded.items",
             rusqlite::params![run_id, version, items],
         )
@@ -208,5 +258,52 @@ mod tests {
         // Half-reading an incompatible payload is how a restore turns into
         // a crash; skipping it just means the tab starts empty.
         assert_eq!(load(&conn, "tab-1"), None);
+    }
+
+    fn load_last_result(conn: &rusqlite::Connection, run_id: &str) -> Option<LastResultPayload> {
+        conn.query_row(
+            "SELECT duration_ms, total_cost_usd, input_tokens, output_tokens,
+                    cache_read_tokens, cache_write_tokens, context_window
+             FROM agent_transcripts WHERE run_id = ?1 AND version = ?2",
+            rusqlite::params![run_id, TRANSCRIPT_VERSION],
+            |row| {
+                let duration_ms: Option<i64> = row.get(0)?;
+                Ok(duration_ms.map(|duration_ms| LastResultPayload {
+                    duration_ms,
+                    total_cost_usd: row.get(1).unwrap_or(None),
+                    input_tokens: row.get(2).unwrap_or(None),
+                    output_tokens: row.get(3).unwrap_or(None),
+                    cache_read_tokens: row.get(4).unwrap_or(None),
+                    cache_write_tokens: row.get(5).unwrap_or(None),
+                    context_window: row.get(6).unwrap_or(None),
+                }))
+            },
+        )
+        .optional()
+        .unwrap()
+        .flatten()
+    }
+
+    #[test]
+    fn last_result_round_trips_and_starts_absent() {
+        let conn = memory_db();
+        save(&conn, "tab-1", "[1]", TRANSCRIPT_VERSION);
+        // No turn has completed yet — `duration_ms` (and the rest) are NULL,
+        // not zeroed, so the frontend can tell "never had a result" apart
+        // from "had one that happened to cost nothing".
+        assert!(load_last_result(&conn, "tab-1").is_none());
+
+        conn.execute(
+            "UPDATE agent_transcripts SET total_cost_usd = 0.42, duration_ms = 1500,
+                 input_tokens = 100, output_tokens = 50, cache_read_tokens = 10,
+                 cache_write_tokens = 5, context_window = 200000
+             WHERE run_id = 'tab-1'",
+            [],
+        )
+        .unwrap();
+        let result = load_last_result(&conn, "tab-1").unwrap();
+        assert_eq!(result.total_cost_usd, Some(0.42));
+        assert_eq!(result.duration_ms, 1500);
+        assert_eq!(result.context_window, Some(200_000));
     }
 }
