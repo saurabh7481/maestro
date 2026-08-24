@@ -129,14 +129,15 @@ function NewWorktreeDialogInner({
       // flips the store's active worktree over to the newly created one as
       // part of that call, so reading "the active worktree" any later
       // would just resolve back to the (source-less) worktree we're
-      // creating. Prefer the currently active worktree if it's in this
-      // project (most contextually relevant "copy my local files from
-      // here" source), else the project's primary worktree.
+      // creating. The source is always the project's *primary* worktree —
+      // the main repo folder. That is where canonical untracked files
+      // (.env, node_modules) live; a previously-created worktree only ever
+      // holds whatever its own hook run copied into it, so sourcing from
+      // it (the old behaviour preferred whichever worktree was active)
+      // produced stale copy-of-copy .env files — or found none at all,
+      // when the active worktree's own hook had nothing to copy.
       const capturedSourcePath =
-        (activeWorktree?.projectId === projectId ? activeWorktree.path : undefined) ??
-        projectWorktrees.find((w) => w.isPrimary)?.path ??
-        projectWorktrees[0]?.path ??
-        null;
+        projectWorktrees.find((w) => w.isPrimary)?.path ?? projectWorktrees[0]?.path ?? null;
 
       const worktree = await createWorktree(projectId, branchName, baseRef);
       setSourcePath(capturedSourcePath ?? worktree.path);
