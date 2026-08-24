@@ -134,9 +134,15 @@
   color: var(--text-mute);
 }
 
-.matchText {
+.matchRowText {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  gap: var(--space-1);
+}
+
+.matchText {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -147,6 +153,20 @@
   background: color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--text);
   border-radius: 2px;
+}
+
+/* The replace-preview line — what the matched line becomes after
+   replacement, shown under the match itself so "Replace All" is never a
+   leap of faith. Green like an added diff line, since that's what it is. */
+.matchTextPreview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--green);
+}
+.matchTextPreview::before {
+  content: "+ ";
+  opacity: 0.7;
 }
 
 /* The panel body stops scrolling itself so the virtualized result list can

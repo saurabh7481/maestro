@@ -123,3 +123,13 @@ pub async fn replace_in_files(
     )
     .await
 }
+
+#[tauri::command]
+pub async fn preview_replace_lines(
+    query: String,
+    replacement: String,
+    options: search::SearchOptions,
+    lines: Vec<String>,
+) -> Result<Vec<String>, String> {
+    search::preview_replace_lines(&query, &replacement, &options, &lines)
+}

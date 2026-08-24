@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
@@ -12,6 +12,7 @@ import {
 import { useSearchStore } from "../../state/searchStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useFocusRequest } from "../../state/focusRequestStore";
+import { searchApi } from "../../api/search";
 import { iconForFile } from "../explorer/fileIcons";
 import { ICON_SIZE } from "../../design/iconSize";
 import { AlertDialog, Button, IconButton, TextInput, Tooltip } from "../primitives";
@@ -30,10 +31,16 @@ function splitPath(path: string): { name: string; dir: string } {
 function MatchRow({
   path,
   match,
+  /** This match's line after replacement, if a preview is active for it
+   * (`SearchPanel`'s debounced `previewReplaceLines` call) — `undefined`
+   * hides the preview line entirely, distinct from replacing to the exact
+   * same text (shown as-is, since that's a real, if unsurprising, outcome). */
+  replacedLineText,
   onClick,
 }: {
   path: string;
   match: SearchMatch;
+  replacedLineText: string | undefined;
   onClick: () => void;
 }) {
   const before = match.lineText.slice(0, match.matchStart);
@@ -46,10 +53,17 @@ function MatchRow({
       onClick={onClick}
     >
       <span className={styles.matchLine}>{match.line}</span>
-      <span className={styles.matchText} title={`${path}:${match.line}`}>
-        {before}
-        <mark className={styles.matchHighlight}>{hit}</mark>
-        {after}
+      <span className={styles.matchRowText}>
+        <span className={styles.matchText} title={`${path}:${match.line}`}>
+          {before}
+          <mark className={styles.matchHighlight}>{hit}</mark>
+          {after}
+        </span>
+        {replacedLineText !== undefined && (
+          <span className={styles.matchTextPreview} title="After replacement">
+            {replacedLineText}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -119,6 +133,34 @@ export function SearchPanel() {
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, caseSensitive, wholeWord, useRegex, worktreeRoot]);
+
+  // Dry-run preview of what "Replace All" would do — keyed by the matched
+  // line's own text (not file+line), since the same line text always
+  // replaces to the same result regardless of where it came from, so one
+  // lookup covers every row sharing that line. Recomputed ~300ms after the
+  // user stops typing a replacement, same debounce as search itself.
+  const [replacePreview, setReplacePreview] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!replaceOpen || !replacement.trim() || results.length === 0) {
+      setReplacePreview({});
+      return;
+    }
+    const uniqueLines = [...new Set(results.flatMap((f) => f.matches.map((m) => m.lineText)))];
+    const id = window.setTimeout(() => {
+      void searchApi
+        .previewReplaceLines(
+          query,
+          replacement,
+          { caseSensitive, wholeWord, useRegex },
+          uniqueLines,
+        )
+        .then((replaced) => {
+          setReplacePreview(Object.fromEntries(uniqueLines.map((line, i) => [line, replaced[i]])));
+        })
+        .catch(() => setReplacePreview({}));
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [replaceOpen, replacement, results, query, caseSensitive, wholeWord, useRegex]);
 
   const totalMatches = results.reduce((sum, f) => sum + f.matches.length, 0);
 
@@ -275,6 +317,7 @@ export function SearchPanel() {
                         <MatchRow
                           path={row.file.path}
                           match={row.match}
+                          replacedLineText={replacePreview[row.match.lineText]}
                           onClick={() => reveal(worktreeId, worktreeRoot, row.file.path, row.match)}
                         />
                       )}

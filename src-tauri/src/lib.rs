@@ -138,6 +138,7 @@ pub fn run() {
             commands::search::search_in_files,
             commands::search::cancel_search,
             commands::search::replace_in_files,
+            commands::search::preview_replace_lines,
             watcher::start_worktree_watcher,
             watcher::watch_worktree_directory,
             watcher::stop_worktree_watcher,

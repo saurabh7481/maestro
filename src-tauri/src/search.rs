@@ -48,15 +48,26 @@ pub struct SearchOptions {
 #[serde(rename_all = "camelCase")]
 pub struct SearchMatch {
     pub line: u32,
-    /// Byte offsets into `line_text`, not char offsets — correct for
-    /// ASCII content (the overwhelming majority of source code); a line
-    /// with multi-byte UTF-8 before the match would need a byte→UTF-16
-    /// conversion the frontend doesn't currently do to highlight exactly
-    /// right. Accepted as a known limitation rather than adding that
-    /// conversion for what's a highlight-offset nicety.
+    /// UTF-16 code-unit offsets into `line_text` — what the frontend (every
+    /// JS string) needs to slice/highlight correctly, converted from the
+    /// regex engine's byte offsets by `utf16_offset` below.
     pub match_start: u32,
     pub match_end: u32,
     pub line_text: String,
+}
+
+/// Converts a byte offset within `line` to a UTF-16 code-unit offset.
+/// ASCII lines take a zero-cost fast path — byte and UTF-16 offsets are
+/// identical there, which covers the overwhelming majority of source
+/// lines — so only a line with actual multi-byte UTF-8 pays for the walk.
+fn utf16_offset(line: &str, byte_offset: usize) -> u32 {
+    if line.is_ascii() {
+        return byte_offset as u32;
+    }
+    line[..byte_offset]
+        .chars()
+        .map(char::len_utf16)
+        .sum::<usize>() as u32
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -128,8 +139,8 @@ fn scan_file(full_path: &Path, rel_path: String, regex: &Regex) -> Option<FileMa
         for m in regex.find_iter(line_text) {
             matches.push(SearchMatch {
                 line: (line_idx + 1) as u32,
-                match_start: m.start() as u32,
-                match_end: m.end() as u32,
+                match_start: utf16_offset(line_text, m.start()),
+                match_end: utf16_offset(line_text, m.end()),
                 line_text: line_text.to_string(),
             });
             if matches.len() >= MAX_MATCHES_PER_FILE {
@@ -236,12 +247,31 @@ pub struct ReplaceSummary {
     pub replacement_count: u32,
 }
 
+/// `$1`-style backreferences in `replacement` are only expanded in regex
+/// mode — in plain-text mode a literal `$` in the replacement box should
+/// stay literal, matching how VS Code's find/replace treats the two modes
+/// differently. Shared by `replace_in_files` and `preview_replace_lines` so
+/// a preview can never drift from what actually gets written — same regex,
+/// same expansion, just applied to a line instead of a whole file (safe
+/// since `scan_file` only ever matches within one line to begin with, so a
+/// per-line and per-file application of the same non-multiline regex
+/// produce identical results for that line).
+fn apply_replacement<'t>(
+    regex: &Regex,
+    text: &'t str,
+    replacement: &str,
+    options: &SearchOptions,
+) -> std::borrow::Cow<'t, str> {
+    if options.use_regex {
+        regex.replace_all(text, replacement)
+    } else {
+        regex.replace_all(text, regex::NoExpand(replacement))
+    }
+}
+
 /// Replaces every match of `query` with `replacement` across `files`
 /// (already-bounded — the caller passes the file set a prior search
-/// found, not the whole worktree). `$1`-style backreferences in
-/// `replacement` are only expanded in regex mode — in plain-text mode a
-/// literal `$` in the replacement box should stay literal, matching how
-/// VS Code's find/replace treats the two modes differently.
+/// found, not the whole worktree).
 pub async fn replace_in_files(
     worktree_root: &Path,
     query: &str,
@@ -269,11 +299,7 @@ pub async fn replace_in_files(
         if match_count == 0 {
             continue;
         }
-        let new_content = if options.use_regex {
-            regex.replace_all(&content, replacement)
-        } else {
-            regex.replace_all(&content, regex::NoExpand(replacement))
-        };
+        let new_content = apply_replacement(&regex, &content, replacement, options);
         tokio::fs::write(&full_path, new_content.as_ref())
             .await
             .map_err(|e| e.to_string())?;
@@ -284,6 +310,25 @@ pub async fn replace_in_files(
         files_changed,
         replacement_count,
     })
+}
+
+/// Dry-run for the search panel's replace preview: given the distinct
+/// matched lines already shown in the results list (deduplicated by the
+/// frontend — identical line text always replaces identically regardless
+/// of which file or line it came from), returns each one's line after
+/// replacement, same order in as out. No disk access — the lines are
+/// already known from the search that populated the results list.
+pub fn preview_replace_lines(
+    query: &str,
+    replacement: &str,
+    options: &SearchOptions,
+    lines: &[String],
+) -> Result<Vec<String>, String> {
+    let regex = build_regex(query, options)?;
+    Ok(lines
+        .iter()
+        .map(|line| apply_replacement(&regex, line, replacement, options).into_owned())
+        .collect())
 }
 
 #[cfg(test)]
@@ -345,6 +390,46 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].path, "a.txt");
         assert_eq!(results[0].matches.len(), 2);
+    }
+
+    #[test]
+    fn utf16_offset_matches_ascii_byte_offset() {
+        assert_eq!(utf16_offset("hello world", 6), 6);
+    }
+
+    #[test]
+    fn utf16_offset_accounts_for_multibyte_utf8_before_the_match() {
+        // "héllo " is 7 bytes in UTF-8 (é is 2 bytes) but only 6 UTF-16
+        // code units — a match starting right after it must report 6, not
+        // the byte offset 7, or the frontend's `String.slice` (UTF-16
+        // indexed) highlights one character too far right.
+        let line = "héllo world";
+        let byte_offset = line.find("world").unwrap();
+        assert_eq!(byte_offset, 7);
+        assert_eq!(utf16_offset(line, byte_offset), 6);
+    }
+
+    #[tokio::test]
+    async fn search_reports_utf16_offsets_not_byte_offsets_for_multibyte_lines() {
+        let dir = init_repo().await;
+        std::fs::write(dir.path().join("a.txt"), "héllo world").unwrap();
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut results = Vec::new();
+        search_in_files(dir.path(), "world", &default_options(), &cancel, |batch| {
+            results.extend(batch)
+        })
+        .await
+        .unwrap();
+
+        let m = &results[0].matches[0];
+        assert_eq!(m.match_start, 6);
+        assert_eq!(m.match_end, 11);
+        // Confirms a JS-style UTF-16 slice lands exactly on "world".
+        let utf16: Vec<u16> = m.line_text.encode_utf16().collect();
+        let hit: String =
+            String::from_utf16(&utf16[m.match_start as usize..m.match_end as usize]).unwrap();
+        assert_eq!(hit, "world");
     }
 
     #[tokio::test]
@@ -495,5 +580,37 @@ mod tests {
             std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
             "Smith John"
         );
+    }
+
+    #[test]
+    fn preview_replace_lines_matches_plain_text_mode() {
+        let result = preview_replace_lines(
+            "X",
+            "$1 literally",
+            &default_options(),
+            &["price: X".to_string(), "no match here".to_string()],
+        )
+        .unwrap();
+        // Same "$ stays literal outside regex mode" behavior as
+        // `replace_in_files` — the preview must never show a different
+        // outcome than what applying it for real would produce.
+        assert_eq!(result, vec!["price: $1 literally", "no match here"]);
+    }
+
+    #[test]
+    fn preview_replace_lines_matches_regex_mode_backreferences() {
+        let options = SearchOptions {
+            case_sensitive: false,
+            whole_word: false,
+            use_regex: true,
+        };
+        let result = preview_replace_lines(
+            r"(\w+) (\w+)",
+            "$2 $1",
+            &options,
+            &["John Smith".to_string()],
+        )
+        .unwrap();
+        assert_eq!(result, vec!["Smith John"]);
     }
 }
