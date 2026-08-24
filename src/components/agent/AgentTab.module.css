@@ -178,21 +178,30 @@
   min-width: 0;
 }
 
-/* The window of rendered rows, offset in one transform rather than
- * positioning each row individually. That transform is reassigned via
- * inline style on essentially every scroll frame — the same shape of
- * update `Sidebar.module.css`'s `.row` `will-change` comment documents
- * WebKitGTK failing to repaint reliably for (there: a `:hover`-triggered
- * background left "stuck"; here: live-observed as rows briefly painting
- * on top of one another while scrolling). Promoting this to its own
- * compositor layer up front, the same fix, keeps WebKit from missing the
- * invalidation instead of only fixing it after the fact. */
+/* The window of rendered rows, offset in one move rather than positioning
+ * each row individually. That offset is reassigned via inline style on
+ * essentially every scroll frame.
+ *
+ * This used to be a `transform: translateY(...)`, promoted with
+ * `will-change: transform` after WebKitGTK was live-observed briefly
+ * painting rows on top of one another while scrolling (the same class of
+ * missed invalidation `Sidebar.module.css`'s `.row` comment documents).
+ * The promotion turned out to be insufficient: with `overscan: 10` and
+ * tall rows (tables, diffs, code blocks) the window layer routinely
+ * exceeds what the compositor tiles as one texture, and on the tiled path
+ * WebKitGTK keeps missing tile invalidations on the transform reassign —
+ * live-observed as *persisting* stale rows (user bubbles, specifically)
+ * painted under content scrolled into their old position, not just a
+ * brief flicker. Positioning with `top` instead routes every move through
+ * the ordinary style → layout → paint invalidation path, which WebKitGTK
+ * does not miss. The per-frame cost is bounded: only the strips newly
+ * exposed by the move repaint, and the transcript already re-renders per
+ * scroll frame to swap virtualized rows in and out. */
 .transcriptWindow {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  will-change: transform;
 }
 
 /* Was `gap: 2rem` on a flex column; absolutely-positioned virtual rows

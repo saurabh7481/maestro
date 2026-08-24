@@ -792,7 +792,7 @@ function Transcript({
           <div
             className={styles.transcriptWindow}
             ref={contentRef}
-            style={{ transform: `translateY(${virtualItems[0]?.start ?? 0}px)` }}
+            style={{ top: `${virtualItems[0]?.start ?? 0}px` }}
           >
             {virtualItems.map((virtualItem) => {
               const group = groups[virtualItem.index];
