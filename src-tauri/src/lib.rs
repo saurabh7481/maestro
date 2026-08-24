@@ -63,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let conn = db::open(&app_data_dir)?;

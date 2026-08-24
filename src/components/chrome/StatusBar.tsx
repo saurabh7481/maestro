@@ -1,6 +1,5 @@
 import {
   ArrowsClockwise,
-  Bell,
   CircleHalf,
   Code,
   Info,
@@ -22,6 +21,7 @@ import {
 } from "../../state/problemsStore";
 import { ProcessPopover } from "../processes/ProcessPopover";
 import { BranchSwitcher } from "./BranchSwitcher";
+import { NotificationPopover } from "./NotificationPopover";
 import styles from "./StatusBar.module.css";
 
 /** Reflects whatever's actually happening in the active tab — an agent
@@ -166,7 +166,7 @@ export function StatusBar() {
       )}
       <span>Theme: {THEME_LABELS[theme]}</span>
       <ProcessPopover />
-      <Bell size={13} />
+      <NotificationPopover />
     </div>
   );
 }

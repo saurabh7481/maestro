@@ -40,6 +40,12 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   }),
 }));
 
+vi.mock("@tauri-apps/plugin-notification", () => ({
+  isPermissionGranted: vi.fn().mockResolvedValue(false),
+  requestPermission: vi.fn().mockResolvedValue("denied"),
+  sendNotification: vi.fn(),
+}));
+
 // jsdom doesn't implement the (deprecated but still-checked) execCommand
 // clipboard APIs Monaco probes at module-load time — polyfill so importing
 // anything that pulls in `monaco-editor` doesn't throw before a single test

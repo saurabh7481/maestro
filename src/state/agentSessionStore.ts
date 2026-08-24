@@ -4,16 +4,27 @@ import { listenToAgentEvents } from "../api/agentEvents";
 import type { AgentEvent, LastResultPayload, TranscriptTurn } from "../types/agent";
 import { useTabsStore } from "./tabsStore";
 import { useToastStore, isAppFocused } from "./toastStore";
+import type { ToastTone } from "./toastStore";
+import { useNotificationHistoryStore } from "./notificationHistoryStore";
+import { sendOsNotification } from "../design/osNotifications";
 
 /** A run's tab is "backgrounded" if it's not the active tab, or the whole
  * app window doesn't have OS focus — either way the transcript update
  * that just happened isn't something the user is currently looking at,
- * so it's worth a toast rather than relying on them to notice. */
-function notifyIfBackgrounded(runId: string, tone: "success" | "error", title: string): void {
+ * so it's worth a toast rather than relying on them to notice. Always
+ * logged to the notification-history bell (`NotificationPopover.tsx`) too;
+ * an OS-level desktop notification only fires when the window itself has
+ * lost focus — a backgrounded tab in a focused window already has the
+ * toast, and popping an OS notification over an app the user is actively
+ * looking at would be redundant noise. */
+function notifyIfBackgrounded(runId: string, tone: ToastTone, title: string): void {
   const { tabs, activeTabId } = useTabsStore.getState();
   if (activeTabId === runId && isAppFocused()) return;
   const tab = tabs.find((t) => t.id === runId);
-  useToastStore.getState().push({ tone, title, description: tab?.title });
+  const description = tab?.title;
+  useToastStore.getState().push({ tone, title, description });
+  useNotificationHistoryStore.getState().push({ tone, title, description, runId });
+  if (!isAppFocused()) sendOsNotification(title, description);
 }
 
 /** A stable, module-scoped empty array for `queueByRunId[id] ?? EMPTY_QUEUE`-
@@ -826,6 +837,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
           // The backend stopped the child on purpose. Park the run here so
           // the composer unlocks, the spinner stops, and the `exit` that
           // follows isn't mistaken for the process dying mid-turn.
+          notifyIfBackgrounded(runId, "info", "Agent needs your approval");
           return {
             byRunId: {
               ...s.byRunId,

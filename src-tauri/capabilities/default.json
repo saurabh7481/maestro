@@ -15,6 +15,7 @@
     "dialog:default",
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-read-text",
-    "log:default"
+    "log:default",
+    "notification:default"
   ]
 }

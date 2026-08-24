@@ -10,6 +10,7 @@ import type { Tab } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
+import { ensureNotificationPermission } from "../../design/osNotifications";
 import { useUiStore } from "../../state/uiStore";
 import { useKeybindingsStore } from "../../state/keybindingsStore";
 import { useFocusRequestStore } from "../../state/focusRequestStore";
@@ -369,6 +370,17 @@ function useAgentAvailabilitySync() {
   }, [refreshAll]);
 }
 
+/** Requests OS notification permission once, up front — so the first
+ * "agent finished while you were away" moment doesn't also need the OS's
+ * own consent prompt to have fired first (`osNotifications.ts`'s
+ * `ensureNotificationPermission` is idempotent, matching every other
+ * once-at-startup hook here). */
+function useNotificationPermission() {
+  useEffect(() => {
+    void ensureNotificationPermission();
+  }, []);
+}
+
 export function AppShell() {
   useDesignSystem();
   useSessionPersistence();
@@ -379,6 +391,7 @@ export function AppShell() {
   useSaveShortcut();
   useTerminalShortcut();
   useAgentAvailabilitySync();
+  useNotificationPermission();
   useLayoutShortcuts();
   useNavigationShortcuts();
   useMiscShortcuts();
