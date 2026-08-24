@@ -63,6 +63,28 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             custom_script         TEXT NOT NULL DEFAULT ''
         );
 
+        -- Per-project worktree location: where `create_worktree` puts this
+        -- project's worktrees. `override_enabled` follows the same
+        -- inherit-or-replace pattern as `worktree_hooks.override_enabled`.
+        -- Empty `worktree_dir` means auto even when overriding — an
+        -- override that just restates the default is still expressible.
+        CREATE TABLE IF NOT EXISTS project_worktree_settings (
+            project_id       TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            worktree_dir     TEXT NOT NULL DEFAULT '',
+            override_enabled INTEGER NOT NULL DEFAULT 0
+        );
+
+        -- Single-row (id is always 1) global default for the worktree
+        -- location, the fallback for every project without
+        -- `project_worktree_settings.override_enabled`. Same split-table
+        -- rationale as `global_worktree_hooks`: the singleton has no
+        -- project to reference for the FK. Empty `worktree_dir` = auto
+        -- (sibling `<repo>.worktrees` directory next to the repo).
+        CREATE TABLE IF NOT EXISTS global_worktree_settings (
+            id           INTEGER PRIMARY KEY CHECK (id = 1),
+            worktree_dir TEXT NOT NULL DEFAULT ''
+        );
+
         -- Free-form key/value settings — currently just per-CLI binary
         -- path overrides (`agent.<slug>.binary_path`), see
         -- docs/ARCHITECTURE.md §4.

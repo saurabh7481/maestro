@@ -19,7 +19,7 @@ import type { ThemeId } from "../../design/themes";
 import { themes, THEME_LABELS } from "../../design/themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
 import { Modal, IconButton } from "../primitives";
-import { HooksPane } from "./HooksPane";
+import { WorktreesPane } from "./WorktreesPane";
 import { AgentsPane } from "./AgentsPane";
 import { KeybindingsPane } from "./KeybindingsPane";
 import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
@@ -28,7 +28,7 @@ import { EditorPane } from "./EditorPane";
 import styles from "./SettingsModal.module.css";
 
 type Section =
-  "appearance" | "editor" | "terminal" | "agents" | "language" | "hooks" | "keybindings";
+  "appearance" | "editor" | "terminal" | "agents" | "language" | "worktrees" | "keybindings";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
@@ -36,7 +36,7 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "terminal", label: "Terminal", icon: TerminalWindow },
   { id: "agents", label: "Agents & CLI", icon: Sparkle },
   { id: "language", label: "Language Intelligence", icon: Code },
-  { id: "hooks", label: "Worktree Hooks", icon: GitBranch },
+  { id: "worktrees", label: "Worktrees", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
 ];
 
@@ -162,7 +162,7 @@ export function SettingsModal() {
           {section === "appearance" && <AppearancePane />}
           {section === "editor" && <EditorPane />}
           {section === "terminal" && <TerminalPane />}
-          {section === "hooks" && <HooksPane scope={{ kind: "global" }} />}
+          {section === "worktrees" && <WorktreesPane scope={{ kind: "global" }} />}
           {section === "agents" && <AgentsPane />}
           {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}
           {section === "keybindings" && <KeybindingsPane />}

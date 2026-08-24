@@ -57,3 +57,21 @@ impl Default for HookConfig {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSettings {
+    /// Where worktrees are created. Empty means "auto": a sibling
+    /// `<repo>.worktrees` directory next to the repo. Absolute paths are
+    /// used as-is, `~/…` expands to the home directory, and relative
+    /// paths resolve against the repo's parent — the same neighbourhood
+    /// the auto layout uses.
+    pub worktree_dir: String,
+    /// Project-scoped settings only — meaningless on the global settings
+    /// (see `commands/worktree_settings.rs`), which is always the
+    /// fallback. When true, this project's own `worktree_dir` is used
+    /// instead of the global one. Defaults to `false` so a freshly-added
+    /// project inherits the global setting.
+    #[serde(default)]
+    pub override_enabled: bool,
+}

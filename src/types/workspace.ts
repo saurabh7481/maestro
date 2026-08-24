@@ -32,6 +32,15 @@ export interface HookConfig {
   overrideEnabled: boolean;
 }
 
+/** Where new worktrees are created — mirrors `models.rs::WorktreeSettings`.
+ * Empty `worktreeDir` means automatic: a sibling `<repo>.worktrees`
+ * directory next to the repo. */
+export interface WorktreeSettings {
+  worktreeDir: string;
+  /** Project-scoped settings only — meaningless on the global settings. */
+  overrideEnabled: boolean;
+}
+
 export type HookEvent =
   | { type: "line"; stream: "stdout" | "stderr"; text: string }
   | {

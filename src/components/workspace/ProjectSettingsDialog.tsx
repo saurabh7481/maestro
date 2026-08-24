@@ -3,17 +3,17 @@ import { Code, GitBranch, X } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Project } from "../../types/workspace";
 import { Modal, IconButton } from "../primitives";
-import { HooksPane } from "../settings/HooksPane";
+import { WorktreesPane } from "../settings/WorktreesPane";
 import { LanguageIntelligencePane } from "../settings/LanguageIntelligencePane";
 import styles from "../settings/SettingsModal.module.css";
 
-type Section = "hooks" | "language";
+type Section = "worktrees" | "language";
 
-// A single entry for now — `HooksPaneScope`'s `project` variant is the
+// A single entry for now — `WorktreesPaneScope`'s `project` variant is the
 // first project-level setting; more sections join this list the same way
 // `SettingsModal.tsx`'s `NAV` grows, once there's a second one.
 const NAV: { id: Section; label: string; icon: Icon }[] = [
-  { id: "hooks", label: "Worktree Hooks", icon: GitBranch },
+  { id: "worktrees", label: "Worktrees", icon: GitBranch },
   { id: "language", label: "Language Intelligence", icon: Code },
 ];
 
@@ -26,7 +26,7 @@ export function ProjectSettingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [section, setSection] = useState<Section>("hooks");
+  const [section, setSection] = useState<Section>("worktrees");
   const active = NAV.find((item) => item.id === section)!;
 
   return (
@@ -66,8 +66,8 @@ export function ProjectSettingsDialog({
           </div>
         </div>
         <div className={styles.paneBody}>
-          {section === "hooks" && (
-            <HooksPane
+          {section === "worktrees" && (
+            <WorktreesPane
               scope={{ kind: "project", projectId: project.id, projectName: project.name }}
             />
           )}

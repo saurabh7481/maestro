@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { HookConfig, Project, Worktree } from "../types/workspace";
+import type { HookConfig, Project, Worktree, WorktreeSettings } from "../types/workspace";
 
 /** Thin, typed wrapper around the Tauri command surface — the single
  * place that knows the actual `invoke()` channel names and payload
@@ -26,6 +26,13 @@ export const workspaceApi = {
     invoke<void>("set_hook_config", { projectId, config }),
   getGlobalHookConfig: () => invoke<HookConfig>("get_global_hook_config"),
   setGlobalHookConfig: (config: HookConfig) => invoke<void>("set_global_hook_config", { config }),
+  getWorktreeSettings: (projectId: string) =>
+    invoke<WorktreeSettings>("get_worktree_settings", { projectId }),
+  setWorktreeSettings: (projectId: string, settings: WorktreeSettings) =>
+    invoke<void>("set_worktree_settings", { projectId, settings }),
+  getGlobalWorktreeSettings: () => invoke<WorktreeSettings>("get_global_worktree_settings"),
+  setGlobalWorktreeSettings: (settings: WorktreeSettings) =>
+    invoke<void>("set_global_worktree_settings", { settings }),
   runWorktreeHook: (projectId: string, worktreeId: string, sourceWorktreePath: string) =>
     invoke<void>("run_worktree_hook", { projectId, worktreeId, sourceWorktreePath }),
   cancelWorktreeHook: (worktreeId: string) => invoke<void>("cancel_worktree_hook", { worktreeId }),

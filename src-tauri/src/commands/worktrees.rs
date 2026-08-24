@@ -132,19 +132,21 @@ pub async fn create_worktree(
     let repo_path = project_root_path(&state, &project_id)?;
     let repo_dir = PathBuf::from(&repo_path);
 
+    // Where new worktrees go: the project's override, else the global
+    // default, else the historical auto layout — all resolved by
+    // `worktree_path_for` (see `commands/worktree_settings.rs`).
+    let base_dir = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        crate::commands::worktree_settings::resolve_effective_worktree_dir(&conn, &project_id)?
+    };
+
     let branch_name = branch_name.trim();
     if branch_name.is_empty() {
         return Err("Branch name cannot be empty".to_string());
     }
 
-    let repo_name = repo_dir
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "project".to_string());
-    let parent = repo_dir.parent().ok_or("Project has no parent directory")?;
-    let worktree_path = parent
-        .join(format!("{repo_name}.worktrees"))
-        .join(branch_name);
+    let worktree_path =
+        crate::commands::worktree_settings::worktree_path_for(&repo_dir, &base_dir, branch_name);
 
     if worktree_path.exists() {
         return Err(format!("{} already exists", worktree_path.display()));

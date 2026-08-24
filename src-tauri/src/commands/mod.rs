@@ -8,4 +8,5 @@ pub mod lsp;
 pub mod opencode;
 pub mod projects;
 pub mod search;
+pub mod worktree_settings;
 pub mod worktrees;
