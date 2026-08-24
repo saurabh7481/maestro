@@ -306,6 +306,40 @@ describe("turn results", () => {
   });
 });
 
+describe("transient status notes", () => {
+  it("records a reconnect note as status, not an unrecognized raw card", () => {
+    apply({ type: "status", text: "Reconnecting — attempt 6" });
+    const last = state().items[state().items.length - 1];
+    expect(last).toMatchObject({ kind: "status", text: "Reconnecting — attempt 6" });
+  });
+
+  it("coalesces consecutive notes into one item that counts up", () => {
+    apply(
+      { type: "status", text: "Reconnecting — attempt 1" },
+      { type: "status", text: "Reconnecting — attempt 2" },
+      { type: "status", text: "Reconnecting — attempt 3" },
+    );
+    const statuses = state().items.filter((item) => item.kind === "status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({ kind: "status", text: "Reconnecting — attempt 3" });
+  });
+
+  it("closes the streaming block it interrupts, like any other activity", () => {
+    apply(
+      { type: "messageDelta", text: "Partial" },
+      { type: "status", text: "Reconnecting — attempt 1" },
+      { type: "messageDelta", text: " rest" },
+    );
+    const texts = state().items.filter((item) => item.kind === "assistantText");
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toMatchObject({ kind: "assistantText", text: "Partial" });
+    // The authoritative whole-block `message` that follows a Cursor
+    // segment repairs the split (see the `message` case), so a resumed
+    // stream starting a new block is honest, not a duplication bug.
+    expect(texts[1]).toMatchObject({ kind: "assistantText", text: " rest" });
+  });
+});
+
 describe("sending a new message instead of answering", () => {
   it("retires the stale permission prompt rather than leaving it live", () => {
     apply(toolCall, denied, { type: "awaitingPermission", toolUseId: "toolu_1" });

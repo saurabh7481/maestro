@@ -132,6 +132,9 @@ export type AgentEvent =
    * them into the open streaming item. */
   | { type: "messageDelta"; text: string }
   | { type: "thinking"; text: string }
+  /** A transient progress note from the adapter (reconnect attempts,
+   * backoff) — mirrors `AgentEvent::Status`. */
+  | { type: "status"; text: string }
   | { type: "toolCall"; id: string; name: string; input: unknown }
   | {
       type: "toolResult";

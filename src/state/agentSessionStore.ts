@@ -101,7 +101,13 @@ export type TranscriptItem =
    * silent failure") — rendered as a small collapsed raw-JSON card
    * rather than being invisible. Expected to show up mainly for
    * `codex.rs`, whose event shapes are best-effort/unverified. */
-  | { id: string; kind: "raw"; json: unknown };
+  | { id: string; kind: "raw"; json: unknown }
+  /** A transient progress note the adapter recognized (reconnect
+   * attempts, backoff) — quiet status text inside the activity card,
+   * never an error. Consecutive notes coalesce into one item that
+   * updates in place, so six retry attempts read as one line that
+   * counts up rather than six cards. */
+  | { id: string; kind: "status"; text: string };
 
 /** `awaitingPermission` is a real third resting state, not a flavour of
  * `working`: the CLI process is gone and the turn is over, but the run is
@@ -925,6 +931,32 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             };
           }
           return s;
+        case "status": {
+          if (!event.text) return s;
+          // Coalesce: a retry loop emits one note per attempt, so replace
+          // a trailing status item in place instead of stacking cards.
+          const last = items[items.length - 1];
+          if (last?.kind === "status") {
+            const next = items.slice();
+            next[next.length - 1] = { ...last, text: event.text };
+            return {
+              byRunId: {
+                ...s.byRunId,
+                [runId]: { ...tab, lastEventAtMs: now, items: next },
+              },
+            };
+          }
+          return {
+            byRunId: {
+              ...s.byRunId,
+              [runId]: {
+                ...tab,
+                lastEventAtMs: now,
+                items: [...closed(), { id: nextId(), kind: "status", text: event.text }],
+              },
+            },
+          };
+        }
         case "raw":
           return {
             byRunId: {

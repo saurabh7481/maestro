@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useState } from "react";
-import { Brain, CaretDown, Wrench } from "@phosphor-icons/react";
+import { ArrowClockwise, Brain, CaretDown, Wrench } from "@phosphor-icons/react";
 import type { TranscriptItem } from "../../state/agentSessionStore";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
@@ -19,6 +19,22 @@ const RawDetail = memo(function RawDetail({
       </summary>
       <pre>{JSON.stringify(item.json, null, 2)}</pre>
     </details>
+  );
+});
+
+/** A transient adapter note (reconnect attempt, backoff). Deliberately
+ * quiet — it is progress, not a failure — but it is also exactly what a
+ * user staring at a stalled turn wants to see. */
+const StatusRow = memo(function StatusRow({
+  item,
+}: {
+  item: Extract<TranscriptItem, { kind: "status" }>;
+}) {
+  return (
+    <div className={styles.statusRow}>
+      <ArrowClockwise size={13} className={styles.statusIcon} />
+      <span>{item.text}</span>
+    </div>
   );
 });
 
@@ -59,10 +75,23 @@ export const ProcessingCard = memo(function ProcessingCard({
   }, [active, turnStartedAtMs]);
 
   const summary = useMemo(() => {
+    // A trailing status note is the live "what's happening right now" —
+    // e.g. "Reconnecting — attempt 6" on a stalled turn — so it wins the
+    // collapsed card's summary over the step tally. Older notes are
+    // already in the past; the tally describes the rest.
+    if (items[items.length - 1]?.kind === "status") {
+      return (items[items.length - 1] as Extract<TranscriptItem, { kind: "status" }>).text;
+    }
     const counts = new Map<string, number>();
     for (const item of items) {
       const label =
-        item.kind === "thinking" ? "Thinking" : item.kind === "raw" ? "Event" : item.name;
+        item.kind === "thinking"
+          ? "Thinking"
+          : item.kind === "raw"
+            ? "Event"
+            : item.kind === "status"
+              ? "Status"
+              : item.name;
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }
     return [...counts.entries()]
@@ -127,6 +156,7 @@ export const ProcessingCard = memo(function ProcessingCard({
               return (
                 <ToolCallCard key={item.id} runId={runId} item={item} nested running={active} />
               );
+            if (item.kind === "status") return <StatusRow key={item.id} item={item} />;
             return <RawDetail key={item.id} item={item} />;
           })}
         </div>

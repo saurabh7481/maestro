@@ -123,6 +123,19 @@
   cursor: pointer;
 }
 
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-mute);
+  font: var(--text-xs) var(--font-mono);
+}
+
+.statusIcon {
+  flex-shrink: 0;
+}
+
 .rawDetail pre {
   max-height: 14rem;
   margin: 0;

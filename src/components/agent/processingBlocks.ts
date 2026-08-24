@@ -1,6 +1,9 @@
 import type { TranscriptItem } from "../../state/agentSessionStore";
 
-export type ProcessItem = Extract<TranscriptItem, { kind: "thinking" | "toolCall" | "raw" }>;
+export type ProcessItem = Extract<
+  TranscriptItem,
+  { kind: "thinking" | "toolCall" | "raw" | "status" }
+>;
 export type TurnCompleteItem = Extract<TranscriptItem, { kind: "turnComplete" }>;
 
 export type ToolCallItem = Extract<TranscriptItem, { kind: "toolCall" }>;

@@ -42,7 +42,11 @@
 //!   `args` and (on `completed`) `result` — a `oneof` whose variant is
 //!   `success`/`rejected`/`error`, `result` (final,
 //!   `subtype:"success"`, `result` text field — same shape `--output-
-//!   format json`'s one-shot object uses, see `one_shot.rs`).
+//!   format json`'s one-shot object uses, see `one_shot.rs`), and
+//!   `retry` (`subtype:"starting"`, `attempt`, `is_resume`) — the CLI's
+//!   own reconnect chatter when the model stream drops mid-turn; mapped
+//!   to `AgentEvent::Status` so it reads as "Reconnecting — attempt N"
+//!   instead of an "Unrecognized event" card.
 //!
 //! Fixture lines captured during the spike live under
 //! `src-tauri/tests/fixtures/cursor/`.
@@ -295,6 +299,22 @@ pub fn parse_line(
             (Vec::new(), session_id)
         }
         "user" => (Vec::new(), None), // echo of what we sent — already shown locally
+        // Reconnect chatter: the model stream dropped mid-turn and the CLI
+        // is retrying on its own (`{"type":"retry","subtype":"starting",
+        // "attempt":6,"is_resume":true,...}`). The CLI recovers without
+        // anything Maestro does, so this is progress, not a failure — but
+        // it is also exactly what a user staring at a stalled turn wants
+        // to know, so surface it as a `Status` note rather than dropping
+        // it like `interaction_query`.
+        "retry" => {
+            let attempt = value.get("attempt").and_then(|n| n.as_u64()).unwrap_or(0);
+            (
+                vec![AgentEvent::Status {
+                    text: format!("Reconnecting — attempt {attempt}"),
+                }],
+                None,
+            )
+        }
         // A `request`/`response` pair the CLI uses to ask permission for
         // things outside the `tool_call` protocol (live-captured case:
         // `webSearchRequestQuery`/`webSearchRequestResponse`). Maestro runs
@@ -713,6 +733,23 @@ mod tests {
                 // explain itself rather than fall back to a placeholder.
                 if tool_name == "Bash" && message.contains("cli-config.json") && !*gated
         ));
+    }
+
+    /// Captured live (2026.08.11-era CLI, user report): the model stream
+    /// dropped mid-turn and the CLI emitted its own reconnect chatter.
+    /// Must reach the UI as a `Status` note, not an "Unrecognized event"
+    /// card — a stalled turn silently churning through retries is exactly
+    /// what the user needs to see.
+    #[test]
+    fn a_retry_event_becomes_a_status_note() {
+        let line = r#"{"attempt": 6,"is_resume": true,"session_id": "f271cf7a-1e31-4587-8e01-87f84356c667","subtype": "starting","timestamp_ms": 1787564409861,"type": "retry"}"#;
+        let mut cache = HashMap::new();
+        let (events, session_id) = parse_line(line, &mut cache, false);
+        assert!(session_id.is_none());
+        assert!(
+            matches!(events.as_slice(), [AgentEvent::Status { text }] if text == "Reconnecting — attempt 6"),
+            "expected a Status note, got {events:?}"
+        );
     }
 
     /// The old heuristic treated *any* result without a `success` key as a

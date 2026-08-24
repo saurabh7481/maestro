@@ -34,6 +34,13 @@ pub enum AgentEvent {
     /// — the UI only ever shows the thinking text, collapsed by default.
     #[serde(rename_all = "camelCase")]
     Thinking { text: String },
+    /// A transient, human-readable progress note from the adapter —
+    /// reconnect attempts, rate-limit backoff, anything the CLI reports
+    /// mid-turn that is neither content nor a failure. Rendered as a
+    /// quiet status line inside the activity card (and as the card's
+    /// summary while it is the latest event), never as an error.
+    #[serde(rename_all = "camelCase")]
+    Status { text: String },
     #[serde(rename_all = "camelCase")]
     ToolCall {
         id: String,
@@ -137,6 +144,13 @@ mod tests {
         .unwrap();
         assert_eq!(json["type"], "awaitingPermission");
         assert_eq!(json["toolUseId"], "toolu_1");
+
+        let json = serde_json::to_value(AgentEvent::Status {
+            text: "Reconnecting — attempt 6".to_string(),
+        })
+        .unwrap();
+        assert_eq!(json["type"], "status");
+        assert_eq!(json["text"], "Reconnecting — attempt 6");
 
         let json = serde_json::to_value(AgentEvent::TurnResult {
             session_id: "sess".to_string(),
