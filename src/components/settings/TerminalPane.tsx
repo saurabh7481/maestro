@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   ArrowCounterClockwise,
   MagnifyingGlassMinus,
@@ -17,7 +18,7 @@ import {
   clampTerminalScrollback,
   type TerminalCursorStyle,
 } from "../../design/terminalPrefs";
-import { IconButton, Select, Switch } from "../primitives";
+import { Button, IconButton, Select, Switch, TextInput } from "../primitives";
 import styles from "./SettingsModal.module.css";
 
 /** A labeled row with a −/value/+ stepper, matching `AppearancePane`'s zoom
@@ -88,9 +89,40 @@ export function TerminalPane() {
   const setCursorBlink = useUiStore((s) => s.setTerminalCursorBlink);
   const scrollback = useUiStore((s) => s.terminalScrollback);
   const setScrollback = useUiStore((s) => s.setTerminalScrollback);
+  const shellPath = useUiStore((s) => s.terminalShellPath);
+  const setShellPath = useUiStore((s) => s.setTerminalShellPath);
+  const [shellDraft, setShellDraft] = useState(shellPath ?? "");
 
   return (
     <div className={styles.group}>
+      <span className={styles.groupLabel}>Shell</span>
+
+      <div className={styles.presetRow}>
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Shell path</div>
+          <div className={styles.presetDescription}>
+            Overrides the auto-detected login shell for every new terminal. Leave blank to keep
+            auto-detecting.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "var(--space-3)" }}>
+          <TextInput
+            aria-label="Terminal shell path"
+            placeholder="Auto-detect"
+            value={shellDraft}
+            onChange={(e) => setShellDraft(e.target.value)}
+            style={{ minWidth: "12rem" }}
+          />
+          <Button
+            variant="secondary"
+            disabled={shellDraft.trim() === (shellPath ?? "")}
+            onClick={() => setShellPath(shellDraft.trim() || null)}
+          >
+            Apply
+          </Button>
+        </div>
+      </div>
+
       <span className={styles.groupLabel}>Font</span>
 
       <div className={styles.presetRow}>

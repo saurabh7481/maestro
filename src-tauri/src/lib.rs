@@ -207,6 +207,7 @@ pub fn run() {
             terminal::write_terminal,
             terminal::resize_terminal,
             terminal::kill_terminal,
+            terminal::open_system_terminal,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

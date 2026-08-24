@@ -41,6 +41,11 @@ export interface Tab {
    * Used by Settings' "Sign in" button, since every CLI's login is a
    * command rather than a URL. */
   initialCommand?: string;
+  /** Terminal tabs only — starting directory, when opened via "New
+   * Terminal In Folder…" (`NewTabMenu.tsx`). Falls back to `worktreeRoot`
+   * when unset; kept separate from it since `worktreeRoot` also decides
+   * which worktree's tab strip this tab lives in. */
+  initialCwd?: string;
   /** Diff tabs only — which side of the working tree (or a specific
    * commit) this diff shows. Combined with `filePath`/`commitHash` in
    * `diffTabId()` so the same file can have distinct open tabs per mode. */
@@ -308,6 +313,10 @@ interface TabsState extends Snapshot {
   /** Pops the most recently closed editor-like tab and reopens it. No-op
    * if there isn't one. */
   reopenLastClosedTab: () => void;
+  /** User-given display title, independent of whatever the tab would
+   * otherwise derive (a file's basename, an agent's display name) — a
+   * plain field overwrite, not tied to any particular tab type. */
+  renameTab: (id: string, title: string) => void;
   openTab: (tab: Tab) => void;
   openTabInPane: (tab: Tab, paneId: string, index?: number) => void;
   ensureTab: (tab: Tab) => void;
@@ -388,6 +397,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     // tabs sharing an id would break every id-keyed lookup in this store.
     get().ensureTab(tab);
   },
+
+  renameTab: (id, title) =>
+    set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) })),
 
   openTab: (tab) =>
     set((s) => {

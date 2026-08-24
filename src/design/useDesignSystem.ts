@@ -32,6 +32,7 @@ export function useDesignSystem(): void {
   const terminalCursorStyle = useUiStore((s) => s.terminalCursorStyle);
   const terminalCursorBlink = useUiStore((s) => s.terminalCursorBlink);
   const terminalScrollback = useUiStore((s) => s.terminalScrollback);
+  const terminalShellPath = useUiStore((s) => s.terminalShellPath);
   const hydrate = useUiStore((s) => s.hydrate);
   const hydrated = useRef(false);
 
@@ -91,6 +92,7 @@ export function useDesignSystem(): void {
       terminalCursorStyle,
       terminalCursorBlink,
       terminalScrollback,
+      terminalShellPath,
     });
   }, [
     theme,
@@ -112,6 +114,7 @@ export function useDesignSystem(): void {
     terminalCursorStyle,
     terminalCursorBlink,
     terminalScrollback,
+    terminalShellPath,
   ]);
 
   useEffect(() => {

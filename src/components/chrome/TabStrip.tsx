@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowSquareOut,
   FolderOpen,
   MagnifyingGlass,
+  PencilSimple,
   SplitHorizontal,
   SplitVertical,
+  TerminalWindow,
   X,
 } from "@phosphor-icons/react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -18,6 +20,7 @@ import { useExplorerStore } from "../../state/explorerStore";
 import { useUiStore } from "../../state/uiStore";
 import { problemSummaryForPath, useProblemsStore } from "../../state/problemsStore";
 import { useTabDragStore } from "../../state/tabDragStore";
+import { useToastStore } from "../../state/toastStore";
 import { agentsApi } from "../../api/agents";
 import { terminalApi } from "../../api/terminal";
 import { disposeEditorModel } from "../../editor/modelBridge";
@@ -169,10 +172,36 @@ function TabItem({
   const visual = TAB_VISUALS[tab.type];
   const TabIcon = visual.icon;
   const onPointerDown = useTabDrag(tab, paneId);
+  const renameTab = useTabsStore((s) => s.renameTab);
 
   const otherIds = tabs.filter((t) => t.id !== tab.id).map((t) => t.id);
   const toRightIds = tabs.slice(index + 1).map((t) => t.id);
   const savedIds = tabs.filter((t) => !dirtyByTabId[t.id]?.dirty).map((t) => t.id);
+
+  // Renaming is scoped to terminal tabs — a file/agent tab's title is
+  // already meaningful (a path's basename, the agent's display name) and
+  // overwriting it with a free-text label would just make it lie about
+  // what's actually open.
+  const renamable = tab.type === "terminal";
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(tab.title);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) requestAnimationFrame(() => renameInputRef.current?.select());
+  }, [renaming]);
+
+  function beginRename() {
+    if (!renamable) return;
+    setDraftTitle(tab.title);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    const trimmed = draftTitle.trim();
+    if (trimmed && trimmed !== tab.title) renameTab(tab.id, trimmed);
+    setRenaming(false);
+  }
 
   return (
     <>
@@ -188,6 +217,7 @@ function TabItem({
         hasToRight={toRightIds.length > 0}
         hasSaved={savedIds.length > 0}
         extraItems={[
+          ...(renamable ? [{ label: "Rename", icon: PencilSimple, onSelect: beginRename }] : []),
           {
             label: "Split Right",
             icon: SplitHorizontal,
@@ -222,6 +252,25 @@ function TabItem({
                 },
               ]
             : []),
+          ...(tab.type === "terminal"
+            ? [
+                {
+                  label: "Open in System Terminal",
+                  icon: TerminalWindow,
+                  onSelect: () => {
+                    void terminalApi
+                      .openSystemTerminal(tab.initialCwd ?? tab.worktreeRoot ?? "")
+                      .catch((error: unknown) =>
+                        useToastStore.getState().push({
+                          tone: "error",
+                          title: "Couldn't open a system terminal",
+                          description: String(error),
+                        }),
+                      );
+                  },
+                },
+              ]
+            : []),
         ]}
       >
         <div
@@ -252,7 +301,30 @@ function TabItem({
           ) : (
             <TabIcon size={ICON_SIZE.md} color={visual.color} />
           )}
-          <span className={styles.tabTitle}>{tab.title}</span>
+          {renaming ? (
+            <input
+              ref={renameInputRef}
+              className={styles.tabTitleInput}
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            <span className={styles.tabTitle} onDoubleClick={renamable ? beginRename : undefined}>
+              {tab.title}
+            </span>
+          )}
           {problemSummary.total > 0 && tab.filePath && (
             <span
               className={styles.problemBadge}

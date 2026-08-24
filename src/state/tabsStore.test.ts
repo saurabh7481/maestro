@@ -265,3 +265,19 @@ describe("hydrate", () => {
     expect(panes().map((p) => p.tabIds)).toEqual([["a"], ["b"]]);
   });
 });
+
+describe("renaming", () => {
+  it("overwrites the title of the matching tab only", () => {
+    state().openTab(tab("a"));
+    state().openTab(tab("b"));
+    state().renameTab("a", "My Terminal");
+    expect(state().tabs.find((t) => t.id === "a")?.title).toBe("My Terminal");
+    expect(state().tabs.find((t) => t.id === "b")?.title).toBe("b");
+  });
+
+  it("is a no-op for an id that doesn't exist", () => {
+    state().openTab(tab("a"));
+    state().renameTab("missing", "New Title");
+    expect(state().tabs.map((t) => t.title)).toEqual(["a"]);
+  });
+});

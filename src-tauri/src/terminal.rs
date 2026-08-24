@@ -98,11 +98,27 @@ fn default_shell() -> String {
         .unwrap_or_else(|| "/bin/bash".to_string())
 }
 
+/// Whether `name` (an exe/binary filename) resolves on `PATH` — same
+/// search `CommandBuilder`/`std::process::Command` would eventually do
+/// internally (see `portable-pty`'s `search_path`), used here to check
+/// *before* spawning rather than only discovering absence via a failed
+/// spawn. Shared by Windows's `default_shell()` (`pwsh.exe` vs
+/// `powershell.exe`) and both platforms' `open_system_terminal` that need
+/// to probe for an installed terminal emulator (Windows: Windows
+/// Terminal; Linux: no single blessed default, see that function). Not
+/// needed on macOS, whose `open_system_terminal` can just assume
+/// Terminal.app.
+#[cfg(any(windows, target_os = "linux"))]
+fn binary_on_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| dir.join(name).is_file()))
+        .unwrap_or(false)
+}
+
 /// Windows has no login-shell/passwd concept, and `$SHELL` is a Unix
 /// convention that isn't set here at all — so instead of the Unix
-/// heuristic above, this walks `PATH` itself (same search `CommandBuilder`
-/// would eventually do internally, see `portable-pty`'s `search_path`) to
-/// prefer a real, present shell over just assuming one exists.
+/// heuristic above, this walks `PATH` itself to prefer a real, present
+/// shell over just assuming one exists.
 ///
 /// PowerShell 7 (`pwsh`) is preferred when installed — it's the actively
 /// developed one, cross-platform-consistent with the shell this app's own
@@ -113,24 +129,35 @@ fn default_shell() -> String {
 /// on `PATH`, so it is the realistic universal fallback — `cmd.exe` (via
 /// `ComSpec`) only matters if `PATH` has been stripped down.
 #[cfg(windows)]
-fn shell_on_path(exe_name: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).any(|dir| dir.join(exe_name).is_file()))
-        .unwrap_or(false)
-}
-
-#[cfg(windows)]
 fn default_shell() -> String {
-    if shell_on_path("pwsh.exe") {
+    if binary_on_path("pwsh.exe") {
         return "pwsh.exe".to_string();
     }
-    if shell_on_path("powershell.exe") {
+    if binary_on_path("powershell.exe") {
         return "powershell.exe".to_string();
     }
     std::env::var("ComSpec")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "cmd.exe".to_string())
+}
+
+/// Optional per-spawn overrides — bundled into one struct rather than two
+/// more bare params (clippy's `too_many_arguments` limit).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnOverrides {
+    /// Settings → Terminal's shell override (`uiStore.terminalShellPath`).
+    /// `None`/empty falls back to `default_shell()`, same as before this
+    /// existed.
+    pub shell_path: Option<String>,
+    /// Starting directory, when opened via "New Terminal In Folder…"
+    /// (`NewTabMenu.tsx`) — falls back to `worktree_path`. Kept separate
+    /// from `worktree_path` itself: the Process Manager and every other
+    /// consumer of `TerminalHandle.worktree_path` groups terminals by
+    /// worktree, which shouldn't change just because this one shell
+    /// started somewhere else inside it.
+    pub cwd: Option<String>,
 }
 
 #[tauri::command]
@@ -141,7 +168,9 @@ pub async fn spawn_terminal(
     worktree_path: String,
     rows: u16,
     cols: u16,
+    overrides: SpawnOverrides,
 ) -> Result<(), String> {
+    let SpawnOverrides { shell_path, cwd } = overrides;
     // A terminal id is a tab id, and a tab can now be handed to a second
     // window (docs/V2_ROADMAP.md Phase 13), whose `TerminalTab` mounts
     // without knowing the PTY is already running and asks for it again.
@@ -166,7 +195,9 @@ pub async fn spawn_terminal(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = default_shell();
+    let shell = shell_path
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(default_shell);
     let mut cmd = CommandBuilder::new(&shell);
     // `-l`: run as a login shell, same as every standalone terminal
     // emulator (Alacritty, GNOME Terminal, iTerm2, …) does — without it,
@@ -179,7 +210,7 @@ pub async fn spawn_terminal(
     // Windows shells have no equivalent login/non-login distinction.
     #[cfg(unix)]
     cmd.arg("-l");
-    cmd.cwd(&worktree_path);
+    cmd.cwd(cwd.as_deref().unwrap_or(&worktree_path));
     // Tauri's own process is normally launched from a desktop entry, not
     // a terminal, so it typically has no `TERM` in its environment at
     // all — which the PTY child would otherwise inherit, leaving
@@ -375,6 +406,83 @@ pub async fn kill_terminal(state: State<'_, AppState>, terminal_id: String) -> R
     if let Some(mut handle) = handle {
         let _ = handle.child.kill();
     }
+    Ok(())
+}
+
+/// Launches the OS's own terminal app at `path` — a genuinely independent
+/// process, unlike every other command in this file: not tracked in
+/// `AppState.terminals`, not reaped on app quit, nothing here manages its
+/// lifetime once spawned.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn open_system_terminal(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .args(["-a", "Terminal", &path])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Windows Terminal (`wt.exe`) when installed — the modern default on
+/// Windows 11 and a common install on 10 — else a plain `cmd.exe` window,
+/// which (unlike `wt.exe`) is guaranteed present on every Windows install.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn open_system_terminal(path: String) -> Result<(), String> {
+    if binary_on_path("wt.exe") {
+        std::process::Command::new("wt.exe")
+            .args(["-d", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    } else {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "cmd", "/K", &format!("cd /d {path}")])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// No single blessed default terminal emulator on Linux the way macOS has
+/// Terminal.app or Windows has `wt.exe`/`cmd.exe` — this probes, in order:
+/// `x-terminal-emulator` (the Debian/Ubuntu alternatives symlink to
+/// whichever terminal the user or distro actually configured as default,
+/// so it's checked first specifically to respect that choice over this
+/// list's own opinion), then the common desktop-environment terminals,
+/// then `xterm` as the last-resort fallback virtually every X11 install
+/// has. Every candidate is launched with `current_dir(path)` rather than
+/// an emulator-specific "start here" flag — those flags' names and syntax
+/// differ per emulator (`--working-directory=X` vs `--workdir X` vs none
+/// at all), while inheriting the launching process's cwd is the one
+/// mechanism every terminal here actually honors for its initial shell.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn open_system_terminal(path: String) -> Result<(), String> {
+    const CANDIDATES: &[&str] = &[
+        "x-terminal-emulator",
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "alacritty",
+        "kitty",
+        "xterm",
+    ];
+    let Some(terminal) = CANDIDATES.iter().find(|name| binary_on_path(name)) else {
+        return Err(
+            "No terminal emulator found on PATH. Install one (gnome-terminal, konsole, xterm, …) \
+             to use \"Open in System Terminal\"."
+                .to_string(),
+        );
+    };
+    use crate::process_ext::HiddenCommandExt;
+    std::process::Command::new(terminal)
+        .current_dir(&path)
+        // Strips any AppImage-injected LD_LIBRARY_PATH before spawning —
+        // see `process_ext.rs`'s doc comment. A no-op window-wise here
+        // (this app isn't Windows), only the env fix applies.
+        .hide_window()
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

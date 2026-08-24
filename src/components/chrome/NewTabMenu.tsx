@@ -1,5 +1,12 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Plus, Pulse, Sparkle, TerminalWindow, WarningCircle } from "@phosphor-icons/react";
+import {
+  FolderOpen,
+  Plus,
+  Pulse,
+  Sparkle,
+  TerminalWindow,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
 import { useTabsStore } from "../../state/tabsStore";
 import type { Tab } from "../../state/tabsStore";
@@ -11,6 +18,7 @@ import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind } from "../../types/agent";
 import { AgentBrandIcon } from "../agent/AgentBrandIcon";
 import { openProcessesTab } from "../processes/openProcessesTab";
+import { workspaceApi } from "../../api/workspace";
 import { Kbd, Tooltip } from "../primitives";
 import styles from "./TabStrip.module.css";
 
@@ -95,16 +103,26 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
     setOpen(false);
   }
 
-  function startTerminalTab() {
+  function startTerminalTab(cwd?: string) {
     if (!activeWorktree) return;
     const tab: Tab = {
       id: crypto.randomUUID(),
       type: "terminal",
       title: `Terminal — ${activeWorktree.branch}`,
       worktreeRoot: activeWorktree.path,
+      initialCwd: cwd,
     };
     openTabInPane(tab, paneId);
     setOpen(false);
+  }
+
+  /** Same picker `WorkspaceSidebar.tsx`'s "Add project" uses — a bare
+   * native folder dialog with no side effects, so reusing it here doesn't
+   * couple this to project-adding semantics. */
+  async function startTerminalTabInFolder() {
+    const path = await workspaceApi.pickProjectFolder();
+    if (path) startTerminalTab(path);
+    else setOpen(false);
   }
 
   return (
@@ -187,6 +205,15 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
             <div style={{ marginLeft: "auto" }}>
               <Kbd>{formatCombo(terminalCombo)}</Kbd>
             </div>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={styles.terminalItem}
+            disabled={!activeWorktree}
+            onSelect={() => void startTerminalTabInFolder()}
+          >
+            <FolderOpen size={17} color="var(--green)" />
+            <span style={{ fontSize: "var(--text-sm)" }}>New Terminal In Folder…</span>
           </DropdownMenu.Item>
 
           <DropdownMenu.Item

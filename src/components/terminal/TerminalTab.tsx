@@ -236,7 +236,10 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
     if (!existing?.started) {
       useTerminalSessionStore.getState().markStarted(tab.id);
       terminalApi
-        .spawn(tab.id, worktreeRoot, term.rows, term.cols)
+        .spawn(tab.id, worktreeRoot, term.rows, term.cols, {
+          shellPath: useUiStore.getState().terminalShellPath,
+          cwd: tab.initialCwd,
+        })
         .then(() => {
           // Only on a genuinely new shell — a tab being re-mounted after a
           // pane switch has `started` set and must not re-run the command.
@@ -291,10 +294,11 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
       setSearchQuery("");
       setMatchInfo(null);
     };
-    // `initialCommand` is fixed for a tab's lifetime, so it never actually
-    // retriggers this — and the `started` guard above would stop a re-run
-    // from spawning a second shell or replaying the command anyway.
-  }, [tab.id, worktreeRoot, tab.initialCommand]);
+    // `initialCommand`/`initialCwd` are fixed for a tab's lifetime, so they
+    // never actually retrigger this — and the `started` guard above would
+    // stop a re-run from spawning a second shell or replaying the command
+    // anyway.
+  }, [tab.id, worktreeRoot, tab.initialCommand, tab.initialCwd]);
 
   // Keeps an already-open terminal's appearance in sync with Settings →
   // Terminal — xterm.js accepts option updates after construction
@@ -354,8 +358,8 @@ export function TerminalTab({ tab, active }: { tab: Tab; active: boolean }) {
         <span className={styles.branch} title={activeWorktree?.branch ?? tab.title}>
           {activeWorktree?.branch ?? tab.title}
         </span>
-        <span className={styles.path} title={tab.worktreeRoot}>
-          {tab.worktreeRoot}
+        <span className={styles.path} title={tab.initialCwd ?? tab.worktreeRoot}>
+          {tab.initialCwd ?? tab.worktreeRoot}
         </span>
       </div>
       {spawnError && (

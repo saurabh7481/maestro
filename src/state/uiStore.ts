@@ -92,6 +92,11 @@ interface UiState {
   terminalCursorStyle: TerminalCursorStyle;
   terminalCursorBlink: boolean;
   terminalScrollback: number;
+  /** Overrides `default_shell()` (`terminal.rs`) for every new terminal —
+   * `null` keeps the auto-detected login shell, the default. Only applies
+   * to shells spawned after the change; an already-open terminal keeps
+   * whatever it started with. */
+  terminalShellPath: string | null;
 
   setTheme: (theme: ThemeId) => void;
   setZoom: (zoom: number) => void;
@@ -121,6 +126,7 @@ interface UiState {
   setTerminalCursorStyle: (style: TerminalCursorStyle) => void;
   setTerminalCursorBlink: (enabled: boolean) => void;
   setTerminalScrollback: (lines: number) => void;
+  setTerminalShellPath: (path: string | null) => void;
   hydrate: (
     partial: Partial<
       Pick<
@@ -144,6 +150,7 @@ interface UiState {
         | "terminalCursorStyle"
         | "terminalCursorBlink"
         | "terminalScrollback"
+        | "terminalShellPath"
       >
     >,
   ) => void;
@@ -176,6 +183,7 @@ export const useUiStore = create<UiState>((set) => ({
   terminalCursorStyle: TERMINAL_CURSOR_STYLE_DEFAULT,
   terminalCursorBlink: true,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalShellPath: null,
 
   setTheme: (theme) => set({ theme }),
   setZoom: (zoom) => set({ zoom }),
@@ -221,5 +229,6 @@ export const useUiStore = create<UiState>((set) => ({
   setTerminalCursorStyle: (terminalCursorStyle) => set({ terminalCursorStyle }),
   setTerminalCursorBlink: (terminalCursorBlink) => set({ terminalCursorBlink }),
   setTerminalScrollback: (terminalScrollback) => set({ terminalScrollback }),
+  setTerminalShellPath: (terminalShellPath) => set({ terminalShellPath }),
   hydrate: (partial) => set(partial),
 }));

@@ -79,6 +79,18 @@
   text-overflow: ellipsis;
 }
 
+.tabTitleInput {
+  width: 8rem;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
 .dirtyDot {
   width: 0.375rem;
   height: 0.375rem;

@@ -26,6 +26,7 @@ export interface UiPrefs {
   terminalCursorStyle: TerminalCursorStyle;
   terminalCursorBlink: boolean;
   terminalScrollback: number;
+  terminalShellPath: string | null;
 }
 
 const STORE_FILE = "ui-prefs.json";
