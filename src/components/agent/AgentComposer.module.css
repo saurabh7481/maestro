@@ -203,6 +203,11 @@
   font-size: var(--text-md);
   line-height: var(--leading-normal);
   color: var(--text);
+  /* `.textarea` reserves this via `scrollbar-gutter: stable` even while its
+     scrollbar is hidden — without the same reservation here, this layer has
+     more usable width and wraps later, drifting out from under the real
+     caret/selection line by line as the draft grows. */
+  scrollbar-gutter: stable;
 }
 
 .pill {
