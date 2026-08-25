@@ -11,7 +11,23 @@ export default defineConfig(async () => ({
   // `vscode-jsonrpc` exposes its runtime initializer behind the `browser`
   // export condition. Keep the same implementation in production and
   // Vitest/jsdom so transport tests don't accidentally exercise Node streams.
-  resolve: { conditions: ["browser"] },
+  resolve: {
+    conditions: ["browser"],
+    alias: {
+      // `monaco-vim` imports deep `monaco-editor` paths as
+      // `monaco-editor/esm/vs/...` (e.g. `.../editor/editor.api`). This
+      // `monaco-editor` version's `exports` map only defines a single
+      // wildcard, `"./*": "./esm/vs/*.js"`, which *prepends* `esm/vs/` —
+      // so a specifier that already starts with `esm/vs/` resolves to a
+      // doubled, nonexistent path (`esm/vs/esm/vs/...`) and throws at
+      // runtime ("Module name ... does not resolve to a valid URL", the
+      // browser's bare-specifier-resolution error). Rewrite onto the
+      // `monaco-editor/...` convention (no `esm/vs/` prefix) that this
+      // app's own Monaco imports already use and that the wildcard
+      // actually expects — see `src/editor/monacoSetup.ts`.
+      "monaco-editor/esm/vs/": "monaco-editor/",
+    },
+  },
 
   test: {
     environment: "jsdom",
