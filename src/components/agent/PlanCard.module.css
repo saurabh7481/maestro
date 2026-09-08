@@ -25,11 +25,26 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-.title {
+.heading {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+
+.title {
   color: var(--text);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  color: var(--text-mute);
+  font-size: var(--text-2xs);
 }
 
 .approve {
@@ -50,6 +65,10 @@
 .approve:hover:not(:disabled) {
   opacity: 0.9;
 }
+.approve:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, white);
+  outline-offset: 2px;
+}
 .approve:disabled {
   cursor: default;
   opacity: 0.45;
@@ -59,8 +78,30 @@
   padding: var(--space-6);
 }
 
+.overview {
+  margin: 0 0 var(--space-5);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
 .empty {
   padding: var(--space-6);
   color: var(--text-mute);
   font-size: var(--text-xs);
+}
+
+@media (max-width: 40rem) {
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .heading {
+    flex-basis: calc(100% - 2.5rem);
+  }
+
+  .approve {
+    width: 100%;
+    justify-content: center;
+  }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TranscriptItem } from "../../state/agentSessionStore";
-import { buildResponseBlocks, turnCompletion } from "./processingBlocks";
+import { assistantResponseMarkdown, buildResponseBlocks, turnCompletion } from "./processingBlocks";
 
 const completed: TranscriptItem = {
   id: "done",
@@ -30,6 +30,16 @@ const tool = (id: string): TranscriptItem => ({
 });
 
 describe("buildResponseBlocks", () => {
+  it("combines split narration into one copyable response", () => {
+    const items: TranscriptItem[] = [
+      { id: "1", kind: "assistantText", text: "First update." },
+      tool("2"),
+      { id: "3", kind: "assistantText", text: "Final answer." },
+    ];
+
+    expect(assistantResponseMarkdown(items)).toBe("First update.\n\nFinal answer.");
+  });
+
   it("collapses contiguous activity but preserves mid-turn assistant updates", () => {
     const blocks = buildResponseBlocks(
       [
@@ -64,6 +74,41 @@ describe("buildResponseBlocks", () => {
   it("leaves a finished turn with no active card", () => {
     const blocks = buildResponseBlocks([tool("1"), completed], false);
     expect(blocks.every((block) => block.kind !== "process" || !block.active)).toBe(true);
+  });
+
+  it("promotes Cursor's CreatePlan artifact out of collapsed processing", () => {
+    const artifact: TranscriptItem = {
+      id: "plan",
+      kind: "toolCall",
+      toolCallId: "plan-1",
+      name: "CreatePlan",
+      input: {
+        name: "Payment rollout",
+        overview: "Ship safely.",
+        plan: "# Payment rollout\n1. Add durable models.",
+      },
+    };
+
+    const blocks = buildResponseBlocks([thinking("1"), artifact, completed], false, "CreatePlan");
+    expect(blocks.map((block) => block.kind)).toEqual(["process", "plan"]);
+    expect(blocks[1].kind === "plan" && blocks[1].item.input).toEqual(artifact.input);
+  });
+
+  it("repairs Cursor plan artifacts persisted before the protocol mapping existed", () => {
+    const legacyArtifact: TranscriptItem = {
+      id: "legacy-plan",
+      kind: "toolCall",
+      toolCallId: "plan-1",
+      name: "Tool",
+      input: {
+        name: "Payment rollout",
+        overview: "Ship safely.",
+        plan: "# Payment rollout\n1. Add durable models.",
+        todos: [],
+      },
+    };
+
+    expect(buildResponseBlocks([legacyArtifact], false, null)[0]?.kind).toBe("plan");
   });
 });
 

@@ -1,4 +1,5 @@
 import type { TranscriptItem } from "../../state/agentSessionStore";
+import { looksLikeQuestions } from "./questionArtifact";
 
 export type ProcessItem = Extract<
   TranscriptItem,
@@ -8,12 +9,54 @@ export type TurnCompleteItem = Extract<TranscriptItem, { kind: "turnComplete" }>
 
 export type ToolCallItem = Extract<TranscriptItem, { kind: "toolCall" }>;
 
+/** Cursor builds before Maestro learned `createPlanToolCall` persisted the
+ * artifact as a generic `Tool`. Recognize its unambiguous payload too so
+ * existing conversations are repaired on sight instead of only future
+ * turns working after an app restart. */
+function isPlanArtifact(item: ToolCallItem, planExitTool?: string | null): boolean {
+  if (planExitTool && item.name === planExitTool) return true;
+  if (item.name !== "Tool" || !item.input || typeof item.input !== "object") return false;
+  const input = item.input as Record<string, unknown>;
+  return (
+    typeof input.plan === "string" &&
+    (typeof input.name === "string" ||
+      typeof input.overview === "string" ||
+      Array.isArray(input.todos))
+  );
+}
+
+/** Cursor Agent's question form. The tool name is enough for anything
+ * parsed by a build that knows `askQuestionToolCall`; the payload sniff
+ * covers transcripts recorded before that, which stored it as a generic
+ * `Tool` (see `isPlanArtifact`, which makes the same allowance). */
+function isQuestionArtifact(item: ToolCallItem): boolean {
+  if (item.name === "AskQuestion") return true;
+  return item.name === "Tool" && looksLikeQuestions(item.input);
+}
+
+/** Raw markdown for one complete assistant turn. Providers may split their
+ * narration around thinking/tool events, but copying the response should
+ * produce one coherent payload rather than one clipboard button per split. */
+export function assistantResponseMarkdown(items: TranscriptItem[]): string {
+  return items
+    .filter(
+      (item): item is Extract<TranscriptItem, { kind: "assistantText" }> =>
+        item.kind === "assistantText" && item.text.length > 0,
+    )
+    .map((item) => item.text)
+    .join("\n\n");
+}
+
 export type ResponseBlock =
   | { kind: "text"; item: Extract<TranscriptItem, { kind: "assistantText" }> }
   | { kind: "error"; item: Extract<TranscriptItem, { kind: "error" }> }
   /** The moment the agent finished planning and asked to start. Promoted
    * out of the activity card because it's a decision point, not a step. */
   | { kind: "plan"; item: ToolCallItem }
+  /** Questions the agent asked and the CLI auto-skipped. Promoted for the
+   * same reason: the turn moved on, but the user is the only one who can
+   * answer them. */
+  | { kind: "questions"; item: ToolCallItem }
   | {
       kind: "process";
       key: string;
@@ -34,8 +77,12 @@ export function buildResponseBlocks(
   const blocks: ResponseBlock[] = [];
 
   for (const item of items) {
-    if (planExitTool && item.kind === "toolCall" && item.name === planExitTool) {
+    if (item.kind === "toolCall" && isPlanArtifact(item, planExitTool)) {
       blocks.push({ kind: "plan", item });
+      continue;
+    }
+    if (item.kind === "toolCall" && isQuestionArtifact(item)) {
+      blocks.push({ kind: "questions", item });
       continue;
     }
     // The turn's result is rendered as a footer under the whole response

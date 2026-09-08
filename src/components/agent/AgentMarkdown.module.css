@@ -122,18 +122,14 @@
 }
 
 /* `CodeBlockControls`' portal mount — see `AgentMarkdown.tsx`'s scanning
-   effect. Hover-revealed, same convention as `.copyButton` above. */
+   effect. Kept visible so a code block advertises that it is copyable
+   without requiring the user to discover an invisible hover target. */
 .codeToolbar {
   position: absolute;
   top: var(--space-4);
   right: var(--space-4);
   display: flex;
   gap: var(--space-3);
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-.body pre:hover .codeToolbar,
-.codeToolbar:focus-within {
   opacity: 1;
 }
 

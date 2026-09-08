@@ -155,9 +155,10 @@ pub fn capabilities_for(kind: AgentKind) -> AgentCapabilities {
             // so there is no separate flag to send.
             separate_option_flags: false,
             effort_label: "Effort".to_string(),
-            // `--mode plan` ends with prose, with no confirmed tool call
-            // marking the hand-off.
-            plan_exit_tool: None,
+            // Live-confirmed in 2026.09.02-c22c1a3: plan mode emits a
+            // `createPlanToolCall` carrying name/overview/plan/todos. The
+            // adapter normalizes that variant to this provider-level name.
+            plan_exit_tool: Some("CreatePlan".to_string()),
         },
         // Verified against codex-cli 0.147.0, except where noted.
         AgentKind::Codex => AgentCapabilities {
@@ -298,6 +299,12 @@ mod tests {
             let caps = capabilities_for(kind);
             assert!(caps.plan_exit_tool.is_none() || caps.plan_mode, "{kind:?}");
         }
+    }
+
+    #[test]
+    fn cursor_declares_its_create_plan_artifact() {
+        let caps = capabilities_for(AgentKind::CursorAgent);
+        assert_eq!(caps.plan_exit_tool.as_deref(), Some("CreatePlan"));
     }
 
     #[test]

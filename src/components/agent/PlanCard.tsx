@@ -1,22 +1,9 @@
 import { memo } from "react";
 import { CheckCircle, Compass } from "@phosphor-icons/react";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { readPlanArtifact } from "./planArtifact";
 import type { ToolCallItem } from "./processingBlocks";
 import styles from "./PlanCard.module.css";
-
-/** Pulls the plan text out of whatever shape the provider's plan-exit tool
- * uses. `plan` is Claude's field; the fallbacks mean a new provider whose
- * tool names the field differently still shows something rather than an
- * empty card. */
-function planText(input: unknown): string | null {
-  if (typeof input === "string") return input;
-  if (!input || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  for (const key of ["plan", "text", "content", "message"]) {
-    if (typeof record[key] === "string" && record[key]) return record[key] as string;
-  }
-  return null;
-}
 
 /** The hand-off at the end of Plan mode, rendered as the decision it is.
  *
@@ -38,14 +25,17 @@ export const PlanCard = memo(function PlanCard({
   /** False while a turn is still running — approving would collide with it. */
   canApprove: boolean;
 }) {
-  const text = planText(item.input);
+  const artifact = readPlanArtifact(item.input);
   return (
     <section className={styles.card}>
       <header className={styles.header}>
         <span className={styles.icon}>
           <Compass size={14} />
         </span>
-        <span className={styles.title}>Plan ready</span>
+        <span className={styles.heading}>
+          <span className={styles.title}>{artifact.title ?? "Implementation plan"}</span>
+          <span className={styles.status}>Ready to review</span>
+        </span>
         <button
           type="button"
           className={styles.approve}
@@ -61,9 +51,12 @@ export const PlanCard = memo(function PlanCard({
           Approve &amp; start
         </button>
       </header>
-      {text ? (
+      {artifact.text ? (
         <div className={styles.body}>
-          <AgentMarkdown text={text} />
+          {artifact.overview && !artifact.text.includes(artifact.overview) && (
+            <p className={styles.overview}>{artifact.overview}</p>
+          )}
+          <AgentMarkdown text={artifact.text} />
         </div>
       ) : (
         <div className={styles.empty}>

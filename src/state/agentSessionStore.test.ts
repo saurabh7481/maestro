@@ -257,6 +257,29 @@ describe("streaming text", () => {
 });
 
 describe("turn results", () => {
+  it("waits for process exit before making the run idle", () => {
+    apply({
+      type: "turnResult",
+      sessionId: "s",
+      isError: false,
+      totalCostUsd: null,
+      durationMs: 10,
+      numTurns: 1,
+      inputTokens: null,
+      outputTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      contextWindow: null,
+      resultText: null,
+    });
+
+    expect(state().status).toBe("settling");
+
+    apply({ type: "exit", code: 0 });
+    expect(state().status).toBe("idle");
+    expect(state().errorMessage).toBeNull();
+  });
+
   it("records usage so the transcript can report tokens, not just time", () => {
     apply({
       type: "turnResult",
@@ -272,6 +295,7 @@ describe("turn results", () => {
       contextWindow: 1000000,
       resultText: "done",
     });
+    apply({ type: "exit", code: 0 });
 
     expect(state().status).toBe("idle");
     expect(state().lastResult).toMatchObject({
@@ -301,6 +325,8 @@ describe("turn results", () => {
       resultText: "You've hit your usage limit.",
     });
 
+    expect(state().status).toBe("settling");
+    apply({ type: "exit", code: 1 });
     expect(state().status).toBe("error");
     expect(state().errorMessage).toBe("You've hit your usage limit.");
   });

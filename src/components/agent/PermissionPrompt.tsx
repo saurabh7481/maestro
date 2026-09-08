@@ -33,7 +33,10 @@ export function PermissionPrompt({
   const setIdle = useAgentSessionStore((s) => s.setIdle);
   const setRunError = useAgentSessionStore((s) => s.setRunError);
   const setPermissionMode = useAgentSessionStore((s) => s.setPermissionMode);
-  const working = useAgentSessionStore((s) => s.byRunId[runId]?.status === "working");
+  const working = useAgentSessionStore((s) => {
+    const status = s.byRunId[runId]?.status;
+    return status === "working" || status === "settling";
+  });
   // The run id *is* the tab id, so the tab carries which CLI this is.
   const kind = useTabsStore((s) => s.tabs.find((tab) => tab.id === runId)?.agentKind);
   const capabilities = useAgentCapabilities(kind ?? "claudeCode");

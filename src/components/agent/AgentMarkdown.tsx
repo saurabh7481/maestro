@@ -4,6 +4,7 @@ import { Check, Copy } from "@phosphor-icons/react";
 import { plainTextFallbackHtml, useMarkdownHtml } from "../../design/renderMarkdown";
 import { Tooltip } from "../primitives";
 import { CodeBlockControls } from "./CodeBlockControls";
+import { codeBlockLookupKey, completedFencedCodeBodies } from "./fencedCodeBlocks";
 import styles from "./AgentMarkdown.module.css";
 
 interface CodeBlockMount {
@@ -32,12 +33,16 @@ interface CodeBlockMount {
 export const AgentMarkdown = memo(function AgentMarkdown({
   text,
   streaming = false,
+  showCopyButton = true,
 }: {
   text: string;
   /** Still being typed out by the model. Adds a caret and holds back the
    * copy button — copying half a sentence is rarely what anyone wants,
    * and the button appearing mid-stream invites exactly that. */
   streaming?: boolean;
+  /** Transcript responses own one copy button for the whole turn. Keep
+   * this enabled for standalone markdown surfaces such as PlanCard. */
+  showCopyButton?: boolean;
 }) {
   const rendered = useMarkdownHtml(text);
   // `null` only while the markdown chunk loads on the session's first
@@ -45,6 +50,10 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // so the transcript doesn't collapse and reflow a frame later.
   const fallback = useMemo(() => plainTextFallbackHtml(text), [text]);
   const html = rendered ?? fallback;
+  // The code-toolbar effect appends portal mounts inside this raw DOM.
+  // Keep the prop object stable when only `codeBlocks` state changes so
+  // React does not assign `innerHTML` again and erase those mounts.
+  const innerHtml = useMemo(() => ({ __html: html }), [html]);
 
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
@@ -66,28 +75,39 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // the raw markdown HTML has no React tree of its own to attach a copy
   // button or mermaid diagram to (`dangerouslySetInnerHTML`), so the mount
   // points are the bridge back into React for that one interactive piece.
-  // Gated on `!streaming`: a still-growing ```mermaid``` fence is by
-  // definition incomplete/invalid mid-stream, and re-scanning + re-parsing
-  // it on every streamed token would be pure waste for a diagram that's
-  // about to change again anyway — matches the whole-message copy button's
-  // existing `!streaming` gate just below.
+  // During streaming, only fences whose closing marker has arrived are
+  // mounted. This keeps incomplete code/mermaid out while making a complete
+  // block copyable even when later prose in the same message is still
+  // arriving.
   useEffect(() => {
     const container = bodyRef.current;
-    if (!container || streaming) {
+    if (!container) {
       setCodeBlocks([]);
       return;
+    }
+    const completedCodes = streaming ? completedFencedCodeBodies(text) : null;
+    const remaining = new Map<string, number>();
+    for (const code of completedCodes ?? []) {
+      remaining.set(code, (remaining.get(code) ?? 0) + 1);
     }
     const blocks: CodeBlockMount[] = [];
     container.querySelectorAll("pre").forEach((pre, index) => {
       const codeElement = pre.querySelector(":scope > code");
       if (!(codeElement instanceof HTMLElement)) return;
+      const code = codeElement.textContent ?? "";
+      if (completedCodes) {
+        const normalized = codeBlockLookupKey(code);
+        const count = remaining.get(normalized) ?? 0;
+        if (count === 0) return;
+        remaining.set(normalized, count - 1);
+      }
       const mount = document.createElement("div");
       pre.appendChild(mount);
       blocks.push({
         key: `code-${index}`,
         element: mount,
         codeElement,
-        code: codeElement.textContent ?? "",
+        code,
         isMermaid: /(?:^|\s)language-mermaid(?:\s|$)/.test(codeElement.className),
       });
     });
@@ -96,11 +116,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     // again (`dangerouslySetInnerHTML` replaces the whole subtree) — clear
     // so no portal tries to render into an already-detached node.
     return () => setCodeBlocks([]);
-  }, [html, streaming]);
+  }, [html, streaming, text]);
 
   return (
     <div className={styles.wrap} data-streaming={streaming || undefined}>
-      <div className={styles.body} ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />
+      <div className={styles.body} ref={bodyRef} dangerouslySetInnerHTML={innerHtml} />
       {codeBlocks.map((block) =>
         createPortal(
           <CodeBlockControls
@@ -112,9 +132,14 @@ export const AgentMarkdown = memo(function AgentMarkdown({
           block.element,
         ),
       )}
-      {!streaming && (
+      {showCopyButton && !streaming && (
         <Tooltip label={copied ? "Copied!" : "Copy markdown"} side="left">
-          <button type="button" className={styles.copyButton} onClick={() => void copy()}>
+          <button
+            type="button"
+            className={styles.copyButton}
+            onClick={() => void copy()}
+            aria-label={copied ? "Markdown copied" : "Copy markdown"}
+          >
             {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
           </button>
         </Tooltip>

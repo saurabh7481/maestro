@@ -113,8 +113,12 @@ export type TranscriptItem =
  * `working`: the CLI process is gone and the turn is over, but the run is
  * mid-thought and waiting on the user's Approve/Deny before it can pick up
  * where it stopped. Keeping it distinct is what stops the following `exit`
- * event from being reported as a crash. */
-export type AgentRunStatus = "idle" | "working" | "awaitingPermission" | "error";
+ * event from being reported as a crash.
+ *
+ * `settling` means the CLI reported its final result but the child process
+ * has not exited yet. A follow-up cannot start until that exit releases the
+ * backend's one-turn-at-a-time latch, so this must stay distinct from idle. */
+export type AgentRunStatus = "idle" | "working" | "settling" | "awaitingPermission" | "error";
 
 export interface AgentTabState {
   items: TranscriptItem[];
@@ -866,7 +870,12 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
               ...s.byRunId,
               [runId]: {
                 ...tab,
-                status: event.isError ? "error" : "idle",
+                // stdout can close before the process itself exits (notably
+                // with Cursor Agent). Keep the run unavailable until the
+                // following `exit`; otherwise a queued follow-up races the
+                // backend latch and that old exit can be mistaken for the
+                // new turn crashing.
+                status: "settling",
                 errorMessage: event.isError
                   ? (event.resultText ?? "The agent reported that this turn failed.")
                   : null,
@@ -912,6 +921,18 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             },
           };
         case "exit":
+          if (tab.status === "settling") {
+            return {
+              byRunId: {
+                ...s.byRunId,
+                [runId]: {
+                  ...tab,
+                  status: tab.errorMessage ? "error" : "idle",
+                  turnStartedAtMs: null,
+                },
+              },
+            };
+          }
           // A non-zero/unexpected exit *without* a preceding `turnResult`
           // means the process died mid-turn rather than finishing
           // normally — surface that instead of leaving the UI on a

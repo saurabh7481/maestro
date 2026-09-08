@@ -93,7 +93,12 @@ export function CodeBlockControls({
           </Tooltip>
         )}
         <Tooltip label={copied ? "Copied!" : "Copy code"} side="left">
-          <button type="button" className={styles.codeToolbarButton} onClick={() => void copy()}>
+          <button
+            type="button"
+            className={styles.codeToolbarButton}
+            onClick={() => void copy()}
+            aria-label={copied ? "Code copied" : "Copy code"}
+          >
             {copied ? <Check size={12} color="var(--green)" /> : <Copy size={12} />}
           </button>
         </Tooltip>

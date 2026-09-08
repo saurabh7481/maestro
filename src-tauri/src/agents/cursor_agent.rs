@@ -1,5 +1,5 @@
 //! Cursor Agent adapter (docs/ROADMAP.md Phase 6). Live-verified against
-//! the installed CLI (2026.08.11-e8db854) — this is the user's daily
+//! the installed CLI (2026.09.02-c22c1a3) — this is the user's daily
 //! driver, so this adapter got the same live-spike rigor Claude's did in
 //! Phase 5, not a best-effort guess (contrast `codex.rs`).
 //!
@@ -47,6 +47,23 @@
 //!   own reconnect chatter when the model stream drops mid-turn; mapped
 //!   to `AgentEvent::Status` so it reads as "Reconnecting — attempt N"
 //!   instead of an "Unrecognized event" card.
+//! - **Plan artifacts**: `--mode plan` emits a `createPlanToolCall` whose
+//!   `args` contain `name`, `overview`, `plan`, and `todos`, followed by a
+//!   headless `createPlanRequestQuery` interaction. The interaction has no
+//!   actionable UI in print mode, but the tool call is the authoritative
+//!   artifact and is normalized as `CreatePlan` so the frontend promotes
+//!   it into the persistent Plan card.
+//! - **Questions to the user**: `askQuestionToolCall` carries a real
+//!   multiple-choice form (`title`, `questions[].prompt/options/
+//!   allowMultiple`), but print mode has nobody to show it to, so the CLI
+//!   answers its own call with a hardcoded rejection ("Questions skipped
+//!   by the user, …") and continues on assumptions. That is not a
+//!   permission refusal and is deliberately not reported as one — see
+//!   `result_content`. The form is promoted into a card the user answers
+//!   as their next message.
+//! - **Every `interaction_query` flushes pending assistant text** as a
+//!   consolidated re-send that is shaped exactly like a fragment, which
+//!   is what `is_consolidated_assistant` has to see through.
 //!
 //! Fixture lines captured during the spike live under
 //! `src-tauri/tests/fixtures/cursor/`.
@@ -64,6 +81,19 @@ use tokio::process::Command;
 /// as (accumulated_text, Value::Null) since thinking has no id of its
 /// own to key by.
 const THINKING_ACCUMULATOR_KEY: &str = "__thinking__";
+
+/// Sibling of `THINKING_ACCUMULATOR_KEY` holding the assistant text
+/// streamed since the CLI last consolidated a segment. Mirrors the
+/// buffer the CLI itself flushes, which is what makes
+/// `is_consolidated_assistant` able to recognise a re-send by content
+/// rather than by guessing from which keys the line happens to carry.
+const ASSISTANT_ACCUMULATOR_KEY: &str = "__assistant__";
+
+/// The CLI's `askQuestionToolCall`, normalized. Its own headless layer
+/// answers this tool for us (see `result_content`), so the name exists to
+/// let the frontend promote the call into a card the user can actually
+/// answer.
+const ASK_QUESTION: &str = "AskQuestion";
 
 pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     let mut cmd = Command::new(resolve_executable(ctx.binary_path));
@@ -134,6 +164,9 @@ fn tool_kind(tool_call: &Value) -> Option<(&'static str, &Value)> {
         "readToolCall" => "Read",
         "grepToolCall" | "searchToolCall" => "Grep",
         "globToolCall" => "Glob",
+        "createPlanToolCall" => "CreatePlan",
+        "askQuestionToolCall" => ASK_QUESTION,
+        "switchModeToolCall" => "SwitchMode",
         _ => "Tool",
     };
     Some((name, val))
@@ -173,6 +206,27 @@ fn result_content(name: &str, result: &Value) -> ToolOutcome {
             .get("rejected")
             .or_else(|| result.get("permissionDenied"))
         {
+            // Except for the question tool, whose `rejected` is not a
+            // refusal at all: print mode has no one to show a form to, so
+            // the CLI answers its own call with a hardcoded
+            // `askQuestionRejectReason` ("Questions skipped by the
+            // user, …") and carries on. Rendering that as an Approve/Deny
+            // card is what made the questions read as blocked — and in
+            // Manual mode it also stopped the turn at a gate nothing was
+            // waiting on. The questions themselves are in the call's
+            // `args`, which the frontend promotes into a card the user
+            // can answer as their next message.
+            if name == ASK_QUESTION {
+                return ToolOutcome::Ran {
+                    content: "cursor-agent has no way to show a question form in print mode, so \
+                              it recorded the questions as skipped and kept going. Answer them \
+                              above to send your choices as the next message."
+                        .to_string(),
+                    is_error: false,
+                    diff_added: None,
+                    diff_removed: None,
+                };
+            }
             let reason = refusal
                 .get("reason")
                 .and_then(|s| s.as_str())
@@ -260,17 +314,35 @@ fn result_content(name: &str, result: &Value) -> ToolOutcome {
 /// …codebase.I'll pull AD-743 …codebase."). Captured live on
 /// 2026.08.11-e8db854, see `tests/fixtures/cursor/04_partial_output.jsonl`.
 ///
-/// The two are structurally distinct: a fragment always carries
-/// `timestamp_ms` and never `model_call_id`, while the consolidated copy
-/// either carries `model_call_id` (a segment that ends because a tool call
-/// follows) or drops `timestamp_ms` (the last segment of the turn). Both
-/// shapes appear in the fixture, which is why neither key alone is enough.
+/// The reliable signal is the *text*: the CLI keeps one buffer of
+/// everything it has streamed since its last flush and re-sends exactly
+/// that buffer, so a line whose text equals what we have accumulated
+/// (`pending`) is the re-send, whatever keys it carries.
+///
+/// Keys alone are not enough, and the first version of this function
+/// getting that wrong is the reported bug's second life. Reading the
+/// CLI's own emitter (`1931.index.js`, 2026.09.02-c22c1a3) there are four
+/// flush sites, and only two of them are identifiable by shape:
+/// `toolCallStarted` adds `model_call_id`, end-of-turn drops
+/// `timestamp_ms` — but a `retry` and, far more commonly, *every*
+/// `interaction_query` (`askQuestionToolCall`, `switchModeToolCall`,
+/// web search, `createPlanToolCall`) flushes with `timestamp_ms` and no
+/// `model_call_id`, i.e. byte-identical in shape to a fragment. So an
+/// answer that narrated its plan and then switched to planning mode had
+/// that whole paragraph appended a second time. Captured live in
+/// `tests/fixtures/cursor/06_ask_question.jsonl`.
+///
+/// The key check stays as a fallback for the case the content check
+/// can't cover — a fragment lost upstream leaves `pending` short of the
+/// re-send, and consolidating anyway is what repairs the gap.
 ///
 /// Emitting these as a whole `Message` rather than a delta also lets the
 /// transcript treat the block as authoritative and repair a dropped
 /// fragment — the same contract `claude.rs` relies on.
-fn is_consolidated_assistant(value: &Value) -> bool {
-    value.get("model_call_id").is_some() || value.get("timestamp_ms").is_none()
+fn is_consolidated_assistant(value: &Value, pending: &str, text: &str) -> bool {
+    (!pending.is_empty() && pending == text)
+        || value.get("model_call_id").is_some()
+        || value.get("timestamp_ms").is_none()
 }
 
 pub fn parse_line(
@@ -324,6 +396,10 @@ pub fn parse_line(
         // moves on regardless of what Maestro does here. Surfacing that as
         // an "Unrecognized event" card reads as a crash; dropping it is
         // honest, since Maestro genuinely has no action to offer for it.
+        // The same applies to CreatePlan's pair, which is a duplicate
+        // handshake for the preceding `createPlanToolCall` whose complete
+        // artifact is already normalized above — rendering it too would
+        // duplicate the Plan card.
         "interaction_query" => (Vec::new(), None),
         "thinking" => match subtype {
             "delta" => {
@@ -348,40 +424,57 @@ pub fn parse_line(
             _ => (Vec::new(), None),
         },
         "assistant" => {
-            let as_deltas = stream_deltas && !is_consolidated_assistant(&value);
-            let blocks = value
+            // Joined rather than emitted per block: the re-send arrives as
+            // one text block holding the whole segment, so comparing it
+            // against what was streamed only lines up if a multi-block
+            // line is read the same way.
+            let text: String = value
                 .get("message")
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let events = blocks
-                .iter()
-                .filter_map(|b| {
-                    if b.get("type").and_then(|t| t.as_str()) != Some("text") {
-                        return None;
-                    }
-                    let text = b.get("text").and_then(|t| t.as_str())?;
-                    if text.is_empty() {
-                        return None;
-                    }
-                    // Under `--stream-partial-output` most of these lines
-                    // are fragments rather than finished blocks — but not
-                    // the consolidated re-send that closes each segment,
-                    // see `is_consolidated_assistant`.
-                    Some(if as_deltas {
-                        AgentEvent::MessageDelta {
-                            text: text.to_string(),
-                        }
-                    } else {
-                        AgentEvent::Message {
-                            role: "assistant".to_string(),
-                            text: text.to_string(),
-                        }
-                    })
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                        .collect()
                 })
-                .collect();
-            (events, None)
+                .unwrap_or_default();
+            if text.is_empty() {
+                return (Vec::new(), None);
+            }
+            if !stream_deltas {
+                return (
+                    vec![AgentEvent::Message {
+                        role: "assistant".to_string(),
+                        text,
+                    }],
+                    None,
+                );
+            }
+            // Under `--stream-partial-output` most of these lines are
+            // fragments rather than finished blocks — but not the
+            // consolidated re-send that closes each segment, see
+            // `is_consolidated_assistant`.
+            let pending = cache
+                .entry(ASSISTANT_ACCUMULATOR_KEY.to_string())
+                .or_insert_with(|| (String::new(), Value::Null));
+            if is_consolidated_assistant(&value, &pending.0, &text) {
+                // Cleared, not just read: the CLI resets its own buffer on
+                // every flush, and the next segment's fragments have to be
+                // compared against that segment alone.
+                pending.0.clear();
+                (
+                    vec![AgentEvent::Message {
+                        role: "assistant".to_string(),
+                        text,
+                    }],
+                    None,
+                )
+            } else {
+                pending.0.push_str(&text);
+                (vec![AgentEvent::MessageDelta { text }], None)
+            }
         }
         "tool_call" => {
             let Some(tool_call) = value.get("tool_call") else {
@@ -655,14 +748,13 @@ mod tests {
     /// `--stream-partial-output` capture, the text the transcript ends up
     /// with must be each segment exactly once — not the fragments plus the
     /// CLI's consolidated re-send of the same words.
-    #[test]
-    fn consolidated_assistant_blocks_do_not_double_the_reply() {
-        let events = parse_all_with(&fixture("04_partial_output.jsonl"), true);
-        // Mirrors `agentSessionStore`'s rule: deltas append to the open
-        // block, a whole `Message` replaces it.
+    /// The text a transcript ends up showing, replaying the store's rule:
+    /// deltas append to the open block, a whole `Message` replaces it (see
+    /// `agentSessionStore`'s `message`/`messageDelta` cases).
+    fn rendered_segments(events: &[AgentEvent]) -> Vec<String> {
         let mut segments: Vec<String> = Vec::new();
         let mut open = false;
-        for event in &events {
+        for event in events {
             match event {
                 AgentEvent::MessageDelta { text } => {
                     if open {
@@ -684,13 +776,80 @@ mod tests {
                 _ => {}
             }
         }
+        segments
+    }
+
+    #[test]
+    fn consolidated_assistant_blocks_do_not_double_the_reply() {
+        let events = parse_all_with(&fixture("04_partial_output.jsonl"), true);
         assert_eq!(
-            segments,
+            rendered_segments(&events),
             vec![
                 "Checking now.".to_string(),
                 "`sample.txt` contained:\n\n```\nhello\n```".to_string(),
             ]
         );
+    }
+
+    /// The same duplication, from the flush site key-sniffing can't see:
+    /// the consolidated re-send that precedes an `interaction_query`
+    /// carries `timestamp_ms` and no `model_call_id`, exactly like a
+    /// fragment, so only comparing it against the streamed text tells the
+    /// two apart (see `is_consolidated_assistant`). Captured live from a
+    /// turn that narrated its plan and then asked the user a question —
+    /// the shape of the reported "every paragraph twice" screenshot.
+    #[test]
+    fn an_interaction_query_flush_does_not_double_the_reply() {
+        let events = parse_all_with(&fixture("06_ask_question.jsonl"), true);
+        let segments = rendered_segments(&events);
+        assert_eq!(segments.len(), 2, "one segment either side of the question");
+        assert_eq!(
+            segments[0],
+            "I\u{2019}m going to clarify the payments feature\u{2019}s intended behavior and \
+             integration constraints before making any implementation decisions. I\u{2019}ll ask \
+             about the payment flow and the provider/environment requirements so the scope is \
+             precise."
+        );
+        assert!(segments[1].starts_with("I asked two clarifying questions"));
+    }
+
+    /// The question tool is not a permission gate. Print mode has nobody
+    /// to show the form to, so the CLI rejects its own call with a fixed
+    /// reason and keeps going — surfacing that as a denial made the
+    /// questions read as "blocked", and in Manual mode stopped the turn on
+    /// a prompt nothing was waiting on.
+    #[test]
+    fn a_skipped_question_is_not_a_permission_refusal() {
+        let events = parse_all_with(&fixture("06_ask_question.jsonl"), true);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::PermissionDenied { .. })),
+            "the CLI answered its own question tool; nothing is waiting on the user"
+        );
+        let call = events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::ToolCall { name, input, .. } if name == ASK_QUESTION => Some(input),
+                _ => None,
+            })
+            .expect("the questions must survive as a tool call the UI can render");
+        // What the card is built from: the prompts and their options.
+        let questions = call["questions"]
+            .as_array()
+            .expect("questions are a list on the call's args");
+        assert_eq!(questions.len(), 2);
+        assert!(questions[0]["prompt"]
+            .as_str()
+            .is_some_and(|p| !p.is_empty()));
+        assert!(questions[0]["options"]
+            .as_array()
+            .is_some_and(|options| options.len() > 1));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            AgentEvent::ToolResult { is_error: false, content, .. }
+                if content.contains("Answer them")
+        )));
     }
 
     /// The consolidated copy is what closes each segment, so it has to
@@ -763,6 +922,22 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [AgentEvent::ToolResult { content, is_error: true, .. }] if content == "spawn nope ENOENT"
+        ));
+    }
+
+    #[test]
+    fn a_create_plan_call_becomes_a_first_class_plan_artifact() {
+        let line = r##"{"type":"tool_call","subtype":"started","call_id":"plan-1","tool_call":{"createPlanToolCall":{"args":{"name":"Payment rollout","overview":"Ship safely.","plan":"# Payment rollout\n1. Add durable models.\n2. Verify webhooks.","todos":[{"id":"models","content":"Add durable models","status":"TODO_STATUS_PENDING"}]}},"toolCallId":"plan-1"}}"##;
+        let mut cache = HashMap::new();
+        let (events, _) = parse_line(line, &mut cache, true);
+
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::ToolCall { id, name, input }]
+                if id == "plan-1"
+                    && name == "CreatePlan"
+                    && input["name"] == "Payment rollout"
+                    && input["plan"].as_str().is_some_and(|plan| plan.contains("Verify webhooks"))
         ));
     }
 

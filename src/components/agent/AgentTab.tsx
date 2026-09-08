@@ -4,7 +4,9 @@ import {
   ArrowClockwise,
   ArrowDown,
   ArrowsClockwise,
+  Check,
   ClockCounterClockwise,
+  Copy,
   DotsThree,
   DownloadSimple,
   FolderSimple,
@@ -30,7 +32,7 @@ import type { Tab } from "../../state/tabsStore";
 import { AGENT_DISPLAY_NAME, isReady } from "../../types/agent";
 import type { AgentKind, PermissionMode, ResumableSession } from "../../types/agent";
 import { relativeTime } from "../../design/relativeTime";
-import { AlertDialog, Switch } from "../primitives";
+import { AlertDialog, Switch, Tooltip } from "../primitives";
 import { AgentComposer } from "./AgentComposer";
 import { AgentBrandIcon } from "./AgentBrandIcon";
 import { AgentMarkdown } from "./AgentMarkdown";
@@ -38,7 +40,8 @@ import { FileChangeReceipt } from "./FileChangeReceipt";
 import { ProcessingCard } from "./ProcessingCard";
 import { TurnFooter } from "./TurnFooter";
 import { PlanCard } from "./PlanCard";
-import { buildResponseBlocks, turnCompletion } from "./processingBlocks";
+import { QuestionsCard } from "./QuestionsCard";
+import { assistantResponseMarkdown, buildResponseBlocks, turnCompletion } from "./processingBlocks";
 import { contextUsage } from "./turnMetrics";
 import styles from "./AgentTab.module.css";
 
@@ -150,6 +153,33 @@ function folderName(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+function ResponseCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => window.clearTimeout(timeoutRef.current ?? undefined), []);
+
+  async function copy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.clearTimeout(timeoutRef.current ?? undefined);
+    timeoutRef.current = window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <Tooltip label={copied ? "Copied!" : "Copy response"} side="left">
+      <button
+        type="button"
+        className={styles.responseCopyButton}
+        onClick={() => void copy()}
+        aria-label={copied ? "Response copied" : "Copy response"}
+      >
+        {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
+      </button>
+    </Tooltip>
+  );
+}
+
 /** One transcript row. `memo`'d so a streamed event only re-renders the
  * group it actually touched — paired with `useStableGroups` above, which
  * is what makes the memo bite. */
@@ -166,6 +196,7 @@ const TranscriptGroup = memo(function TranscriptGroup({
   onEdit,
   planExitTool,
   onApprovePlan,
+  onAnswerQuestions,
 }: {
   group: Group;
   kind: AgentKind;
@@ -182,6 +213,8 @@ const TranscriptGroup = memo(function TranscriptGroup({
   /** `capabilities.planExitTool`, or null where the provider has none. */
   planExitTool?: string | null;
   onApprovePlan?: () => void;
+  /** Sends the answers to a skipped question form as the next message. */
+  onAnswerQuestions?: (text: string) => void;
 }) {
   if (group.role === "user") {
     return (
@@ -211,12 +244,14 @@ const TranscriptGroup = memo(function TranscriptGroup({
   }
   const blocks = buildResponseBlocks(group.items, active, planExitTool);
   const completion = turnCompletion(group.items);
+  const responseMarkdown = assistantResponseMarkdown(group.items);
   return (
     <div className={`${styles.row} ${styles.assistantRow}`} data-newest={isNewest || undefined}>
       <div className={`${styles.avatar} mo-gradient-mark`}>
         <AgentBrandIcon kind={kind} size={13} color="#0a0c11" />
       </div>
       <div className={styles.assistantMessage}>
+        {!active && responseMarkdown && <ResponseCopyButton text={responseMarkdown} />}
         <div className={styles.roleLabel}>{AGENT_DISPLAY_NAME[kind]}</div>
         <div className={styles.assistantGroup}>
           {blocks.map((block) => {
@@ -226,6 +261,7 @@ const TranscriptGroup = memo(function TranscriptGroup({
                   key={block.item.id}
                   text={block.item.text}
                   streaming={block.item.streaming}
+                  showCopyButton={false}
                 />
               );
             }
@@ -243,6 +279,16 @@ const TranscriptGroup = memo(function TranscriptGroup({
                   item={block.item}
                   canApprove={!!onApprovePlan && !active}
                   onApprove={() => onApprovePlan?.()}
+                />
+              );
+            }
+            if (block.kind === "questions") {
+              return (
+                <QuestionsCard
+                  key={block.item.id}
+                  item={block.item}
+                  canSubmit={!!onAnswerQuestions}
+                  onSubmit={(text) => onAnswerQuestions?.(text)}
                 />
               );
             }
@@ -632,6 +678,7 @@ function Transcript({
   onEdit,
   planExitTool,
   onApprovePlan,
+  onAnswerQuestions,
 }: {
   groups: Group[];
   kind: AgentKind;
@@ -645,6 +692,7 @@ function Transcript({
   onEdit?: (itemId: string) => void;
   planExitTool?: string | null;
   onApprovePlan?: () => void;
+  onAnswerQuestions?: (text: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   /** Whether the user is following the bottom of the conversation. Held in
@@ -826,6 +874,7 @@ function Transcript({
                     onEdit={onEdit}
                     planExitTool={planExitTool}
                     onApprovePlan={onApprovePlan}
+                    onAnswerQuestions={onAnswerQuestions}
                   />
                 </div>
               );
@@ -899,11 +948,17 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
   const hydrateRun = useAgentSessionStore((s) => s.hydrateRun);
   const beginEditing = useAgentSessionStore((s) => s.beginEditing);
   const truncateFrom = useAgentSessionStore((s) => s.truncateFrom);
+  const queueMessage = useAgentSessionStore((s) => s.queueMessage);
   const capabilities = useAgentCapabilities(kind);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const permissionMode: PermissionMode = tabState?.permissionMode ?? "auto";
   const working = tabState?.status === "working";
+  const settling = tabState?.status === "settling";
+  // A completed CLI is still winding down and cannot accept another turn
+  // until its process exits. Keep controls locked without showing another
+  // Processing card after the result has already arrived.
+  const busy = working || settling;
   // The turn is over and the process is gone — the run is just holding for
   // an Approve/Deny. The composer stays usable so the user can redirect the
   // agent instead of being forced to answer the card.
@@ -934,6 +989,10 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
     effort: string | null,
     fast: boolean,
   ) {
+    // Reflect the submitted prompt immediately. Baseline collection can
+    // take a noticeable beat on a large worktree and must not leave a
+    // dequeued follow-up looking idle while it runs.
+    appendUserMessage(runId, text);
     if (tab.worktreeRoot) {
       try {
         const [gitStatus, commits] = await Promise.all([
@@ -949,7 +1008,6 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         setTurnBaseline(runId, null, []);
       }
     }
-    appendUserMessage(runId, text);
     try {
       if (!tabState?.started) {
         markStarted(runId);
@@ -1070,6 +1128,15 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
     await handleSend("Approved — please implement the plan above.", null, null, false);
   }
 
+  /** Sends the answers to a question form the CLI skipped (see
+   * `QuestionsCard`). Queued rather than sent while a turn is in flight,
+   * for the same reason the composer queues: each turn is its own
+   * process, so there is nothing to hand a mid-turn message to. */
+  function handleAnswerQuestions(text: string) {
+    if (busy) queueMessage(runId, text);
+    else void handleSend(text, null, null, false);
+  }
+
   // Esc stops the agent, matching every one of these CLIs' own
   // interactive mode. Scoped to the active tab so a background run isn't
   // cancelled by an Esc meant for something else, and `capture: false`
@@ -1157,9 +1224,17 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
           data-status={errored ? "error" : awaitingPermission ? "awaiting" : undefined}
         >
           {!errored && !awaitingPermission && (
-            <span className={styles.statusDot} data-active={working} />
+            <span className={styles.statusDot} data-active={busy} />
           )}
-          {errored ? "error" : awaitingPermission ? "needs approval" : working ? "working" : "idle"}
+          {errored
+            ? "error"
+            : awaitingPermission
+              ? "needs approval"
+              : working
+                ? "working"
+                : settling
+                  ? "finishing"
+                  : "idle"}
         </div>
         <div className={styles.headerActions}>
           {working && (
@@ -1194,7 +1269,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
               worktreeId={tab.worktreeId}
               worktreeRoot={tab.worktreeRoot}
               onResumed={() => setSettingsOpen(false)}
-              disabled={working}
+              disabled={busy}
             />
           )}
         </div>
@@ -1236,16 +1311,17 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
         worktreeRoot={tab.worktreeRoot}
         turnStartedAtMs={tabState?.turnStartedAtMs ?? null}
         totalCostUsd={tabState?.lastResult?.totalCostUsd ?? null}
-        onEdit={working ? undefined : (itemId) => beginEditing(runId, itemId)}
+        onEdit={busy ? undefined : (itemId) => beginEditing(runId, itemId)}
         planExitTool={capabilities.planExitTool}
         onApprovePlan={handleApprovePlan}
+        onAnswerQuestions={handleAnswerQuestions}
       />
 
       <AgentComposer
         runId={runId}
         kind={kind}
         worktreeRoot={tab.worktreeRoot ?? ""}
-        disabled={working}
+        disabled={busy}
         locked={!!tabState?.started}
         permissionMode={permissionMode}
         onPermissionModeChange={changePermissionMode}

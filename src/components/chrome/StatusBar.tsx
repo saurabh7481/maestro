@@ -37,6 +37,7 @@ function ActiveTabStatus() {
   if (!activeTab || activeTab.type !== "agent" || !activeTab.agentKind) return null;
 
   const status = runState?.status ?? "idle";
+  const busy = status === "working" || status === "settling";
   const label = AGENT_DISPLAY_NAME[activeTab.agentKind];
 
   if (status === "error") {
@@ -49,12 +50,9 @@ function ActiveTabStatus() {
   }
 
   return (
-    <span
-      className={styles.item}
-      style={{ color: status === "working" ? "var(--green)" : "var(--text-dim)" }}
-    >
-      <Sparkle size={12} className={status === "working" ? "mo-spin" : undefined} />
-      {label} · {status}
+    <span className={styles.item} style={{ color: busy ? "var(--green)" : "var(--text-dim)" }}>
+      <Sparkle size={12} className={busy ? "mo-spin" : undefined} />
+      {label} · {status === "settling" ? "finishing" : status}
     </span>
   );
 }

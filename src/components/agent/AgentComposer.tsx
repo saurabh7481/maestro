@@ -102,52 +102,6 @@ function useSlashCommands(kind: AgentKind, worktreeRoot: string): SlashCommandOp
 
 const MENU_MAX_RESULTS = 8;
 
-/** A complete `@path` token — `@` plus path-ish characters, only where
- * followed by whitespace or the end of the string. That trailing boundary
- * is what separates a *finished* mention (pill-worthy) from the one the
- * user is still typing/autocompleting, without needing a second parallel
- * "is this a real file" check — every mention this composer ever inserts
- * (typed, dropped, attached, pasted) already goes in as `@path ` with a
- * trailing space, so this matches all of them the same way. */
-const MENTION_TOKEN_RE = /@[\w./-]+(?=\s|$)/g;
-
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
-
-/** Renders `text` as plain strings interleaved with pill `<span>`s around
- * each complete `@mention` token — the highlight layer under the (text-
- * transparent) textarea in `TextareaStack`. `exclude` is the current
- * in-progress mention match (if the `@`-menu is open), rendered as plain
- * text instead of a pill since it isn't a finished token yet. */
-function renderHighlightedDraft(
-  text: string,
-  exclude: { start: number; end: number } | null,
-): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  let key = 0;
-  MENTION_TOKEN_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = MENTION_TOKEN_RE.exec(text))) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (exclude && start < exclude.end && end > exclude.start) continue;
-    if (start > cursor) nodes.push(text.slice(cursor, start));
-    const path = match[0].slice(1);
-    nodes.push(
-      <span
-        key={key++}
-        className={styles.pill}
-        data-kind={IMAGE_EXT_RE.test(path) ? "image" : "file"}
-      >
-        {match[0]}
-      </span>,
-    );
-    cursor = end;
-  }
-  if (cursor < text.length) nodes.push(text.slice(cursor));
-  return nodes;
-}
-
 /** The full worktree file list (same `git ls-files`-backed source
  * quick-open uses — `CommandPalette.tsx`'s `useWorktreeFiles`), fetched
  * once the composer mounts. Previously @-mention flattened whatever
@@ -614,7 +568,6 @@ export function AgentComposer({
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
   // Cursor position is tracked via state (updated from event handlers),
   // not read from `textareaRef.current` during render — reading a ref's
   // value at render time is unsafe (react-hooks/refs).
@@ -625,10 +578,6 @@ export function AgentComposer({
   useLayoutEffect(() => {
     const element = textareaRef.current;
     if (element) resizeComposerTextarea(element);
-    // The highlight overlay sits behind the (text-transparent) textarea and
-    // needs to stay pixel-aligned with it, including scroll position — a
-    // resize can change how much of a long draft is scrolled out of view.
-    if (overlayRef.current && element) overlayRef.current.scrollTop = element.scrollTop;
   }, [draft]);
 
   // A run only ever needs to pick up the last-used model once, right after
@@ -742,12 +691,6 @@ export function AgentComposer({
   const menuMatch =
     activeMenu === "slash" ? slashMatch : activeMenu === "mention" ? mentionMatch : null;
   const menuLength = activeMenu === "slash" ? slashCandidates.length : mentionCandidates.length;
-  // The in-progress `@partial` the mention menu is currently matching
-  // against — excluded from pill rendering below since it isn't a
-  // finished token yet (see `renderHighlightedDraft`'s doc comment).
-  const mentionExclude =
-    activeMenu === "mention" && mentionMatch ? { start: mentionMatch.index, end: cursorPos } : null;
-
   const [menuIndexRaw, setMenuIndex] = useState(0);
   // Clamped rather than reset-on-change: the candidate list can shrink
   // out from under a stale index as the user keeps typing (each
@@ -1168,34 +1111,26 @@ export function AgentComposer({
               Couldn't attach that: {attachError}
             </div>
           )}
-          <div className={styles.textareaStack}>
-            <div ref={overlayRef} className={styles.highlightOverlay} aria-hidden="true">
-              {renderHighlightedDraft(draft, mentionExclude)}
-            </div>
-            <textarea
-              ref={textareaRef}
-              className={styles.textarea}
-              rows={1}
-              placeholder={
-                disabled
-                  ? "Working… type to queue a follow-up"
-                  : "Reply, or ask a follow-up… (@ file, / command, paste to attach)"
-              }
-              value={draft}
-              onChange={(e) => {
-                setDraft(runId, e.target.value);
-                setMenuIndex(0);
-                syncCursor(e.target);
-              }}
-              onKeyDown={handleKeyDown}
-              onKeyUp={(e) => syncCursor(e.currentTarget)}
-              onClick={(e) => syncCursor(e.currentTarget)}
-              onPaste={(e) => void handlePaste(e)}
-              onScroll={(e) => {
-                if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
-              }}
-            />
-          </div>
+          <textarea
+            ref={textareaRef}
+            className={styles.textarea}
+            rows={1}
+            placeholder={
+              disabled
+                ? "Working… type to queue a follow-up"
+                : "Reply, or ask a follow-up… (@ file, / command, paste to attach)"
+            }
+            value={draft}
+            onChange={(e) => {
+              setDraft(runId, e.target.value);
+              setMenuIndex(0);
+              syncCursor(e.target);
+            }}
+            onKeyDown={handleKeyDown}
+            onKeyUp={(e) => syncCursor(e.currentTarget)}
+            onClick={(e) => syncCursor(e.currentTarget)}
+            onPaste={(e) => void handlePaste(e)}
+          />
           <div className={styles.toolbar}>
             <AttachFileButton
               worktreeFiles={worktreeFiles}
