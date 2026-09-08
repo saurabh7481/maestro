@@ -11,6 +11,7 @@ import {
   TerminalWindow,
   TextAa,
   Code,
+  BookOpenText,
   X,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
@@ -25,16 +26,25 @@ import { KeybindingsPane } from "./KeybindingsPane";
 import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
 import { TerminalPane } from "./TerminalPane";
 import { EditorPane } from "./EditorPane";
+import { DaybookPane } from "./DaybookPane";
 import styles from "./SettingsModal.module.css";
 
 type Section =
-  "appearance" | "editor" | "terminal" | "agents" | "language" | "worktrees" | "keybindings";
+  | "appearance"
+  | "editor"
+  | "terminal"
+  | "agents"
+  | "daybook"
+  | "language"
+  | "worktrees"
+  | "keybindings";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "editor", label: "Editor", icon: TextAa },
   { id: "terminal", label: "Terminal", icon: TerminalWindow },
   { id: "agents", label: "Agents & CLI", icon: Sparkle },
+  { id: "daybook", label: "Daybook", icon: BookOpenText },
   { id: "language", label: "Language Intelligence", icon: Code },
   { id: "worktrees", label: "Worktrees", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
@@ -164,6 +174,7 @@ export function SettingsModal() {
           {section === "terminal" && <TerminalPane />}
           {section === "worktrees" && <WorktreesPane scope={{ kind: "global" }} />}
           {section === "agents" && <AgentsPane />}
+          {section === "daybook" && <DaybookPane />}
           {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}
           {section === "keybindings" && <KeybindingsPane />}
         </div>

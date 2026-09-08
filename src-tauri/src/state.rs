@@ -77,6 +77,12 @@ pub struct HookRunEntry {
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    /// Slack OAuth callbacks received through `maestro://oauth/slack`.
+    /// The browser can launch a second app instance, so the single-instance
+    /// plugin forwards its URL here and the settings pane consumes it from
+    /// the existing process. URLs contain only a short-lived code and state,
+    /// and are removed as soon as the exchange begins.
+    pub pending_daybook_oauth_urls: Mutex<Vec<String>>,
     /// Maestro's own data directory. Agent-owned session state
     /// lives here — currently Aider's chat-history files, which
     /// stand in for the session ids that CLI doesn't have.

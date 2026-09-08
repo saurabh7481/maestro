@@ -138,6 +138,62 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             items          TEXT NOT NULL,
             updated_at     TEXT NOT NULL
         );
+
+        -- Daybook is configured as one app-global feature: it can read
+        -- every registered project and writes one personal daily record.
+        -- Secrets never live here — source JSON contains only enablement
+        -- and non-secret scope, while Jira/Slack auth is resolved by the
+        -- source adapter at run time (docs/DAYBOOK_FEATURE_PLAN.md §12).
+        CREATE TABLE IF NOT EXISTS daybook_config (
+            id               INTEGER PRIMARY KEY CHECK (id = 1),
+            schema_version   INTEGER NOT NULL,
+            enabled          INTEGER NOT NULL DEFAULT 0,
+            timezone         TEXT NOT NULL,
+            schedule_json    TEXT NOT NULL,
+            agent_json       TEXT NOT NULL,
+            sources_json     TEXT NOT NULL,
+            destination_json TEXT NOT NULL,
+            updated_at       TEXT NOT NULL
+        );
+
+        -- Deliberately metadata-only. Source bodies, prompts, credentials,
+        -- and model output are not a run-history feature and must never be
+        -- persisted here.
+        CREATE TABLE IF NOT EXISTS daybook_runs (
+            id                 TEXT PRIMARY KEY,
+            entry_date         TEXT NOT NULL,
+            window_start       TEXT NOT NULL,
+            window_end         TEXT NOT NULL,
+            trigger            TEXT NOT NULL,
+            status             TEXT NOT NULL,
+            started_at         TEXT NOT NULL,
+            finished_at        TEXT,
+            agent_json         TEXT NOT NULL,
+            source_status_json TEXT NOT NULL,
+            item_counts_json   TEXT NOT NULL,
+            output_path        TEXT,
+            error_summary      TEXT
+        );
+
+        -- OAuth tokens are deliberately absent. Each row points at a
+        -- per-workspace OS-keychain entry and stores only the metadata the
+        -- setup UI and collector need without unlocking a secret.
+        CREATE TABLE IF NOT EXISTS daybook_slack_connections (
+            workspace_id       TEXT PRIMARY KEY,
+            enterprise_id      TEXT,
+            user_id            TEXT NOT NULL,
+            workspace_name     TEXT NOT NULL,
+            display_name       TEXT NOT NULL,
+            granted_scopes_json TEXT NOT NULL,
+            credential_ref     TEXT NOT NULL UNIQUE,
+            status             TEXT NOT NULL,
+            connected_at       TEXT NOT NULL,
+            last_validated_at  TEXT
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS one_active_daybook_run
+        ON daybook_runs(entry_date)
+        WHERE status IN ('collecting', 'writing', 'saving');
         ",
     )?;
 

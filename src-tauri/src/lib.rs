@@ -1,5 +1,6 @@
 mod agents;
 mod commands;
+mod daybook;
 mod db;
 mod fs_ops;
 mod git;
@@ -16,6 +17,71 @@ use state::AppState;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::Manager;
+
+fn make_app_state(conn: rusqlite::Connection, app_data_dir: std::path::PathBuf) -> AppState {
+    AppState {
+        db: Mutex::new(conn),
+        pending_daybook_oauth_urls: Mutex::new(
+            std::env::args()
+                .filter(|arg| daybook::slack::is_slack_callback_url(arg))
+                .collect(),
+        ),
+        app_data_dir,
+        hook_runs: Mutex::new(HashMap::new()),
+        watchers: Mutex::new(HashMap::new()),
+        agent_status_cache: Mutex::new(HashMap::new()),
+        lsp_status_cache: Mutex::new(HashMap::new()),
+        lsp_servers: Mutex::new(HashMap::new()),
+        agent_runs: Mutex::new(HashMap::new()),
+        terminals: Mutex::new(HashMap::new()),
+        search_cancel_flags: Mutex::new(HashMap::new()),
+        opencode_sidecar: agents::opencode::OpencodeSidecar::new(),
+        opencode_guards: Mutex::new(HashMap::new()),
+        opencode_provider_cache: Mutex::new(None),
+        opencode_recent_disconnects: Mutex::new(HashMap::new()),
+    }
+}
+
+/// Entry point used by the OS user timer. It deliberately initializes no
+/// webview and reads secrets only through the same keychain-backed source
+/// adapters as a manual run.
+pub async fn run_daybook_headless() -> Result<String, String> {
+    let app_data_dir = dirs::data_dir()
+        .ok_or_else(|| "Could not locate the user data directory.".to_string())?
+        .join("dev.maestro.app");
+    let conn = db::open(&app_data_dir).map_err(|error| error.to_string())?;
+    let state = make_app_state(conn, app_data_dir);
+    let config = {
+        let conn = state.db.lock().map_err(|error| error.to_string())?;
+        let (config, configured) = commands::daybook::read_config(&conn)?;
+        if !configured || !config.enabled {
+            return Err("Daybook scheduling is not enabled.".to_string());
+        }
+        config
+    };
+    let date = match config.schedule.mode {
+        commands::daybook::DaybookScheduleMode::AfterDayEnds => chrono::Local::now()
+            .date_naive()
+            .pred_opt()
+            .ok_or_else(|| "Could not resolve the previous day.".to_string())?,
+        commands::daybook::DaybookScheduleMode::DaySoFar => chrono::Local::now().date_naive(),
+    };
+    let result = commands::daybook::run_daybook_now_inner(
+        &state,
+        commands::daybook::DaybookRunRequest {
+            date: Some(date.format("%Y-%m-%d").to_string()),
+            config,
+        },
+        "scheduled",
+    )
+    .await?;
+    // `main.rs` prints this and exits 0. A skipped run has no path and is
+    // still a success — exiting non-zero would mark the systemd unit
+    // failed for a day that simply had no activity.
+    Ok(result
+        .output_path
+        .unwrap_or_else(|| format!("Skipped {}: no activity to record.", result.date)))
+}
 
 /** Rust panics don't go through `log::error!` on their own — this makes
  * sure one lands in the same on-disk log file `tauri-plugin-log` writes
@@ -39,7 +105,15 @@ pub fn run() {
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut pending) = state.pending_daybook_oauth_urls.lock() {
+                    pending.extend(
+                        args.into_iter()
+                            .filter(|arg| daybook::slack::is_slack_callback_url(arg)),
+                    );
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
             }
@@ -59,30 +133,25 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // Linux has no installer-owned URI registration step for
+                // AppImages. Register the static `maestro` scheme against
+                // the stable AppImage path on startup so Slack's browser
+                // callback reaches this (or the single) running instance.
+                app.deep_link().register_all()?;
+            }
             let app_data_dir = app.path().app_data_dir()?;
             let conn = db::open(&app_data_dir)?;
-            app.manage(AppState {
-                db: Mutex::new(conn),
-                app_data_dir: app_data_dir.clone(),
-                hook_runs: Mutex::new(HashMap::new()),
-                watchers: Mutex::new(HashMap::new()),
-                agent_status_cache: Mutex::new(HashMap::new()),
-                lsp_status_cache: Mutex::new(HashMap::new()),
-                lsp_servers: Mutex::new(HashMap::new()),
-                agent_runs: Mutex::new(HashMap::new()),
-                terminals: Mutex::new(HashMap::new()),
-                search_cancel_flags: Mutex::new(HashMap::new()),
-                opencode_sidecar: agents::opencode::OpencodeSidecar::new(),
-                opencode_guards: Mutex::new(HashMap::new()),
-                opencode_provider_cache: Mutex::new(None),
-                opencode_recent_disconnects: Mutex::new(HashMap::new()),
-            });
+            app.manage(make_app_state(conn, app_data_dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -112,6 +181,18 @@ pub fn run() {
             commands::attachments::save_pasted_attachment,
             commands::attachments::copy_file_into_attachments,
             commands::attachments::pick_attachment_files,
+            commands::daybook::get_daybook_overview,
+            commands::daybook::list_daybook_runs,
+            commands::daybook::save_daybook_config,
+            commands::daybook::set_daybook_schedule_enabled,
+            commands::daybook::preview_daybook_inputs,
+            commands::daybook::run_daybook_now,
+            commands::daybook::pick_daybook_destination,
+            commands::daybook::begin_daybook_slack_oauth,
+            commands::daybook::poll_daybook_slack_oauth,
+            commands::daybook::disconnect_daybook_slack,
+            commands::daybook::import_daybook_jira_environment,
+            commands::daybook::forget_daybook_jira_credentials,
             commands::files::create_entry,
             commands::files::rename_entry,
             commands::files::delete_entry,

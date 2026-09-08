@@ -20,7 +20,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
@@ -30,12 +31,16 @@ serde_json = "1"
 rusqlite = { version = "0.33", features = ["bundled"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10.4"
+iana-time-zone = "0.1.65"
+dirs = "6"
 tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "fs", "sync"] }
 notify = "7"
 notify-debouncer-full = "0.4"
 nix = { version = "0.31.3", features = ["signal"] }
 portable-pty = "0.9.0"
 base64 = "0.23.1"
+sha2 = "0.10"
 regex = "1"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-log = "2.9.0"
@@ -46,11 +51,13 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system"] 
 # Aider's provider catalogs (OpenRouter's public model list, local Ollama/
 # LM Studio endpoints). No other CLI needs HTTP — they all enumerate models
 # through their own binary.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots", "http2"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "rustls", "webpki-roots", "http2"] }
 # Provider API keys go to the OS keychain, never to the `settings` table —
 # that's a plaintext SQLite k/v store. See `agents/aider/credentials.rs`
 # for the fallback when no keychain backend is available.
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+fs2 = "0.4.3"
+atomic-write-file = "0.3.1"
 
 [dev-dependencies]
 tempfile = "3"

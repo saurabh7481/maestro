@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod aider;
 pub mod attachments;
+pub mod daybook;
 pub mod files;
 pub mod git;
 pub mod hooks;

@@ -15,7 +15,20 @@ use tokio::process::Command;
 
 const ONE_SHOT_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
+#[derive(Debug, Default)]
+pub struct OneShotOptions<'a> {
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub fast: bool,
+    pub extra_env: &'a [(String, String)],
+}
+
+fn build_command(
+    kind: AgentKind,
+    binary_path: &str,
+    prompt: &str,
+    options: &OneShotOptions<'_>,
+) -> Command {
     let mut command = Command::new(resolve_executable(binary_path));
     command.hide_window();
     match kind {
@@ -24,9 +37,14 @@ fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
             // ever needs a text completion (the prompt already embeds
             // whatever context it needs, e.g. a staged diff), so there's
             // nothing to gate and no permission-protocol concern at all.
-            command
-                .args(["--print", "--output-format", "json", "--tools", ""])
-                .arg(prompt);
+            command.args(["--print", "--output-format", "json", "--tools", ""]);
+            if let Some(model) = options.model {
+                command.arg("--model").arg(model);
+            }
+            if let Some(effort) = options.effort {
+                command.arg("--effort").arg(effort);
+            }
+            command.arg(prompt);
         }
         AgentKind::CursorAgent => {
             // `--mode ask`: read-only Q&A, the closest fit — confirmed
@@ -34,23 +52,37 @@ fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
             // mode refuses to run at all without it (see
             // `cursor_agent.rs`'s module doc) — this call silently
             // produced zero output before this flag was added.
-            command
-                .args([
-                    "--print",
-                    "--output-format",
-                    "json",
-                    "--mode",
-                    "ask",
-                    "--trust",
-                ])
-                .arg(prompt);
+            command.args([
+                "--print",
+                "--output-format",
+                "json",
+                "--mode",
+                "ask",
+                "--trust",
+            ]);
+            if let Some(model) = options.model {
+                command.arg("--model").arg(model);
+            }
+            command.arg(prompt);
         }
         AgentKind::Codex => {
             // Unverified — Codex isn't installed anywhere this project
             // could test against (see `codex.rs`'s module doc). Best
             // effort only; `extract_result_text` below falls back to raw
             // stdout if the expected shape isn't there.
-            command.args(["exec", "--json", prompt]);
+            command.args(["exec", "--json", "--sandbox", "read-only"]);
+            if let Some(model) = options.model {
+                command.arg("--model").arg(model);
+            }
+            if let Some(effort) = options.effort {
+                command
+                    .arg("-c")
+                    .arg(format!("model_reasoning_effort=\"{effort}\""));
+            }
+            if options.fast {
+                command.arg("-c").arg("service_tier=\"priority\"");
+            }
+            command.arg(prompt);
         }
         AgentKind::Aider => {
             // `--chat-mode ask` is Aider's read-only mode, which is what
@@ -59,29 +91,41 @@ fn build_command(kind: AgentKind, binary_path: &str, prompt: &str) -> Command {
             // importantly `--no-git`, without which Aider will initialise
             // a repo and edit `.gitignore` in whatever directory it runs
             // in (confirmed against 0.86.2).
-            command
-                .args([
-                    "--no-git",
-                    "--no-pretty",
-                    "--no-stream",
-                    "--no-check-update",
-                    "--no-analytics",
-                    "--no-show-model-warnings",
-                    "--yes-always",
-                    "--chat-mode",
-                    "ask",
-                    "--message",
-                ])
-                .arg(prompt);
+            command.args([
+                "--no-git",
+                "--no-pretty",
+                "--no-stream",
+                "--no-check-update",
+                "--no-analytics",
+                "--no-show-model-warnings",
+                "--yes-always",
+                "--chat-mode",
+                "ask",
+            ]);
+            if let Some(model) = options.model {
+                command.arg("--model").arg(model);
+            }
+            if let Some(effort) = options.effort {
+                command.arg("--reasoning-effort").arg(effort);
+            }
+            command.arg("--message").arg(prompt);
         }
         AgentKind::OpenCode => {
             // Deliberately unattached: one-shot generation is occasional,
             // so a self-booting `run` (its own throwaway internal server)
             // beats keeping Maestro's sidecar alive for it. `--format
             // json` makes the answer extractable as the last text event.
-            command.args(["run", "--format", "json"]).arg(prompt);
+            command.args(["run", "--format", "json"]);
+            if let Some(model) = options.model {
+                command.arg("-m").arg(model);
+            }
+            if let Some(effort) = options.effort {
+                command.arg("--variant").arg(effort);
+            }
+            command.arg(prompt);
         }
     }
+    command.envs(options.extra_env.iter().cloned());
     command.stdin(Stdio::null());
     command
 }
@@ -181,7 +225,17 @@ pub async fn run_one_shot(
     prompt: &str,
     cwd: &str,
 ) -> Result<String, String> {
-    let mut command = build_command(kind, binary_path, prompt);
+    run_one_shot_with_options(kind, binary_path, prompt, cwd, &OneShotOptions::default()).await
+}
+
+pub async fn run_one_shot_with_options(
+    kind: AgentKind,
+    binary_path: &str,
+    prompt: &str,
+    cwd: &str,
+    options: &OneShotOptions<'_>,
+) -> Result<String, String> {
+    let mut command = build_command(kind, binary_path, prompt, options);
     command.current_dir(cwd);
 
     let output = tokio::time::timeout(ONE_SHOT_TIMEOUT, command.output())
