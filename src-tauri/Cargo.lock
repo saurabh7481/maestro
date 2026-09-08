@@ -2536,7 +2536,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "atomic-write-file",
  "base64 0.23.1",
