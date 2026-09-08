@@ -5,6 +5,12 @@ import { interceptMarkdownLinkClicks, prefetchMarkdownRenderer } from "./design/
 import "./styles/fonts.css";
 import "./styles/global.css";
 
+// Excalidraw otherwise fetches its canvas fonts from a public CDN. Maestro
+// is a local desktop app with a self-only CSP and must keep notes usable
+// offline, so the package's font assets are bundled under `public/`.
+(window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =
+  "/excalidraw-assets/";
+
 // The OS webview's native right-click menu (Back/Forward/Reload/Inspect
 // Element in WebKitGTK) has no place in a desktop app UI — every
 // intentional right-click affordance already renders its own menu via

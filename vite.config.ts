@@ -12,7 +12,10 @@ export default defineConfig(async () => ({
   // export condition. Keep the same implementation in production and
   // Vitest/jsdom so transport tests don't accidentally exercise Node streams.
   resolve: {
-    conditions: ["browser"],
+    // Vite's mode-substituted condition is kept as well: Excalidraw
+    // exposes its stylesheet through `development`/`production`, while
+    // vscode-jsonrpc still needs `browser` preferred over Node streams.
+    conditions: ["browser", "development|production"],
     alias: {
       // `monaco-vim` imports deep `monaco-editor` paths as
       // `monaco-editor/esm/vs/...` (e.g. `.../editor/editor.api`). This

@@ -15,7 +15,16 @@ import {
 } from "./paneLayout";
 
 export type TabType =
-  "agent" | "file" | "markdown" | "html" | "diff" | "review" | "merge" | "terminal" | "processes";
+  | "agent"
+  | "file"
+  | "markdown"
+  | "html"
+  | "diff"
+  | "review"
+  | "merge"
+  | "terminal"
+  | "processes"
+  | "notes";
 
 /** Which of `TabType`'s two previewable-file variants a path's extension
  * calls for, or plain `"file"` — every place that opens a tab from a file
@@ -66,6 +75,10 @@ export interface Tab {
   worktreeId?: string;
   resumeSessionId?: string;
   forkSession?: boolean;
+  /** Notes tabs only. The document itself lives under
+   * `<worktree>/.maestro/notes`; this just restores which document the tab
+   * was showing. Closing the tab never deletes the note file. */
+  noteId?: string;
 }
 
 /** One editor pane: a tab strip and the content area under it. Tab
@@ -309,6 +322,7 @@ interface TabsState extends Snapshot {
   closedTabHistory: Tab[];
 
   setActiveTab: (id: string) => void;
+  updateTab: (id: string, patch: Partial<Pick<Tab, "title" | "noteId">>) => void;
   closeTab: (id: string) => void;
   /** Pops the most recently closed editor-like tab and reopens it. No-op
    * if there isn't one. */
@@ -355,7 +369,7 @@ interface TabsState extends Snapshot {
   hydrate: (snapshot: Partial<Snapshot>) => void;
 }
 
-const REOPENABLE_TAB_TYPES: TabType[] = ["file", "markdown", "html", "diff", "review"];
+const REOPENABLE_TAB_TYPES: TabType[] = ["file", "markdown", "html", "diff", "review", "notes"];
 const MAX_CLOSED_TAB_HISTORY = 20;
 
 export const useTabsStore = create<TabsState>((set, get) => ({
@@ -373,6 +387,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       if (!pane) return { activeTabId: id };
       return focusTab(s, pane.id, id);
     }),
+
+  updateTab: (id, patch) =>
+    set((s) => ({
+      tabs: s.tabs.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)),
+    })),
 
   closeTab: (id) =>
     set((s) => {

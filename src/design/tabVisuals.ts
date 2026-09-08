@@ -3,6 +3,7 @@ import {
   FileText,
   FileTs,
   GitDiff,
+  NotePencil,
   Pulse,
   Sparkle,
   TerminalWindow,
@@ -20,4 +21,5 @@ export const TAB_VISUALS: Record<TabType, { icon: Icon; color: string }> = {
   merge: { icon: GitDiff, color: "var(--red)" },
   terminal: { icon: TerminalWindow, color: "var(--green)" },
   processes: { icon: Pulse, color: "var(--purple)" },
+  notes: { icon: NotePencil, color: "var(--purple)" },
 };

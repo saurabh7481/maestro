@@ -1,6 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   FolderOpen,
+  NotePencil,
   Plus,
   Pulse,
   Sparkle,
@@ -125,6 +126,19 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
     else setOpen(false);
   }
 
+  function startNotesTab() {
+    if (!activeWorktree) return;
+    const tab: Tab = {
+      id: crypto.randomUUID(),
+      type: "notes",
+      title: "Notes",
+      worktreeId: activeWorktree.id,
+      worktreeRoot: activeWorktree.path,
+    };
+    openTabInPane(tab, paneId);
+    setOpen(false);
+  }
+
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild>
@@ -214,6 +228,20 @@ export function NewTabMenu({ paneId }: { paneId: string }) {
           >
             <FolderOpen size={17} color="var(--green)" />
             <span style={{ fontSize: "var(--text-sm)" }}>New Terminal In Folder…</span>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={styles.terminalItem}
+            disabled={!activeWorktree}
+            onSelect={() => startNotesTab()}
+          >
+            <NotePencil size={17} color="var(--purple)" />
+            <span style={{ fontSize: "var(--text-sm)" }}>Notes canvas</span>
+            <span
+              style={{ marginLeft: "auto", fontSize: "var(--text-2xs)", color: "var(--text-mute)" }}
+            >
+              Worktree local
+            </span>
           </DropdownMenu.Item>
 
           <DropdownMenu.Item

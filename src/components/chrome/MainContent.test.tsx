@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { MainContent } from "./MainContent";
 import { useTabsStore, type Tab } from "../../state/tabsStore";
 import { useWorkspaceStore } from "../../state/workspaceStore";
 import type { Worktree } from "../../types/workspace";
+
+vi.mock("../editor/MonacoHost", () => ({
+  MonacoHost: ({ tabId }: { tabId: string | null }) => (
+    <div data-testid="monaco-host">{tabId ? `monaco-${tabId}` : "detached"}</div>
+  ),
+}));
 
 /** Renders the real editor area against the real stores — the pane tree,
  * the per-pane tab strips, and `TabHost`'s portals all have to agree
@@ -103,5 +109,25 @@ describe("MainContent", () => {
     });
     expect(screen.getByText("a")).toBeInTheDocument();
     expect(screen.queryByText("other")).not.toBeInTheDocument();
+  });
+
+  it("keeps the editor host mounted while a non-file tab is active", async () => {
+    render(<MainContent />);
+    act(() => useTabsStore.getState().openTab(tab("a")));
+    expect(await screen.findByTestId("monaco-host")).toHaveTextContent("monaco-a");
+
+    act(() => {
+      useTabsStore.getState().openTab({
+        id: "diff",
+        type: "diff",
+        title: "Diff",
+        worktreeRoot: "/repo",
+        worktreeId: "wt1",
+      });
+    });
+
+    // MonacoHost owns the view-state map. Detaching its model while
+    // preserving this component is what keeps each file's scroll position.
+    expect(screen.getByTestId("monaco-host")).toHaveTextContent("detached");
   });
 });

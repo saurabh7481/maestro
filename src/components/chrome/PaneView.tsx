@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Stack } from "@phosphor-icons/react";
 import { useTabsStore } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
@@ -35,6 +35,9 @@ const ReviewView = lazy(() =>
 );
 const MergeView = lazy(() =>
   import("../diff/MergeView").then((module) => ({ default: module.MergeView })),
+);
+const NotesPane = lazy(() =>
+  import("../notes/NotesPane").then((module) => ({ default: module.NotesPane })),
 );
 
 /** One editor pane: a tab strip, and under it whatever its active tab
@@ -73,6 +76,14 @@ export function PaneView({ paneId }: { paneId: string }) {
   // is working in an agent or terminal. Monaco's module and models stay
   // cached after their first use, so returning to an editor stays quick.
   const monacoNeeded = isEditorTab;
+  // Monaco owns the per-tab view-state map (scroll position, selection,
+  // folds). Once this pane has created an editor, keep it mounted while an
+  // agent/diff/terminal tab is active so returning to a file can restore
+  // that state. `monacoNeeded` is included in the render value so the first
+  // file activation does not pay an additional blank frame.
+  const [monacoStarted, setMonacoStarted] = useState(monacoNeeded);
+  if (monacoNeeded && !monacoStarted) setMonacoStarted(true);
+  const monacoMounted = monacoNeeded || monacoStarted;
 
   const loadState = useFileLoadStore((s) => (activeTab ? s.byTabId[activeTab.id] : undefined));
   const externalChangePending = useOpenFilesStore((s) =>
@@ -92,9 +103,9 @@ export function PaneView({ paneId }: { paneId: string }) {
         {activeTab?.type === "markdown" && <MarkdownPane tab={activeTab} />}
         {activeTab?.type === "html" && <HtmlPane tab={activeTab} />}
 
-        {monacoNeeded && (
+        {monacoMounted && (
           <Suspense fallback={null}>
-            <MonacoHost tabId={activeTabId} />
+            <MonacoHost tabId={monacoNeeded ? activeTabId : null} />
           </Suspense>
         )}
 
@@ -134,6 +145,12 @@ export function PaneView({ paneId }: { paneId: string }) {
           </Suspense>
         )}
 
+        {activeTab?.type === "notes" && activeTab.worktreeRoot && (
+          <Suspense fallback={<div className={styles.loading}>Opening notes…</div>}>
+            <NotesPane key={activeTab.id} tab={activeTab} />
+          </Suspense>
+        )}
+
         {activeTab?.type === "review" && (
           <Suspense fallback={<div className={styles.loading}>Loading review…</div>}>
             <ReviewView key={activeTab.id} tab={activeTab} />
@@ -158,7 +175,8 @@ export function PaneView({ paneId }: { paneId: string }) {
           activeTab.type !== "terminal" &&
           activeTab.type !== "review" &&
           activeTab.type !== "merge" &&
-          activeTab.type !== "processes" && (
+          activeTab.type !== "processes" &&
+          activeTab.type !== "notes" && (
             <div className={styles.placeholder}>
               <div className={styles.placeholderIcon}>
                 {(() => {
