@@ -39,6 +39,7 @@ fn make_app_state(conn: rusqlite::Connection, app_data_dir: std::path::PathBuf) 
         opencode_guards: Mutex::new(HashMap::new()),
         opencode_provider_cache: Mutex::new(None),
         opencode_recent_disconnects: Mutex::new(HashMap::new()),
+        mcp_server_port: std::sync::OnceLock::new(),
     }
 }
 
@@ -152,6 +153,23 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             let conn = db::open(&app_data_dir)?;
             app.manage(make_app_state(conn, app_data_dir));
+
+            // Started before the app finishes setup so the port is always
+            // set by the time any agent turn can spawn (`agents/manager.rs`
+            // reads `AppState::mcp_server_port` when building `TurnCtx`).
+            let mcp_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match agents::mcp_tools::spawn_mcp_server(mcp_app.clone()).await {
+                    Ok(port) => {
+                        let _ = mcp_app.state::<AppState>().mcp_server_port.set(port);
+                        log::info!("Local MCP tool server listening on 127.0.0.1:{port}");
+                        agents::mcp_registration::sync(&mcp_app, Some(port)).await;
+                    }
+                    Err(error) => {
+                        log::error!("Failed to start the local MCP tool server: {error}");
+                    }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -236,6 +254,8 @@ pub fn run() {
             commands::agents::set_agent_binary_path,
             commands::agents::generate_commit_message,
             commands::agents::list_agent_models,
+            commands::agents::get_mcp_tools_enabled,
+            commands::agents::set_mcp_tools_enabled,
             commands::aider::list_aider_providers,
             commands::aider::save_aider_provider,
             commands::aider::forget_aider_provider,

@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.7.0"
+version = "0.8.0"
 description = "Cross-platform GUI Agentic Development Environment wrapping Claude Code, Codex CLI, and Cursor Agent, organized around git projects and worktrees."
 authors = ["Maestro contributors"]
 edition = "2021"
@@ -34,7 +34,7 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"
 iana-time-zone = "0.1.65"
 dirs = "6"
-tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "fs", "sync"] }
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "fs", "sync", "net"] }
 notify = "7"
 notify-debouncer-full = "0.4"
 nix = { version = "0.31.3", features = ["signal"] }
@@ -58,6 +58,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "for
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 fs2 = "0.4.3"
 atomic-write-file = "0.3.1"
+rmcp = { version = "3.2.0", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8.9"
 
 [dev-dependencies]
 tempfile = "3"

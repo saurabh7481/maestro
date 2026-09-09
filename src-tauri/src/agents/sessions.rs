@@ -886,10 +886,13 @@ async fn list_for_worktree(
     }
 }
 
-#[tauri::command]
-pub async fn list_all_resumable_sessions(
+/// Core of `list_all_resumable_sessions`, taking a plain `&AppState` rather
+/// than the Tauri `State` extractor so non-command callers (Daybook,
+/// `commands/daybook.rs`) can call it too, instead of maintaining their own
+/// separate session index.
+pub async fn resumable_sessions_for_kind(
     kind: AgentKind,
-    state: State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Vec<ResumableSession>, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
     let home = Path::new(&home);
@@ -899,12 +902,39 @@ pub async fn list_all_resumable_sessions(
         AgentKind::Codex => list_all_codex_sessions(home).await,
         AgentKind::Aider => Vec::new(),
         AgentKind::OpenCode => {
-            list_opencode_sessions(None, &opencode_binary_path(&state).await).await
+            list_opencode_sessions(None, &opencode_binary_path(state).await).await
         }
     };
     sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
-    crate::agents::session_overrides::apply_overrides(&state, &mut sessions)?;
+    crate::agents::session_overrides::apply_overrides(state, &mut sessions)?;
     Ok(sessions)
+}
+
+#[tauri::command]
+pub async fn list_all_resumable_sessions(
+    kind: AgentKind,
+    state: State<'_, AppState>,
+) -> Result<Vec<ResumableSession>, String> {
+    resumable_sessions_for_kind(kind, &state).await
+}
+
+/// Every resumable session across every agent kind Maestro supports —
+/// what Daybook's "Maestro" source counts against (`commands/daybook.rs`).
+/// Aider always contributes nothing (no session concept of its own); a
+/// kind whose lookup errors (e.g. `HOME` unset) is skipped rather than
+/// failing the whole aggregate. Each session is paired with the kind that
+/// produced it — `ResumableSession` itself doesn't carry one, since every
+/// other caller already knows it from the per-kind request that got it.
+pub async fn all_resumable_sessions_across_agents(
+    state: &AppState,
+) -> Vec<(AgentKind, ResumableSession)> {
+    let mut all = Vec::new();
+    for kind in AgentKind::all() {
+        if let Ok(sessions) = resumable_sessions_for_kind(kind, state).await {
+            all.extend(sessions.into_iter().map(|session| (kind, session)));
+        }
+    }
+    all
 }
 
 #[tauri::command]

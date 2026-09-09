@@ -5,7 +5,7 @@ use crate::terminal::TerminalHandle;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::oneshot::Sender;
 
 /// What a running (or just-finished) agent turn needs cancelled — see
@@ -147,4 +147,12 @@ pub struct AppState {
     /// in the pane on every refresh. Entries age out; a fresh server
     /// (after app restart) makes them moot.
     pub opencode_recent_disconnects: Mutex<HashMap<String, std::time::Instant>>,
+    /// Loopback port of the in-process MCP tool server
+    /// (`agents/mcp_tools.rs`) that gives agent turns `list_terminals` /
+    /// `read_terminal_output` / `list_processes` / `send_terminal_input`
+    /// visibility into sibling terminal and agent tabs in their worktree.
+    /// Set once at startup (`lib.rs::run`) before any agent turn can spawn;
+    /// `None` until then, and `run_turn` (`agents/manager.rs`) treats an
+    /// unset port as "MCP wiring unavailable this run" rather than erroring.
+    pub mcp_server_port: OnceLock<u16>,
 }

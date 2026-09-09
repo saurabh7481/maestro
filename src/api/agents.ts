@@ -22,6 +22,14 @@ export const agentsApi = {
   setAgentBinaryPath: (kind: AgentKind, path: string | null) =>
     invoke<void>("set_agent_binary_path", { kind, path }),
 
+  /** Whether agent turns get the `list_terminals`/`read_terminal_output`/
+   * `list_processes`/`send_terminal_input` MCP tools (visibility into
+   * sibling terminal/agent tabs in the same worktree). Defaults to on;
+   * turning it off also removes Maestro's entry from Cursor's global
+   * `~/.cursor/mcp.json`. */
+  getMcpToolsEnabled: () => invoke<boolean>("get_mcp_tools_enabled"),
+  setMcpToolsEnabled: (enabled: boolean) => invoke<void>("set_mcp_tools_enabled", { enabled }),
+
   /** Aider's LLM providers. Unlike the other CLIs, Aider has no login of
    * its own — these are what make it usable at all. */
   listAiderProviders: () => invoke<AiderProviderStatus[]>("list_aider_providers"),

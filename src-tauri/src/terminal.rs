@@ -7,11 +7,17 @@
 
 use base64::Engine;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::state::AppState;
+
+/// Cap on `TerminalHandle::scrollback` — enough for an agent tool call to
+/// see several screens of dev-server log output without letting a terminal
+/// left running for days grow unbounded.
+const SCROLLBACK_CAP_BYTES: usize = 256 * 1024;
 
 pub struct TerminalHandle {
     writer: Box<dyn Write + Send>,
@@ -26,6 +32,33 @@ pub struct TerminalHandle {
     pub started_at_ms: u64,
     pub worktree_path: String,
     pub shell: String,
+    /// Rolling tail of this terminal's raw output, capped at
+    /// `SCROLLBACK_CAP_BYTES`, so an agent's `read_terminal_output` MCP tool
+    /// (`agents/mcp_tools.rs`) has something to read without Maestro itself
+    /// keeping a full unbounded transcript. Appended to from the same
+    /// per-terminal batching task that emits `pty://{id}/data`.
+    pub scrollback: VecDeque<u8>,
+}
+
+impl TerminalHandle {
+    /// Appends output to `scrollback`, trimming from the front once over
+    /// `SCROLLBACK_CAP_BYTES` — a ring buffer, not a growing log.
+    fn push_scrollback(&mut self, bytes: &[u8]) {
+        self.scrollback.extend(bytes.iter().copied());
+        let excess = self.scrollback.len().saturating_sub(SCROLLBACK_CAP_BYTES);
+        if excess > 0 {
+            self.scrollback.drain(..excess);
+        }
+    }
+
+    /// The last `max_bytes` of `scrollback`, lossily decoded — output is
+    /// arbitrary bytes and the tail cut point can land mid-UTF-8-sequence,
+    /// which `from_utf8_lossy` degrades gracefully rather than erroring on.
+    pub fn tail(&self, max_bytes: usize) -> String {
+        let start = self.scrollback.len().saturating_sub(max_bytes);
+        let bytes: Vec<u8> = self.scrollback.iter().skip(start).copied().collect();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
 }
 
 impl TerminalHandle {
@@ -267,6 +300,7 @@ pub async fn spawn_terminal(
                 started_at_ms: crate::processes::now_ms(),
                 worktree_path: worktree_path.clone(),
                 shell,
+                scrollback: VecDeque::new(),
             },
         );
     }
@@ -311,6 +345,7 @@ pub async fn spawn_terminal(
                         pending.extend_from_slice(&chunk);
                     }
                     if !pending.is_empty() {
+                        append_scrollback(&batch_app, &batch_terminal_id, &pending);
                         let encoded = base64::engine::general_purpose::STANDARD.encode(&pending);
                         let _ = batch_app.emit(&batch_channel, &PtyEvent::Data { base64: encoded });
                     }
@@ -349,6 +384,7 @@ pub async fn spawn_terminal(
                 pending.extend_from_slice(&chunk);
             }
             if !pending.is_empty() {
+                append_scrollback(&batch_app, &batch_terminal_id, &pending);
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&pending);
                 let _ = batch_app.emit(&batch_channel, &PtyEvent::Data { base64: encoded });
                 pending.clear();
@@ -359,20 +395,42 @@ pub async fn spawn_terminal(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn write_terminal(
-    state: State<'_, AppState>,
-    terminal_id: String,
-    data: String,
-) -> Result<(), String> {
+/// Shared by both flush sites in the batching loop above — locks
+/// `state.terminals` just long enough to append one chunk to a terminal's
+/// scrollback ring buffer. A missing entry (already reaped) is a silent
+/// no-op, same tolerance the rest of this loop already has for a terminal
+/// that's gone away mid-flush.
+fn append_scrollback(app: &AppHandle, terminal_id: &str, bytes: &[u8]) {
+    let state = app.state::<AppState>();
+    let Ok(mut terminals) = state.terminals.lock() else {
+        return;
+    };
+    if let Some(handle) = terminals.get_mut(terminal_id) {
+        handle.push_scrollback(bytes);
+    }
+}
+
+/// Core of `write_terminal`, factored out so the `send_terminal_input` MCP
+/// tool (`agents/mcp_tools.rs`) can write to the same PTY through the same
+/// path rather than duplicating the lock/lookup/write.
+pub fn write_to_terminal(state: &AppState, terminal_id: &str, data: &str) -> Result<(), String> {
     let mut terminals = state.terminals.lock().map_err(|e| e.to_string())?;
-    if let Some(handle) = terminals.get_mut(&terminal_id) {
+    if let Some(handle) = terminals.get_mut(terminal_id) {
         handle
             .writer
             .write_all(data.as_bytes())
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn write_terminal(
+    state: State<'_, AppState>,
+    terminal_id: String,
+    data: String,
+) -> Result<(), String> {
+    write_to_terminal(&state, &terminal_id, &data)
 }
 
 #[tauri::command]

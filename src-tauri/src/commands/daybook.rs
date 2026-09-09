@@ -578,15 +578,18 @@ fn detect_obsidian_vaults() -> Vec<ObsidianVault> {
         .collect()
 }
 
-fn detect_integrations(conn: &rusqlite::Connection) -> Result<DaybookIntegrations, String> {
+/// `indexed_session_count` is passed in rather than queried here because
+/// it now comes from the CLIs' own on-disk transcripts
+/// (`agents::sessions::all_resumable_sessions_across_agents`, an async
+/// call), not a SQL table this function's plain `&Connection` could reach
+/// — see that function's doc comment for why the old `agent_sessions`
+/// table this used to `COUNT(*)` was replaced (it was never populated).
+fn detect_integrations(
+    conn: &rusqlite::Connection,
+    indexed_session_count: usize,
+) -> Result<DaybookIntegrations, String> {
     let project_count = conn
         .query_row("SELECT COUNT(*) FROM projects", [], |row| {
-            row.get::<_, i64>(0)
-        })
-        .map_err(|error| error.to_string())?
-        .max(0) as usize;
-    let indexed_session_count = conn
-        .query_row("SELECT COUNT(*) FROM agent_sessions", [], |row| {
             row.get::<_, i64>(0)
         })
         .map_err(|error| error.to_string())?
@@ -849,10 +852,19 @@ pub async fn list_daybook_runs(
 
 #[tauri::command]
 pub async fn get_daybook_overview(state: State<'_, AppState>) -> Result<DaybookOverview, String> {
-    let conn = state.db.lock().map_err(|error| error.to_string())?;
-    reconcile_interrupted_runs(&conn)?;
-    let (config, configured) = read_config(&conn)?;
-    let integrations = detect_integrations(&conn)?;
+    let (config, configured) = {
+        let conn = state.db.lock().map_err(|error| error.to_string())?;
+        reconcile_interrupted_runs(&conn)?;
+        read_config(&conn)?
+    };
+    let indexed_session_count =
+        crate::agents::sessions::all_resumable_sessions_across_agents(&state)
+            .await
+            .len();
+    let integrations = {
+        let conn = state.db.lock().map_err(|error| error.to_string())?;
+        detect_integrations(&conn, indexed_session_count)?
+    };
     Ok(DaybookOverview {
         config,
         configured,
@@ -894,10 +906,17 @@ pub async fn set_daybook_schedule_enabled(
         if config.destination.root_path.is_none() {
             return Err("Choose a destination before enabling the schedule.".to_string());
         }
-        let integrations = {
+        {
             let conn = state.db.lock().map_err(|error| error.to_string())?;
             write_config(&conn, config.clone())?;
-            detect_integrations(&conn)?
+        }
+        let indexed_session_count =
+            crate::agents::sessions::all_resumable_sessions_across_agents(&state)
+                .await
+                .len();
+        let integrations = {
+            let conn = state.db.lock().map_err(|error| error.to_string())?;
+            detect_integrations(&conn, indexed_session_count)?
         };
         if !integrations.scheduler.systemd_user_available {
             return Err(
@@ -987,7 +1006,7 @@ pub(crate) async fn preview_daybook_inputs_inner(
     let window = DayWindow::from_configured_date(request.date.as_deref(), timezone)?;
     let date = window.date;
 
-    let (projects, sessions) = {
+    let projects = {
         let conn = state.db.lock().map_err(|error| error.to_string())?;
         let mut project_stmt = conn
             .prepare(
@@ -999,37 +1018,26 @@ pub(crate) async fn preview_daybook_inputs_inner(
                  ORDER BY 1 ASC",
             )
             .map_err(|error| error.to_string())?;
-        let projects = project_stmt
+        let rows = project_stmt
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|error| error.to_string())?
             .filter_map(Result::ok)
             .collect::<Vec<_>>();
-        let mut session_stmt = conn
-            .prepare(
-                "SELECT id, agent, title, last_active_at
-                 FROM agent_sessions ORDER BY last_active_at ASC",
-            )
-            .map_err(|error| error.to_string())?;
-        let sessions = session_stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
-            .map_err(|error| error.to_string())?
-            .filter_map(Result::ok)
-            .collect::<Vec<_>>();
-        (projects, sessions)
+        rows
     };
+    // Read from the CLIs' own on-disk transcripts, same as the "Resume
+    // session" picker — not a Maestro-side session index, which doesn't
+    // exist (see `agents::sessions::all_resumable_sessions_across_agents`'s
+    // doc comment). Fetched unconditionally (not just when
+    // `sources.maestro` is on) because `detect_integrations` below reports
+    // the total independent of whether this particular preview includes it.
+    let sessions = crate::agents::sessions::all_resumable_sessions_across_agents(state).await;
 
     let integrations = {
         let conn = state.db.lock().map_err(|error| error.to_string())?;
-        detect_integrations(&conn)?
+        detect_integrations(&conn, sessions.len())?
     };
     let mut warnings = Vec::new();
     let mut items = Vec::new();
@@ -1071,7 +1079,7 @@ pub(crate) async fn preview_daybook_inputs_inner(
     let day_sessions = if request.config.sources.maestro {
         sessions
             .into_iter()
-            .filter(|(_, _, _, last_active_at)| window.contains_rfc3339(last_active_at))
+            .filter(|(_, session)| window.contains_rfc3339(&session.last_active_at))
             .collect::<Vec<_>>()
     } else {
         Vec::new()
@@ -1079,15 +1087,23 @@ pub(crate) async fn preview_daybook_inputs_inner(
     items.extend(
         day_sessions
             .iter()
-            .map(|(id, agent, title, last_active_at)| DaybookPreviewItem {
-                id: format!("maestro:{id}"),
+            .map(|(kind, session)| DaybookPreviewItem {
+                id: format!("maestro:{}", session.session_id),
                 source: "maestro".to_string(),
-                occurred_at: last_active_at.clone(),
-                label: title
-                    .clone()
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| "Agent session".to_string()),
-                context: Some(agent.clone()),
+                occurred_at: session.last_active_at.clone(),
+                label: if session.title.trim().is_empty() {
+                    "Agent session".to_string()
+                } else {
+                    session.title.clone()
+                },
+                context: Some(format!(
+                    "{} · {}",
+                    kind.display_name(),
+                    Path::new(&session.worktree_root)
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| session.worktree_root.clone())
+                )),
             }),
     );
 

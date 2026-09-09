@@ -75,6 +75,13 @@ pub struct TurnCtx<'a> {
     /// back to self-boot — slower, but works even when the sidecar
     /// couldn't start.
     pub attach: Option<&'a crate::agents::opencode::client::Endpoint>,
+    /// Loopback port of Maestro's own MCP tool server (`agents/mcp_tools.rs`),
+    /// giving this turn `list_terminals`/`read_terminal_output`/
+    /// `list_processes`/`send_terminal_input` visibility into sibling
+    /// terminal and agent tabs in `worktree_root`. `None` only if that
+    /// server failed to start — adapters skip the wiring rather than point
+    /// the CLI at a port that isn't listening.
+    pub mcp_port: Option<u16>,
 }
 
 pub struct TurnSpawn {

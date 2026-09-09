@@ -124,6 +124,14 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     if let Some(model) = ctx.model {
         cmd.arg("--model").arg(model);
     }
+    if ctx.mcp_port.is_some() {
+        // The server itself is registered globally in `~/.cursor/mcp.json`
+        // by `agents/mcp_registration.rs` (this CLI has no per-invocation
+        // way to point at one) — `--approve-mcps` is what lets a
+        // non-interactive run actually use it instead of stopping for the
+        // interactive MCP-trust prompt every new server otherwise gets.
+        cmd.arg("--approve-mcps");
+    }
     match ctx.permission_mode {
         PermissionMode::Auto => {
             cmd.arg("--yolo");

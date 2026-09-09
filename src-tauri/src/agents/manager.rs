@@ -189,6 +189,7 @@ async fn run_turn(
         extra_env: &extra_env,
         session_dir: &session_dir,
         attach: attach.as_ref(),
+        mcp_port: state.mcp_server_port.get().copied(),
     };
     let turn_started = std::time::Instant::now();
     let spawn = adapter::build_turn(kind, &ctx, &text);

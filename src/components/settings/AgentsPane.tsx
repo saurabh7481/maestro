@@ -1,15 +1,66 @@
-import { useRef, useState } from "react";
-import { ArrowClockwise, CheckCircle, SignIn, WarningCircle, XCircle } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowClockwise,
+  CheckCircle,
+  SignIn,
+  Terminal,
+  WarningCircle,
+  XCircle,
+} from "@phosphor-icons/react";
+import { agentsApi } from "../../api/agents";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { useTabsStore } from "../../state/tabsStore";
 import { useActiveWorktree } from "../../state/workspaceStore";
 import { useUiStore } from "../../state/uiStore";
 import { AGENT_KINDS, AGENT_DISPLAY_NAME } from "../../types/agent";
 import type { AgentKind, CliStatus } from "../../types/agent";
-import { Button, TextInput } from "../primitives";
+import { Button, Switch, TextInput } from "../primitives";
 import { AiderProviders } from "./AiderProvidersPane";
 import { OpenCodeProviders } from "./OpenCodeProviders";
 import styles from "./SettingsModal.module.css";
+
+function McpToolsToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void agentsApi.getMcpToolsEnabled().then((value) => {
+      if (!cancelled) setEnabled(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleChange(value: boolean) {
+    setEnabled(value);
+    await agentsApi.setMcpToolsEnabled(value);
+  }
+
+  return (
+    <div className={styles.group}>
+      <span className={styles.groupLabel}>Terminal &amp; process awareness</span>
+      <div className={styles.presetRow}>
+        <Terminal size={18} color="var(--accent-2)" />
+        <div className={styles.presetText}>
+          <div className={styles.presetTitle}>Let agents see other tabs in the worktree</div>
+          <div className={styles.presetDescription}>
+            Gives agent tabs tools to list terminal and agent tabs open in the same worktree, read a
+            terminal's recent output, and send it input — e.g. "is the dev server running, and what
+            do the logs say?" Cursor Agent needs a "maestro" entry in its own global{" "}
+            <code>~/.cursor/mcp.json</code> to use this; turning the toggle off removes it again.
+          </div>
+        </div>
+        <Switch
+          label="Let agents see other tabs in the worktree"
+          checked={enabled ?? false}
+          disabled={enabled === null}
+          onCheckedChange={(v) => void handleChange(v)}
+        />
+      </div>
+    </div>
+  );
+}
 
 function statusPill(status: CliStatus | undefined) {
   if (!status) {
@@ -162,17 +213,20 @@ function AgentCard({ kind }: { kind: AgentKind }) {
 
 export function AgentsPane() {
   return (
-    <div className={styles.group}>
-      <span className={styles.groupLabel}>Agent CLIs</span>
-      <p className={styles.placeholder} style={{ marginBottom: "var(--space-2)" }}>
-        Detected once at startup and cached — used here, in the new-tab menu, and by "Generate with
-        AI" in Source Control. Claude Code, Codex and Cursor Agent each sign in through their own
-        CLI. Aider has no account of its own: it talks to whichever LLM provider you configure on
-        its card. OpenCode reads the providers you've connected through opencode itself.
-      </p>
-      {AGENT_KINDS.map((kind) => (
-        <AgentCard key={kind} kind={kind} />
-      ))}
-    </div>
+    <>
+      <div className={styles.group}>
+        <span className={styles.groupLabel}>Agent CLIs</span>
+        <p className={styles.placeholder} style={{ marginBottom: "var(--space-2)" }}>
+          Detected once at startup and cached — used here, in the new-tab menu, and by "Generate
+          with AI" in Source Control. Claude Code, Codex and Cursor Agent each sign in through their
+          own CLI. Aider has no account of its own: it talks to whichever LLM provider you configure
+          on its card. OpenCode reads the providers you've connected through opencode itself.
+        </p>
+        {AGENT_KINDS.map((kind) => (
+          <AgentCard key={kind} kind={kind} />
+        ))}
+      </div>
+      <McpToolsToggle />
+    </>
   );
 }

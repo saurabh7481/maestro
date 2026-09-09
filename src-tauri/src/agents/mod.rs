@@ -6,6 +6,8 @@ pub mod codex;
 pub mod cursor_agent;
 pub mod events;
 pub mod manager;
+pub mod mcp_registration;
+pub mod mcp_tools;
 pub mod one_shot;
 pub mod opencode;
 pub mod registry;

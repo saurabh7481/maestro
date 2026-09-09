@@ -382,6 +382,7 @@ mod tests {
             extra_env: &[],
             session_dir: std::path::Path::new("/tmp"),
             attach,
+            mcp_port: None,
         }
     }
 

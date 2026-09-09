@@ -162,6 +162,59 @@ pub async fn set_agent_binary_path(
     Ok(())
 }
 
+const MCP_TOOLS_SETTING_KEY: &str = "agents.mcp_terminal_tools_enabled";
+
+/// Whether agent turns should be given the `list_terminals` /
+/// `read_terminal_output` / `list_processes` / `send_terminal_input` MCP
+/// tools (`agents/mcp_tools.rs`). Defaults to **on** — it's what the
+/// feature is for — since the setting only exists to let a user opt back
+/// out of Maestro registering itself in Codex's and Cursor's own global MCP
+/// config (`agents/mcp_registration.rs`).
+pub fn mcp_tools_enabled(conn: &rusqlite::Connection) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT value_json FROM settings WHERE key = ?1",
+        params![MCP_TOOLS_SETTING_KEY],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())?
+    .map(|json| serde_json::from_str::<bool>(&json).map_err(|e| e.to_string()))
+    .transpose()
+    .map(|value| value.unwrap_or(true))
+}
+
+#[tauri::command]
+pub async fn get_mcp_tools_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    mcp_tools_enabled(&conn)
+}
+
+#[tauri::command]
+pub async fn set_mcp_tools_enabled(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO settings (key, value_json) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+            params![
+                MCP_TOOLS_SETTING_KEY,
+                serde_json::to_string(&enabled).map_err(|e| e.to_string())?
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // Re-run (or tear down) the Codex/Cursor global registration
+    // immediately rather than waiting for the next app launch — flipping
+    // the toggle should visibly take effect without a restart.
+    let port = state.mcp_server_port.get().copied();
+    crate::agents::mcp_registration::sync(&app, port).await;
+    Ok(())
+}
+
 // `Deserialize` as well as `Serialize` because Aider's OpenRouter catalog
 // is cached to disk between launches as a list of these (see
 // `agents/aider/catalog.rs`) — 414 models is not worth re-fetching on

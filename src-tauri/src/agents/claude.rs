@@ -57,6 +57,18 @@ use tokio::process::Command;
 /// `PermissionDenied`.
 pub const DEFAULT_ALLOWED_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
 
+/// MCP tool names Claude exposes as `mcp__<server>__<tool>`, matching the
+/// `#[tool]` methods on `MaestroTools` (`agents/mcp_tools.rs`). Only the
+/// read-only ones are pre-authorized here, the same way `Read`/`Grep`/`Glob`
+/// are above — `send_terminal_input` is deliberately left out so it gates
+/// through the normal `PermissionDenied` → approve/deny flow, same as
+/// `Bash`.
+const MCP_READ_TOOLS: &[&str] = &[
+    "mcp__maestro__list_terminals",
+    "mcp__maestro__read_terminal_output",
+    "mcp__maestro__list_processes",
+];
+
 pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     let mut cmd = Command::new(resolve_executable(ctx.binary_path));
     cmd.hide_window();
@@ -83,10 +95,30 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
         }
         PermissionMode::Manual => {
             cmd.args(["--permission-mode", "manual"]);
-            if !ctx.allowed_tools.is_empty() {
-                cmd.arg("--allowedTools").arg(ctx.allowed_tools.join(" "));
+            let mut allowed_tools: Vec<&str> =
+                ctx.allowed_tools.iter().map(String::as_str).collect();
+            if ctx.mcp_port.is_some() {
+                allowed_tools.extend_from_slice(MCP_READ_TOOLS);
+            }
+            if !allowed_tools.is_empty() {
+                cmd.arg("--allowedTools").arg(allowed_tools.join(" "));
             }
         }
+    }
+    if let Some(port) = ctx.mcp_port {
+        let mcp_config = serde_json::json!({
+            "mcpServers": {
+                "maestro": {
+                    "type": "http",
+                    "url": format!("http://127.0.0.1:{port}/mcp"),
+                }
+            }
+        });
+        // Fresh per turn rather than a persistent `claude mcp add` — this
+        // adapter already spawns fresh per turn (module doc above), and the
+        // port is ephemeral (changes every Maestro launch) so there'd be
+        // nothing worth persisting anyway.
+        cmd.arg("--mcp-config").arg(mcp_config.to_string());
     }
     if let Some(id) = ctx.resume_session_id {
         cmd.arg("--resume").arg(id);

@@ -50,6 +50,17 @@ pub fn build_turn(ctx: &TurnCtx, text: &str) -> TurnSpawn {
     if ctx.fast {
         cmd.arg("-c").arg("service_tier=\"priority\"");
     }
+    if let Some(port) = ctx.mcp_port {
+        // A per-invocation config override rather than a persistent
+        // `codex mcp add` — confirmed live (`codex mcp list -c
+        // mcp_servers.maestro.url=...`) to register the server for just
+        // this run without touching `~/.codex/config.toml`, matching this
+        // adapter's other `-c` overrides above and Claude's equally
+        // ephemeral `--mcp-config` (`claude.rs::build_turn`).
+        cmd.arg("-c").arg(format!(
+            "mcp_servers.maestro.url=\"http://127.0.0.1:{port}/mcp\""
+        ));
+    }
     cmd.arg(text);
     cmd.current_dir(ctx.worktree_root)
         .stdin(Stdio::null())
@@ -453,6 +464,7 @@ mod tests {
                 extra_env: &[],
                 session_dir: std::path::Path::new("/tmp"),
                 attach: None,
+                mcp_port: None,
             };
             build_turn(&ctx, "hi")
                 .command
