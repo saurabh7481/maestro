@@ -66,6 +66,36 @@
   gap: var(--space-3);
 }
 
+/* Add-project dropdown ("+" button) — same shape as TabStrip.module.css's
+   `.menu`/`.terminalItem`, kept local rather than imported cross-module
+   since each component owns its own CSS module in this codebase. */
+.menu {
+  composes: scaleIn from "../../styles/motion.module.css";
+  width: 14rem;
+  z-index: var(--z-dropdown);
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding: var(--space-3);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+  font-size: var(--text-sm);
+}
+.menuItem:hover,
+.menuItem[data-highlighted] {
+  background: var(--hover);
+}
+
 .body {
   flex: 1;
   overflow: auto;

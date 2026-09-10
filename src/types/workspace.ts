@@ -50,3 +50,13 @@ export type HookEvent =
       cancelled: boolean;
       timedOut: boolean;
     };
+
+export type CloneEvent =
+  | { type: "line"; stream: "stdout" | "stderr"; text: string }
+  | {
+      type: "done";
+      exitCode: number | null;
+      success: boolean;
+      cancelled: boolean;
+      project: Project | null;
+    };

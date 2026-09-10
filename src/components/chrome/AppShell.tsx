@@ -11,6 +11,7 @@ import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
 import { ensureNotificationPermission } from "../../design/osNotifications";
+import { useUpdateStore } from "../../state/updateStore";
 import { useUiStore } from "../../state/uiStore";
 import { useKeybindingsStore } from "../../state/keybindingsStore";
 import { useFocusRequestStore } from "../../state/focusRequestStore";
@@ -381,6 +382,19 @@ function useNotificationPermission() {
   }, []);
 }
 
+/** Silently checks for an update once per launch — no popup, just sets
+ * `updateStore`'s `available` flag, which the Settings button/About pane
+ * (`AboutPane.tsx`) render as a small badge. A manual "Check for updates"
+ * button in that same pane re-runs the identical check on demand. */
+function useUpdateCheck() {
+  const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
+  useEffect(() => {
+    void checkForUpdates();
+    // Runs once per app launch, not on every store re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 export function AppShell() {
   useDesignSystem();
   useSessionPersistence();
@@ -392,6 +406,7 @@ export function AppShell() {
   useTerminalShortcut();
   useAgentAvailabilitySync();
   useNotificationPermission();
+  useUpdateCheck();
   useLayoutShortcuts();
   useNavigationShortcuts();
   useMiscShortcuts();

@@ -75,6 +75,14 @@ pub struct HookRunEntry {
     pub branch: String,
 }
 
+/// One in-flight `git clone` — just the cancel signal `cancel_project_clone`
+/// needs. Keyed by a client-minted clone id in `AppState::clone_runs`
+/// (there's no project/worktree id yet until the clone finishes, so unlike
+/// `HookRunEntry` this doesn't carry Process-Manager reporting fields).
+pub struct CloneRunEntry {
+    pub cancel_tx: Sender<()>,
+}
+
 pub struct AppState {
     pub db: Mutex<Connection>,
     /// Slack OAuth callbacks received through `maestro://oauth/slack`.
@@ -92,6 +100,9 @@ pub struct AppState {
     /// needing to hand the running `Child` itself across the command
     /// boundary.
     pub hook_runs: Mutex<HashMap<String, HookRunEntry>>,
+    /// In-flight `git clone` runs (Add Project → "Clone from GitHub…"),
+    /// keyed by a client-minted clone id — see `CloneRunEntry`.
+    pub clone_runs: Mutex<HashMap<String, CloneRunEntry>>,
     /// Live file watchers, keyed by worktree id — one per *open* worktree,
     /// not all worktrees at once (see docs/ROADMAP.md Phase 3). Dropping a
     /// worktree's entry stops its watcher.

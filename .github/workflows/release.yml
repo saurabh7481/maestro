@@ -87,12 +87,19 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      # No updater signing key is configured yet (tracked in
-      # docs/ROADMAP.md Phase 9 / docs/CHECKLIST.md) — bundles from this
-      # workflow are installable but not auto-update-signed until then.
+      # `createUpdaterArtifacts` (tauri.conf.json) + these two secrets make
+      # tauri-action sign every bundle it builds and publish/merge a
+      # `latest.json` updater manifest on the release automatically — that
+      # covers macOS and Windows. Linux's updater target is the AppImage
+      # only (`.deb`/`.rpm` are owned by the OS package manager and can't
+      # be self-updated), which is built and repaired in a later step
+      # tauri-action never sees, so it gets signed and merged into the
+      # manifest separately below.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Maestro ${{ github.ref_name }}"
@@ -131,3 +138,27 @@ jobs:
           )
 
           gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
+
+      # tauri-action never builds this artifact (see the step above), so
+      # it's signed and folded into the release's `latest.json` here
+      # instead of automatically. See `scripts/patch-updater-manifest.mjs`
+      # for the known cross-job race this read-modify-write has with
+      # tauri-action's own manifest merge for macOS/Windows.
+      - name: Sign and publish the Linux updater manifest
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          artifact="src-tauri/target/release/bundle/appimage/Maestro_${version}_amd64.AppImage"
+
+          pnpm tauri signer sign "$artifact"
+          signature=$(cat "$artifact.sig")
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/Maestro_${version}_amd64.AppImage"
+
+          node scripts/patch-updater-manifest.mjs \
+            "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "linux-x86_64" "$download_url" "$signature"
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber

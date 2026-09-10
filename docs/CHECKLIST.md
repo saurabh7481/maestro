@@ -344,11 +344,20 @@ cli-config.json`'s `approvalMode`/`permissions.allow`/`deny`), not
 
 ## Phase 9 — Packaging & release hardening
 
-- [ ] `tauri signer generate` keypair created; public key in
-      `tauri.conf.json`, private key stored securely (never committed)
+- [x] `tauri signer generate` keypair created; public key in
+      `tauri.conf.json`, private key stored securely (never committed) —
+      private key + password live only as `TAURI_SIGNING_PRIVATE_KEY`/
+      `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` GitHub Actions secrets
 - [ ] `tauri-plugin-updater` verified end-to-end against an **installed**
-      AppImage/deb/rpm (not a raw dev build)
-- [ ] Updater manifest published alongside release artifacts
+      AppImage/deb/rpm (not a raw dev build) — wired up
+      (`commands/updates.rs`, `AboutPane.tsx`) but not yet confirmed
+      against a real published release
+- [x] Updater manifest published alongside release artifacts —
+      `tauri-action` handles macOS/Windows automatically
+      (`createUpdaterArtifacts`); the Linux AppImage (the only
+      self-updatable Linux target — `.deb`/`.rpm` are package-manager-owned)
+      is signed and merged into `latest.json` by
+      `scripts/patch-updater-manifest.mjs` in `release.yml`
 - [ ] `.desktop`/icon integration documented (AppImageLauncher or
       first-run self-integration prompt)
 - [ ] **NVIDIA/WebKitGTK check**: packaged AppImage tested on at least one

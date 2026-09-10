@@ -20,12 +20,21 @@ const STATUS_META: Record<HookRunStatus, { label: string; color: string }> = {
 export function HookOutputPanel({
   status,
   lines,
+  labels,
+  emptyText = "No hooks configured for this project.",
 }: {
   status: HookRunStatus;
   lines: HookOutputLine[];
+  /** Overrides `STATUS_META`'s hook-specific copy per status — e.g. the
+   * clone dialog (`CloneProjectDialog.tsx`) shows "Cloning…"/"Clone
+   * completed"/etc. instead, reusing this panel rather than duplicating it.
+   * `timedOut` never applies there (clone has no fixed timeout). */
+  labels?: Partial<Record<HookRunStatus, string>>;
+  emptyText?: string;
 }) {
   const logRef = useRef<HTMLDivElement>(null);
   const meta = STATUS_META[status];
+  const label = labels?.[status] ?? meta.label;
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -40,12 +49,12 @@ export function HookOutputPanel({
         {status === "cancelled" && <Prohibit size={15} color={meta.color} />}
         {status === "timedOut" && <Clock size={15} color={meta.color} />}
         <span className={styles.headerLabel} style={{ color: meta.color }}>
-          {meta.label}
+          {label}
         </span>
       </div>
       <div className={styles.log} ref={logRef}>
         {lines.length === 0 ? (
-          <div className={styles.empty}>No hooks configured for this project.</div>
+          <div className={styles.empty}>{emptyText}</div>
         ) : (
           lines.map((line, i) => (
             <div key={i} className={styles.line} data-stream={line.stream}>

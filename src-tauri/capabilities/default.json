@@ -16,6 +16,8 @@
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-read-text",
     "log:default",
-    "notification:default"
+    "notification:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

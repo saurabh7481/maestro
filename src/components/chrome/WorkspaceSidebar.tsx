@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   CaretDown,
   CaretLineLeft,
   CaretLineRight,
   CaretRight,
+  CloudArrowDown,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -18,6 +20,7 @@ import { useWorkspaceStore, EMPTY_WORKTREES } from "../../state/workspaceStore";
 import type { Project, Worktree } from "../../types/workspace";
 import { IconButton } from "../primitives";
 import { NewWorktreeDialog } from "../workspace/NewWorktreeDialog";
+import { CloneProjectDialog } from "../workspace/CloneProjectDialog";
 import { RemoveWorktreeDialog } from "../workspace/RemoveWorktreeDialog";
 import { ProjectContextMenu } from "../workspace/ProjectContextMenu";
 import { ProjectSettingsDialog } from "../workspace/ProjectSettingsDialog";
@@ -236,6 +239,7 @@ export function WorkspaceSidebar() {
     return s.worktreesByProject[s.activeProjectId]?.find((w) => w.id === s.activeWorktreeId);
   });
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
 
   useEffect(() => {
     void loadAll();
@@ -292,13 +296,32 @@ export function WorkspaceSidebar() {
       <div className={styles.header}>
         <span className={styles.headerLabel}>Workspace</span>
         <div className={styles.headerActions}>
-          <IconButton
-            icon={Plus}
-            label="Add project"
-            size="sm"
-            iconSize={15}
-            onClick={() => void addProject()}
-          />
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <span>
+                <IconButton icon={Plus} label="Add project" size="sm" iconSize={15} />
+              </span>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className={`${styles.menu} mo-glass`}
+                align="start"
+                sideOffset={6}
+              >
+                <DropdownMenu.Item className={styles.menuItem} onSelect={() => void addProject()}>
+                  <FolderPlus size={16} color="var(--accent)" />
+                  <span>Open local repository…</span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className={styles.menuItem}
+                  onSelect={() => setCloneDialogOpen(true)}
+                >
+                  <CloudArrowDown size={16} color="var(--accent-2)" />
+                  <span>Clone from GitHub…</span>
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
           <IconButton
             icon={CaretLineLeft}
             label="Collapse"
@@ -308,6 +331,7 @@ export function WorkspaceSidebar() {
           />
         </div>
       </div>
+      <CloneProjectDialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen} />
 
       {error && (
         <div
@@ -361,6 +385,19 @@ export function WorkspaceSidebar() {
             <FolderPlus size={15} />
           </span>
           <span className={styles.rowLabel}>Add project…</span>
+        </div>
+        <div
+          className={styles.row}
+          data-accent="true"
+          role="button"
+          tabIndex={0}
+          onClick={() => setCloneDialogOpen(true)}
+          onKeyDown={(event) => activateOnKeyboard(event, () => setCloneDialogOpen(true))}
+        >
+          <span className={styles.rowIcon}>
+            <CloudArrowDown size={15} />
+          </span>
+          <span className={styles.rowLabel}>Clone repository…</span>
         </div>
       </div>
     </div>

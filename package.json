@@ -1,7 +1,7 @@
 {
   "name": "maestro",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Cross-platform GUI Agentic Development Environment wrapping Claude Code, Codex CLI, and Cursor Agent, organized around git projects and worktrees.",
   "license": "UNLICENSED",
   "type": "module",
@@ -46,7 +46,9 @@
     "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-store": "^2.4.4",
+    "@tauri-apps/plugin-updater": "^2.11.0",
     "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",

@@ -3,6 +3,7 @@ import {
   ArrowCounterClockwise,
   GearSix,
   GitBranch,
+  Info,
   Keyboard,
   MagnifyingGlassMinus,
   MagnifyingGlassPlus,
@@ -16,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { useUiStore } from "../../state/uiStore";
+import { useUpdateStore } from "../../state/updateStore";
 import type { ThemeId } from "../../design/themes";
 import { themes, THEME_LABELS } from "../../design/themes";
 import { clampZoom, ZOOM_DEFAULT, ZOOM_STEP } from "../../design/zoom";
@@ -27,6 +29,7 @@ import { LanguageIntelligencePane } from "./LanguageIntelligencePane";
 import { TerminalPane } from "./TerminalPane";
 import { EditorPane } from "./EditorPane";
 import { DaybookPane } from "./DaybookPane";
+import { AboutPane } from "./AboutPane";
 import styles from "./SettingsModal.module.css";
 
 type Section =
@@ -37,7 +40,8 @@ type Section =
   | "daybook"
   | "language"
   | "worktrees"
-  | "keybindings";
+  | "keybindings"
+  | "about";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
@@ -48,6 +52,7 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "language", label: "Language Intelligence", icon: Code },
   { id: "worktrees", label: "Worktrees", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
+  { id: "about", label: "About", icon: Info },
 ];
 
 function AppearancePane() {
@@ -127,6 +132,7 @@ export function SettingsModal() {
   const [section, setSection] = useState<Section>("appearance");
 
   const active = NAV.find((item) => item.id === section)!;
+  const updateAvailable = useUpdateStore((s) => s.available != null);
 
   return (
     <Modal
@@ -154,6 +160,18 @@ export function SettingsModal() {
             >
               <ItemIcon size={16} color={section === item.id ? "var(--accent)" : undefined} />
               {item.label}
+              {item.id === "about" && updateAvailable && (
+                <span
+                  aria-label="Update available"
+                  style={{
+                    marginLeft: "auto",
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                  }}
+                />
+              )}
             </button>
           );
         })}
@@ -177,6 +195,7 @@ export function SettingsModal() {
           {section === "daybook" && <DaybookPane />}
           {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}
           {section === "keybindings" && <KeybindingsPane />}
+          {section === "about" && <AboutPane />}
         </div>
       </div>
     </Modal>

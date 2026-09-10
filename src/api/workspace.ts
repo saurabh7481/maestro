@@ -8,6 +8,9 @@ export const workspaceApi = {
   listProjects: () => invoke<Project[]>("list_projects"),
   pickProjectFolder: () => invoke<string | null>("pick_project_folder"),
   addProject: (path: string) => invoke<Project>("add_project", { path }),
+  cloneProject: (cloneId: string, url: string, destination: string) =>
+    invoke<void>("clone_project", { cloneId, url, destination }),
+  cancelProjectClone: (cloneId: string) => invoke<void>("cancel_project_clone", { cloneId }),
   removeProject: (projectId: string) => invoke<void>("remove_project", { projectId }),
   renameProject: (projectId: string, name: string) =>
     invoke<void>("rename_project", { projectId, name }),

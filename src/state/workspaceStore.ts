@@ -30,6 +30,12 @@ interface WorkspaceState {
   loadAll: () => Promise<void>;
   reloadWorktrees: (projectId: string) => Promise<void>;
   addProject: () => Promise<void>;
+  /** Registers an already-created `Project` (e.g. one `CloneProjectDialog`
+   * just cloned and got back from the `clone_project` command's `Done`
+   * event) — same immediate-then-patch two-phase update `addProject` uses,
+   * factored out so both call sites show the new project instantly instead
+   * of waiting on its worktree list too. */
+  adoptProject: (project: Project) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   renameProject: (projectId: string, name: string) => Promise<void>;
   createWorktree: (projectId: string, branchName: string, baseRef: string) => Promise<Worktree>;
@@ -129,12 +135,34 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const path = await workspaceApi.pickProjectFolder();
       if (!path) return;
       const project = await workspaceApi.addProject(path);
+      await get().adoptProject(project);
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  adoptProject: async (project) => {
+    // Phase 1: the project row is real and known immediately — show it
+    // without waiting on `list_worktrees`'s `git worktree list` + `git
+    // status` round trip, which is what made "Add project" feel laggy
+    // (the whole point of this two-phase split; see workspaceStore.ts's
+    // module history for the single-`set()` version this replaced).
+    set((s) => ({
+      projects: [...s.projects, project],
+      worktreesByProject: { ...s.worktreesByProject, [project.id]: EMPTY_WORKTREES },
+      activeProjectId: project.id,
+      activeWorktreeId: null,
+    }));
+    try {
       const worktrees = await workspaceApi.listWorktrees(project.id);
       set((s) => ({
-        projects: [...s.projects, project],
         worktreesByProject: { ...s.worktreesByProject, [project.id]: worktrees },
-        activeProjectId: project.id,
-        activeWorktreeId: pickDefaultWorktree(worktrees)?.id ?? null,
+        // Only steer the active worktree if the user hasn't already
+        // clicked elsewhere while this was loading.
+        activeWorktreeId:
+          s.activeProjectId === project.id
+            ? (pickDefaultWorktree(worktrees)?.id ?? null)
+            : s.activeWorktreeId,
       }));
     } catch (error) {
       set({ error: String(error) });

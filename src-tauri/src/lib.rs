@@ -28,6 +28,7 @@ fn make_app_state(conn: rusqlite::Connection, app_data_dir: std::path::PathBuf) 
         ),
         app_data_dir,
         hook_runs: Mutex::new(HashMap::new()),
+        clone_runs: Mutex::new(HashMap::new()),
         watchers: Mutex::new(HashMap::new()),
         agent_status_cache: Mutex::new(HashMap::new()),
         lsp_status_cache: Mutex::new(HashMap::new()),
@@ -140,6 +141,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             #[cfg(target_os = "linux")]
             {
@@ -176,6 +179,8 @@ pub fn run() {
             commands::projects::list_projects,
             commands::projects::pick_project_folder,
             commands::projects::add_project,
+            commands::projects::clone_project,
+            commands::projects::cancel_project_clone,
             commands::projects::remove_project,
             commands::projects::rename_project,
             commands::worktrees::list_worktrees,
@@ -256,6 +261,8 @@ pub fn run() {
             commands::agents::list_agent_models,
             commands::agents::get_mcp_tools_enabled,
             commands::agents::set_mcp_tools_enabled,
+            commands::updates::list_releases,
+            commands::updates::revert_to_version,
             commands::aider::list_aider_providers,
             commands::aider::save_aider_provider,
             commands::aider::forget_aider_provider,
