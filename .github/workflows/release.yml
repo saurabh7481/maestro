@@ -115,6 +115,13 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `createUpdaterArtifacts` in tauri.conf.json makes *any* `tauri
+          # build` try to sign its output the moment a pubkey is
+          # configured — even this throwaway pre-repair build, which is
+          # immediately replaced below and re-signed for real in the next
+          # step. Without these, the CLI itself errors out here.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
         run: |
           pnpm tauri build --bundles appimage
