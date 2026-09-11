@@ -187,6 +187,8 @@ describe("streaming text", () => {
       cacheWriteTokens: null,
       contextWindow: null,
       resultText: null,
+      baselineHead: null,
+      baselinePaths: [],
     });
     const texts = assistantText();
     expect(texts[0].kind === "assistantText" && texts[0].streaming).toBe(false);
@@ -244,6 +246,8 @@ describe("streaming text", () => {
         cacheWriteTokens: null,
         contextWindow: null,
         resultText: null,
+        baselineHead: null,
+        baselinePaths: [],
       },
     );
     useAgentSessionStore.getState().appendUserMessage(RUN, "again");
@@ -271,6 +275,8 @@ describe("turn results", () => {
       cacheWriteTokens: null,
       contextWindow: null,
       resultText: null,
+      baselineHead: null,
+      baselinePaths: [],
     });
 
     expect(state().status).toBe("settling");
@@ -294,6 +300,8 @@ describe("turn results", () => {
       cacheWriteTokens: 9869,
       contextWindow: 1000000,
       resultText: "done",
+      baselineHead: null,
+      baselinePaths: [],
     });
     apply({ type: "exit", code: 0 });
 
@@ -323,6 +331,8 @@ describe("turn results", () => {
       cacheWriteTokens: null,
       contextWindow: null,
       resultText: "You've hit your usage limit.",
+      baselineHead: null,
+      baselinePaths: [],
     });
 
     expect(state().status).toBe("settling");

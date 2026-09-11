@@ -20,6 +20,8 @@
 //! frontend can call `resume_agent_session` and have the next message
 //! continue the same session rather than start a new one.
 
+use crate::agents::adapter::PermissionMode;
+use crate::agents::registry::AgentKind;
 use crate::state::AppState;
 use rusqlite::OptionalExtension;
 use tauri::State;
@@ -56,6 +58,104 @@ pub struct StoredTranscript {
     pub items: String,
     pub cli_session_id: Option<String>,
     pub last_result: Option<LastResultPayload>,
+}
+
+/// A run's model/effort/fast/permission-mode, as last persisted by
+/// `persist_agent_configuration` — the durable counterpart to
+/// `AgentRunEntry`'s in-memory copy of the same fields, read back by
+/// `resume_agent_session` so a restored run picks up where it left off
+/// instead of resetting to "Default"/`Manual` on every restart.
+#[derive(Debug, Clone, Default)]
+pub struct PersistedAgentConfiguration {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub fast: bool,
+    pub permission_mode: Option<PermissionMode>,
+}
+
+/// Bundled purely to stay under clippy's argument-count lint — see
+/// `persist_agent_configuration`.
+pub struct AgentConfigurationUpdate<'a> {
+    pub run_id: &'a str,
+    pub worktree_id: &'a str,
+    pub agent: AgentKind,
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub fast: bool,
+    pub permission_mode: PermissionMode,
+}
+
+/// Upserts just the configuration columns, leaving `items`/`cli_session_id`
+/// alone if a row already exists — called from `agents/manager.rs`
+/// whenever a run's configuration actually changes (`start_agent_session`,
+/// `set_agent_configuration`, `set_permission_mode`), independent of
+/// whether/when the frontend next calls `save_agent_transcript`. A fresh
+/// row (no transcript saved yet) gets a placeholder empty-array `items`,
+/// which that later save overwrites for real — its own `ON CONFLICT`
+/// clause never touches these columns, so the two writers can't clobber
+/// each other.
+pub fn persist_agent_configuration(
+    conn: &rusqlite::Connection,
+    update: AgentConfigurationUpdate,
+) -> Result<(), String> {
+    let agent_json = serde_json::to_string(&update.agent).map_err(|e| e.to_string())?;
+    let permission_mode_json =
+        serde_json::to_string(&update.permission_mode).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO agent_transcripts
+             (run_id, worktree_id, agent, version, items, updated_at, model, effort, fast, permission_mode)
+         VALUES (?1, ?2, ?3, ?4, '[]', ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(run_id) DO UPDATE SET
+             model           = excluded.model,
+             effort          = excluded.effort,
+             fast            = excluded.fast,
+             permission_mode = excluded.permission_mode,
+             updated_at      = excluded.updated_at",
+        rusqlite::params![
+            update.run_id,
+            update.worktree_id,
+            agent_json,
+            TRANSCRIPT_VERSION,
+            chrono::Utc::now().to_rfc3339(),
+            update.model,
+            update.effort,
+            update.fast,
+            permission_mode_json,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Reads back what `persist_agent_configuration` last wrote — a small,
+/// `items`-free query since `resume_agent_session` (the caller) only needs
+/// the configuration, not the whole transcript payload. Absent row, absent
+/// version match, or an unparsable `permission_mode` all degrade to the
+/// same defaults `AgentRunEntry` itself would start with, rather than
+/// failing the resume over a configuration nicety.
+pub fn load_agent_configuration(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> PersistedAgentConfiguration {
+    conn.query_row(
+        "SELECT model, effort, fast, permission_mode
+         FROM agent_transcripts WHERE run_id = ?1 AND version = ?2",
+        rusqlite::params![run_id, TRANSCRIPT_VERSION],
+        |row| {
+            let permission_mode_json: Option<String> = row.get(3)?;
+            Ok(PersistedAgentConfiguration {
+                model: row.get(0)?,
+                effort: row.get(1)?,
+                fast: row.get::<_, Option<bool>>(2)?.unwrap_or(false),
+                permission_mode: permission_mode_json
+                    .and_then(|json| serde_json::from_str(&json).ok()),
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .unwrap_or_default()
 }
 
 #[tauri::command]

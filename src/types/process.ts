@@ -1,6 +1,8 @@
 /** Mirrors `src-tauri/src/processes.rs` — the Process Manager's view of
  * every OS process Maestro spawned (docs/V2_ROADMAP.md Phase 15). */
 
+import type { AgentKind } from "./agent";
+
 export type ManagedProcessKind = "agent" | "terminal" | "languageServer" | "hook";
 
 /** `idle` is an agent tab with no turn in flight: the run exists, the tab
@@ -27,6 +29,8 @@ export interface ManagedProcess {
   memoryBytes: number;
   childProcessCount: number;
   killable: boolean;
+  /** Which CLI an agent process is — `null` for every other kind. */
+  agentKind: AgentKind | null;
 }
 
 export interface ProcessSnapshot {

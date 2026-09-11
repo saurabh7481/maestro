@@ -135,7 +135,6 @@ export interface AgentTabState {
    * whether the next composer submit calls `startAgentSession` or
    * `sendAgentMessage`. */
   started: boolean;
-  turnBaseline: { head: string | null; paths: string[] } | null;
   /** Messages typed while a turn was in flight, waiting for it to end.
    * None of these CLIs accepts input mid-turn (each turn is its own
    * process — see `manager.rs`), so the alternative to holding them here
@@ -153,8 +152,34 @@ function emptyTabState(): AgentTabState {
     turnStartedAtMs: null,
     lastEventAtMs: null,
     started: false,
-    turnBaseline: null,
     queued: [],
+  };
+}
+
+/** Shared by the `appendUserMessage` action (tests, and any future
+ * intentional local append) and the live `"message"` event's `role:
+ * "user"` case (`AgentTab.tsx`'s composer no longer appends locally —
+ * `agents/manager.rs::run_turn` echoes every real user message back over
+ * the same channel it streams everything else on, so desktop and mobile
+ * both render it the same way). */
+function applyUserMessage(tab: AgentTabState, text: string): AgentTabState {
+  // Sending a new instruction answers an outstanding permission request by
+  // moving on from it. Leaving the card live would offer an Approve button
+  // that resumes an action the conversation has already left behind — and
+  // the tool genuinely never ran, so "denied" is the accurate record of
+  // what happened to it.
+  const items = tab.items.map((item) =>
+    item.kind === "toolCall" && item.permission?.status === "pending"
+      ? { ...item, permission: { status: "denied" } as PermissionState }
+      : item,
+  );
+  return {
+    ...tab,
+    status: "working",
+    errorMessage: null,
+    turnStartedAtMs: Date.now(),
+    lastEventAtMs: Date.now(),
+    items: [...items, { id: nextId(), kind: "user", text }],
   };
 }
 
@@ -328,7 +353,6 @@ interface AgentSessionState {
    * idle so the conversation can simply be continued. */
   clearRunError: (runId: string) => void;
   setPermissionMode: (runId: string, mode: import("../types/agent").PermissionMode) => void;
-  setTurnBaseline: (runId: string, head: string | null, paths: string[]) => void;
   setToolCallPermissionStatus: (
     runId: string,
     toolCallId: string,
@@ -494,7 +518,6 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
             contextWindow: null,
           },
           started: true,
-          turnBaseline: null,
           permissionMode: "auto",
           turnStartedAtMs: null,
           lastEventAtMs: null,
@@ -508,29 +531,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
     schedulePersist(runId);
     set((s) => {
       const tab = s.byRunId[runId] ?? emptyTabState();
-      // Sending a new instruction answers an outstanding permission request
-      // by moving on from it. Leaving the card live would offer an Approve
-      // button that resumes an action the conversation has already left
-      // behind — and the tool genuinely never ran, so "denied" is the
-      // accurate record of what happened to it.
-      const items = tab.items.map((item) =>
-        item.kind === "toolCall" && item.permission?.status === "pending"
-          ? { ...item, permission: { status: "denied" } as PermissionState }
-          : item,
-      );
-      return {
-        byRunId: {
-          ...s.byRunId,
-          [runId]: {
-            ...tab,
-            status: "working",
-            errorMessage: null,
-            turnStartedAtMs: Date.now(),
-            lastEventAtMs: Date.now(),
-            items: [...items, { id: nextId(), kind: "user", text }],
-          },
-        },
-      };
+      return { byRunId: { ...s.byRunId, [runId]: applyUserMessage(tab, text) } };
     });
   },
 
@@ -663,15 +664,6 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
     });
   },
 
-  setTurnBaseline: (runId, head, paths) => {
-    set((s) => {
-      const tab = s.byRunId[runId] ?? emptyTabState();
-      return {
-        byRunId: { ...s.byRunId, [runId]: { ...tab, turnBaseline: { head, paths } } },
-      };
-    });
-  },
-
   setToolCallPermissionStatus: (runId, toolCallId, status) => {
     set((s) => {
       const tab = s.byRunId[runId];
@@ -702,6 +694,15 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
 
       switch (event.type) {
         case "message": {
+          if (event.role === "user") {
+            // Echoed by `agents/manager.rs::run_turn` for every real user
+            // message (not the permission-approval nudge) — the composer
+            // no longer appends this locally, so both a desktop send and a
+            // mobile-relay-created one render identically, from the same
+            // backend-authoritative source.
+            if (!event.text) return s;
+            return { byRunId: { ...s.byRunId, [runId]: applyUserMessage(tab, event.text) } };
+          }
           if (event.role !== "assistant" || !event.text) return s;
           // A provider that streams *and* re-sends the finished block
           // (Claude) lands here after its own deltas. Replace rather than
@@ -884,8 +885,8 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                   {
                     id: nextId(),
                     kind: "turnComplete",
-                    baselineHead: tab.turnBaseline?.head ?? null,
-                    baselinePaths: tab.turnBaseline?.paths ?? [],
+                    baselineHead: event.baselineHead,
+                    baselinePaths: event.baselinePaths,
                     durationMs: event.durationMs,
                     inputTokens: event.inputTokens,
                     outputTokens: event.outputTokens,
@@ -894,7 +895,6 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
                     completedAtMs: Date.now(),
                   },
                 ],
-                turnBaseline: null,
                 turnStartedAtMs: null,
                 lastResult: {
                   sessionId: event.sessionId,

@@ -591,6 +591,11 @@ pub fn parse_line(
                         .get("result")
                         .and_then(|s| s.as_str())
                         .map(str::to_string),
+                    // Always overwritten by `manager.rs::run_turn` before
+                    // this reaches the frontend — no adapter can know the
+                    // pre-spawn git baseline itself.
+                    baseline_head: None,
+                    baseline_paths: Vec::new(),
                 }],
                 None,
             )

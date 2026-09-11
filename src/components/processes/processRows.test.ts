@@ -24,6 +24,7 @@ function process(
     memoryBytes: 0,
     childProcessCount: 0,
     killable: true,
+    agentKind: null,
     ...overrides,
   };
 }

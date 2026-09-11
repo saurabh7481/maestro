@@ -40,6 +40,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "resources": {
+      "../mobile/dist": "mobile"
+    },
     "icon": [
       "icons/256x256.png",
       "icons/128x128@2x.png",

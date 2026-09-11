@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ArrowCounterClockwise,
   GearSix,
+  DeviceMobile,
   GitBranch,
   Info,
   Keyboard,
@@ -30,6 +31,7 @@ import { TerminalPane } from "./TerminalPane";
 import { EditorPane } from "./EditorPane";
 import { DaybookPane } from "./DaybookPane";
 import { AboutPane } from "./AboutPane";
+import { ConnectedDevicesPane } from "./ConnectedDevicesPane";
 import styles from "./SettingsModal.module.css";
 
 type Section =
@@ -41,6 +43,7 @@ type Section =
   | "language"
   | "worktrees"
   | "keybindings"
+  | "mobile"
   | "about";
 
 const NAV: { id: Section; label: string; icon: Icon }[] = [
@@ -52,6 +55,7 @@ const NAV: { id: Section; label: string; icon: Icon }[] = [
   { id: "language", label: "Language Intelligence", icon: Code },
   { id: "worktrees", label: "Worktrees", icon: GitBranch },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
+  { id: "mobile", label: "Connected Devices", icon: DeviceMobile },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -195,6 +199,7 @@ export function SettingsModal() {
           {section === "daybook" && <DaybookPane />}
           {section === "language" && <LanguageIntelligencePane scope={{ kind: "global" }} />}
           {section === "keybindings" && <KeybindingsPane />}
+          {section === "mobile" && <ConnectedDevicesPane />}
           {section === "about" && <AboutPane />}
         </div>
       </div>

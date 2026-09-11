@@ -194,6 +194,27 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE UNIQUE INDEX IF NOT EXISTS one_active_daybook_run
         ON daybook_runs(entry_date)
         WHERE status IN ('collecting', 'writing', 'saving');
+
+        -- Phones/browsers paired to the mobile relay (`relay/pairing.rs`)
+        -- via a QR one-time-code exchange. `token_hash` is a SHA-256 hex
+        -- digest of the bearer token the relay actually checks on every
+        -- request — the raw token is shown to the device exactly once, at
+        -- exchange time, and never stored, so a stolen `paired_devices`
+        -- row (or a backup of this database) can't be replayed as a
+        -- credential. `access_level` ('write' | 'read') defaults to
+        -- 'write': this is a single-user tool, devices are paired by
+        -- scanning a code only the desktop app displays, and trust starts
+        -- high and is revoked/downgraded from the desktop's own Connected
+        -- Devices settings pane — not the reverse.
+        CREATE TABLE IF NOT EXISTS paired_devices (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            token_hash    TEXT NOT NULL UNIQUE,
+            access_level  TEXT NOT NULL DEFAULT 'write',
+            created_at    TEXT NOT NULL,
+            last_seen_at  TEXT,
+            revoked_at    TEXT
+        );
         ",
     )?;
 
@@ -218,6 +239,17 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         "cache_read_tokens INTEGER",
         "cache_write_tokens INTEGER",
         "context_window INTEGER",
+        // A run's model/effort/fast/permission-mode (`agents/manager.rs`'s
+        // `AgentRunEntry`) previously lived only in memory and reset on
+        // every restart — desktop and mobile both fell back to "Default"/
+        // "Manual" after any relaunch, not just after Rust code changes.
+        // Persisted here (not a separate table) for the same reason
+        // `cli_session_id` already is: it's exactly the other half of "what
+        // this run is" that needs to survive a restart alongside it.
+        "model TEXT",
+        "effort TEXT",
+        "fast INTEGER",
+        "permission_mode TEXT",
     ] {
         let _ = conn.execute(
             &format!("ALTER TABLE agent_transcripts ADD COLUMN {column}"),

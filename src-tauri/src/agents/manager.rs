@@ -11,11 +11,49 @@ use crate::agents::events::AgentEvent;
 use crate::agents::registry::AgentKind;
 use crate::state::{AgentCancelKind, AgentRunEntry, AppState};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub fn agent_event_channel(run_id: &str) -> String {
     format!("agent://{run_id}/event")
+}
+
+/// Fixed (non-id-parameterized) channel, unlike `agent_event_channel` —
+/// the frontend can't subscribe per-id to a run it doesn't know exists
+/// yet. Fired by both `start_agent_session` and `resume_agent_session`
+/// regardless of caller, so a run created through the mobile relay
+/// announces itself exactly the same way a desktop-initiated one does.
+/// The desktop's own tab-creation flow already has its own tab by the
+/// time this fires (see `NewTabMenu.tsx`), so its listener's `ensureTab`
+/// call is a harmless no-op there — this only actually creates a tab for
+/// a run nothing local already knows about.
+pub const AGENT_SESSION_CREATED_CHANNEL: &str = "agent-sessions://created";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentSessionCreated<'a> {
+    run_id: &'a str,
+    worktree_id: &'a str,
+    worktree_root: &'a str,
+    kind: AgentKind,
+}
+
+fn announce_session_created(
+    app: &AppHandle,
+    run_id: &str,
+    worktree_id: &str,
+    worktree_root: &str,
+    kind: AgentKind,
+) {
+    let _ = app.emit(
+        AGENT_SESSION_CREATED_CHANNEL,
+        &AgentSessionCreated {
+            run_id,
+            worktree_id,
+            worktree_root,
+            kind,
+        },
+    );
 }
 
 /// How long streamed text is allowed to pool before being sent to the UI.
@@ -83,6 +121,11 @@ async fn run_turn(
     state: State<'_, AppState>,
     run_id: String,
     text: String,
+    // `false` for `respond_to_permission`'s synthetic "permission granted,
+    // proceed" nudge — that text was never typed by anyone and has never
+    // been shown as a chat bubble; `true` for every turn a real user
+    // (desktop composer or the mobile relay) actually asked for.
+    announce_as_user_message: bool,
 ) -> Result<(), String> {
     let (
         kind,
@@ -122,6 +165,37 @@ async fn run_turn(
             entry.permission_mode,
         )
     };
+
+    // Captured here — right after the turn is admitted, before the
+    // (possibly slow) binary lookup and CLI spawn below can make any
+    // change of their own — so every turn gets an accurate "what was
+    // already dirty" baseline regardless of which surface started it.
+    // Previously only the desktop composer captured this (`AgentTab.tsx`),
+    // so a relay-started turn had none at all and its file-change card
+    // fell back to showing *everything* currently dirty in the worktree,
+    // including other tabs' unrelated changes. Best-effort: a git failure
+    // here degrades to unscoped attribution for this turn, not a failed
+    // turn.
+    let worktree_path = std::path::PathBuf::from(&worktree_root);
+    let baseline_paths: Vec<String> = crate::git::working_status(&worktree_path)
+        .await
+        .map(|status| status.entries.into_iter().map(|entry| entry.path).collect())
+        .unwrap_or_default();
+    let baseline_head: Option<String> = crate::git::log(&worktree_path, 1, 0)
+        .await
+        .ok()
+        .and_then(|commits| commits.into_iter().next())
+        .map(|commit| commit.hash);
+
+    if announce_as_user_message {
+        let _ = app.emit(
+            &agent_event_channel(&run_id),
+            &AgentEvent::Message {
+                role: "user".to_string(),
+                text: text.clone(),
+            },
+        );
+    }
 
     // Read outside the `agent_runs` lock, both because it takes the
     // database lock and because holding two at once invites a deadlock.
@@ -302,12 +376,20 @@ async fn run_turn(
                 learned_session_id = session_id;
             }
             for mut event in events {
-                if let AgentEvent::TurnResult { session_id, .. } = &mut event {
+                if let AgentEvent::TurnResult {
+                    session_id,
+                    baseline_head: event_baseline_head,
+                    baseline_paths: event_baseline_paths,
+                    ..
+                } = &mut event
+                {
                     if session_id.is_empty() {
                         if let Some(learned) = &learned_session_id {
                             *session_id = learned.clone();
                         }
                     }
+                    *event_baseline_head = baseline_head.clone();
+                    *event_baseline_paths = baseline_paths.clone();
                 }
 
                 // Coalesce text deltas. A streaming CLI emits one per
@@ -515,11 +597,11 @@ pub async fn start_agent_session(
             run_id.clone(),
             AgentRunEntry {
                 kind,
-                worktree_id,
-                worktree_root,
+                worktree_id: worktree_id.clone(),
+                worktree_root: worktree_root.clone(),
                 session_id: resume_session_id,
-                model,
-                effort,
+                model: model.clone(),
+                effort: effort.clone(),
                 fast,
                 pending_fork: fork_session,
                 allowed_tools: crate::agents::claude::DEFAULT_ALLOWED_TOOLS
@@ -531,10 +613,131 @@ pub async fn start_agent_session(
                 cancel_tx: None,
                 pid: None,
                 started_at_ms: crate::processes::now_ms(),
+                title: None,
             },
         );
     }
-    run_turn(app, state, run_id, first_message).await
+    announce_session_created(&app, &run_id, &worktree_id, &worktree_root, kind);
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let binary_path = crate::commands::agents::binary_path_for(&conn, kind)?;
+        // Best-effort: a failed write here only costs *this run* remembering
+        // its configuration across the next restart, not the turn about to
+        // start — not worth failing the whole session creation over.
+        if let Err(err) = crate::agents::transcripts::persist_agent_configuration(
+            &conn,
+            crate::agents::transcripts::AgentConfigurationUpdate {
+                run_id: &run_id,
+                worktree_id: &worktree_id,
+                agent: kind,
+                model: model.as_deref(),
+                effort: effort.as_deref(),
+                fast,
+                permission_mode,
+            },
+        ) {
+            log::warn!("failed to persist initial agent configuration: {err}");
+        }
+        drop(conn);
+        spawn_title_generation(
+            app.clone(),
+            run_id.clone(),
+            kind,
+            binary_path,
+            worktree_root.clone(),
+            first_message.clone(),
+        );
+    }
+    run_turn(app, state, run_id, first_message, true).await
+}
+
+/// Emitted once `spawn_title_generation` has a title, so the desktop's own
+/// tab strip (`AppShell.tsx`) can rename the tab live — mirrors
+/// `AGENT_SESSION_CREATED_CHANNEL`'s shape. Mobile needs no equivalent
+/// listener: it already polls `processes::list_managed_processes`, whose
+/// `label` prefers this same title the moment it lands in `AppState`.
+pub const AGENT_SESSION_TITLED_CHANNEL: &str = "agent-sessions://titled";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentSessionTitled<'a> {
+    run_id: &'a str,
+    title: &'a str,
+}
+
+fn announce_session_titled(app: &AppHandle, run_id: &str, title: &str) {
+    let _ = app.emit(
+        AGENT_SESSION_TITLED_CHANNEL,
+        &AgentSessionTitled { run_id, title },
+    );
+}
+
+const TITLE_PROMPT: &str = "Summarize the following user request as a short slug for a tab \
+title: 2-4 words, lowercase, hyphen-separated (kebab-case), no punctuation, no quotes, \
+describing the task concisely (e.g. \"payment-fix\", \"home-page-redesign\"). Reply with ONLY \
+the slug, nothing else.\n\nUser request:\n";
+
+/// Cleans up the CLI's one-shot reply into an actual slug — it is
+/// instructed to reply with just the slug, but nothing stops it from
+/// wrapping the answer in quotes, punctuation, or stray commentary.
+fn sanitize_title(raw: &str) -> String {
+    let lower = raw
+        .trim()
+        .trim_matches(['"', '\'', '`', '.'])
+        .to_lowercase();
+    let normalized: String = lower
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    let words: Vec<&str> = normalized
+        .split('-')
+        .filter(|w| !w.is_empty())
+        .take(5)
+        .collect();
+    let joined = words.join("-");
+    let truncated: String = joined.chars().take(40).collect();
+    truncated.trim_end_matches('-').to_string()
+}
+
+/// Fire-and-forget: generates a short descriptive tab title from the run's
+/// first message via a one-shot call to the same CLI already running the
+/// turn (`one_shot::run_one_shot` — the same mechanism
+/// `commands::agents::generate_commit_message` uses for commit messages),
+/// so this needs no separate API key or provider setup. Spawned rather
+/// than awaited alongside the real turn: the CLI invocation can take a few
+/// seconds, and a tab title is not worth delaying the actual response for.
+fn spawn_title_generation(
+    app: AppHandle,
+    run_id: String,
+    kind: AgentKind,
+    binary_path: String,
+    worktree_root: String,
+    first_message: String,
+) {
+    tokio::spawn(async move {
+        let prompt = format!("{TITLE_PROMPT}{first_message}");
+        let Ok(raw) =
+            crate::agents::one_shot::run_one_shot(kind, &binary_path, &prompt, &worktree_root)
+                .await
+        else {
+            return;
+        };
+        let title = sanitize_title(&raw);
+        if title.is_empty() {
+            return;
+        }
+        {
+            let state = app.state::<AppState>();
+            let Ok(mut runs) = state.agent_runs.lock() else {
+                return;
+            };
+            let Some(entry) = runs.get_mut(&run_id) else {
+                return;
+            };
+            entry.title = Some(title.clone());
+        }
+        announce_session_titled(&app, &run_id, &title);
+    });
 }
 
 /// Switches a tab's run to a different (already-existing) CLI session,
@@ -549,6 +752,7 @@ pub async fn start_agent_session(
 /// to instead of erroring on "no such agent run".
 #[tauri::command]
 pub async fn resume_agent_session(
+    app: AppHandle,
     state: State<'_, AppState>,
     run_id: String,
     worktree_id: String,
@@ -556,29 +760,40 @@ pub async fn resume_agent_session(
     kind: AgentKind,
     session_id: String,
 ) -> Result<(), String> {
+    // Restores whatever `persist_agent_configuration` last saved for this
+    // run — without this, every resume (an app restart, or a background
+    // tab this launch's eager-restore is reconnecting) reset the model/
+    // effort/permission-mode straight back to "Default"/`Manual`, even for
+    // a run the user had explicitly configured moments before the restart.
+    let persisted = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        crate::agents::transcripts::load_agent_configuration(&conn, &run_id)
+    };
     let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
     runs.insert(
-        run_id,
+        run_id.clone(),
         AgentRunEntry {
             kind,
-            worktree_id,
-            worktree_root,
+            worktree_id: worktree_id.clone(),
+            worktree_root: worktree_root.clone(),
             session_id: Some(session_id),
-            model: None,
-            effort: None,
-            fast: false,
+            model: persisted.model,
+            effort: persisted.effort,
+            fast: persisted.fast,
             pending_fork: false,
             allowed_tools: crate::agents::claude::DEFAULT_ALLOWED_TOOLS
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            permission_mode: PermissionMode::default(),
+            permission_mode: persisted.permission_mode.unwrap_or_default(),
             turn_active: false,
             cancel_tx: None,
             pid: None,
             started_at_ms: crate::processes::now_ms(),
+            title: None,
         },
     );
+    announce_session_created(&app, &run_id, &worktree_id, &worktree_root, kind);
     Ok(())
 }
 
@@ -589,7 +804,7 @@ pub async fn send_agent_message(
     run_id: String,
     text: String,
 ) -> Result<(), String> {
-    run_turn(app, state, run_id, text).await
+    run_turn(app, state, run_id, text, true).await
 }
 
 /// Reports what an approval actually cost the run's trust, so the UI can
@@ -675,7 +890,10 @@ pub async fn respond_to_permission(
     let nudge = format!(
         "Permission granted for the {tool_name} action you just attempted — please proceed with it now."
     );
-    run_turn(app, state, run_id, nudge).await?;
+    // `false`: this nudge is Maestro's own synthetic continuation, not
+    // something the user typed — never shown as a chat bubble, same as
+    // before this parameter existed.
+    run_turn(app, state, run_id, nudge, false).await?;
     Ok(PermissionOutcome {
         escalated_to_auto,
         resumed: true,
@@ -709,9 +927,35 @@ pub async fn set_permission_mode(
     run_id: String,
     mode: PermissionMode,
 ) -> Result<(), String> {
-    let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
-    if let Some(entry) = runs.get_mut(&run_id) {
+    let snapshot = {
+        let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
+        let Some(entry) = runs.get_mut(&run_id) else {
+            return Ok(());
+        };
         entry.permission_mode = mode;
+        (
+            entry.worktree_id.clone(),
+            entry.kind,
+            entry.model.clone(),
+            entry.effort.clone(),
+            entry.fast,
+        )
+    };
+    let (worktree_id, kind, model, effort, fast) = snapshot;
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    if let Err(err) = crate::agents::transcripts::persist_agent_configuration(
+        &conn,
+        crate::agents::transcripts::AgentConfigurationUpdate {
+            run_id: &run_id,
+            worktree_id: &worktree_id,
+            agent: kind,
+            model: model.as_deref(),
+            effort: effort.as_deref(),
+            fast,
+            permission_mode: mode,
+        },
+    ) {
+        log::warn!("failed to persist agent configuration: {err}");
     }
     Ok(())
 }
@@ -724,13 +968,66 @@ pub async fn set_agent_configuration(
     effort: Option<String>,
     fast: bool,
 ) -> Result<(), String> {
-    let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
-    if let Some(entry) = runs.get_mut(&run_id) {
-        entry.model = model;
-        entry.effort = effort;
+    let snapshot = {
+        let mut runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
+        let Some(entry) = runs.get_mut(&run_id) else {
+            return Ok(());
+        };
+        entry.model = model.clone();
+        entry.effort = effort.clone();
         entry.fast = fast;
+        (entry.worktree_id.clone(), entry.kind, entry.permission_mode)
+    };
+    let (worktree_id, kind, permission_mode) = snapshot;
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    if let Err(err) = crate::agents::transcripts::persist_agent_configuration(
+        &conn,
+        crate::agents::transcripts::AgentConfigurationUpdate {
+            run_id: &run_id,
+            worktree_id: &worktree_id,
+            agent: kind,
+            model: model.as_deref(),
+            effort: effort.as_deref(),
+            fast,
+            permission_mode,
+        },
+    ) {
+        log::warn!("failed to persist agent configuration: {err}");
     }
     Ok(())
+}
+
+/// A run's current model/effort/fast/permission-mode — whichever surface
+/// (desktop composer, mobile relay) last called `set_agent_configuration`/
+/// `set_permission_mode`, or the values session creation started with.
+/// The mobile relay's composer reads this on open (and polls it while a
+/// tab is active) so it shows what the run is actually configured as,
+/// rather than always defaulting — a run's configuration otherwise lived
+/// only in whichever composer instance's own local state last touched it,
+/// which is exactly why two surfaces looking at the same run used to
+/// disagree about it. `None` when the run doesn't exist (already killed,
+/// or a bad id).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentConfiguration {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub fast: bool,
+    pub permission_mode: PermissionMode,
+}
+
+#[tauri::command]
+pub async fn get_agent_configuration(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<Option<AgentConfiguration>, String> {
+    let runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
+    Ok(runs.get(&run_id).map(|entry| AgentConfiguration {
+        model: entry.model.clone(),
+        effort: entry.effort.clone(),
+        fast: entry.fast,
+        permission_mode: entry.permission_mode,
+    }))
 }
 
 #[tauri::command]

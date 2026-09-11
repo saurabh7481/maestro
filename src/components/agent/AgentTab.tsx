@@ -21,7 +21,6 @@ import {
 } from "@phosphor-icons/react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { agentsApi } from "../../api/agents";
-import { gitApi } from "../../api/git";
 import {
   useAgentAvailabilityStore,
   useAgentCapabilities,
@@ -939,9 +938,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
 
   const openRun = useAgentSessionStore((s) => s.openRun);
   const tabState = useAgentSessionStore((s) => s.byRunId[runId]);
-  const appendUserMessage = useAgentSessionStore((s) => s.appendUserMessage);
   const markStarted = useAgentSessionStore((s) => s.markStarted);
-  const setTurnBaseline = useAgentSessionStore((s) => s.setTurnBaseline);
   const setRunError = useAgentSessionStore((s) => s.setRunError);
   const setStoredPermissionMode = useAgentSessionStore((s) => s.setPermissionMode);
   const clearRunError = useAgentSessionStore((s) => s.clearRunError);
@@ -989,25 +986,11 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
     effort: string | null,
     fast: boolean,
   ) {
-    // Reflect the submitted prompt immediately. Baseline collection can
-    // take a noticeable beat on a large worktree and must not leave a
-    // dequeued follow-up looking idle while it runs.
-    appendUserMessage(runId, text);
-    if (tab.worktreeRoot) {
-      try {
-        const [gitStatus, commits] = await Promise.all([
-          gitApi.getWorkingStatus(tab.worktreeRoot),
-          gitApi.getCommitLog(tab.worktreeRoot, 1, 0),
-        ]);
-        setTurnBaseline(
-          runId,
-          commits[0]?.hash ?? null,
-          gitStatus.entries.map((entry) => entry.path),
-        );
-      } catch {
-        setTurnBaseline(runId, null, []);
-      }
-    }
+    // The user-message bubble and the turn's file-change baseline both
+    // come from the backend now (`agents/manager.rs::run_turn` echoes the
+    // message and snapshots git state right before spawning) — not
+    // appended/collected here, so a message sent through the mobile relay
+    // renders identically to one sent from this composer.
     try {
       if (!tabState?.started) {
         markStarted(runId);

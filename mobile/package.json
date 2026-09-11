@@ -1,0 +1,31 @@
+{
+  "name": "maestro-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mobile-first web client for Maestro's Tailscale Funnel relay (Phase 4 of the mobile control plan). Standalone Vite app, served as static files by the relay itself alongside its REST/WS API.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.9",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

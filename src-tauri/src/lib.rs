@@ -8,6 +8,7 @@ mod lsp;
 mod models;
 mod process_ext;
 mod processes;
+mod relay;
 mod search;
 mod state;
 mod terminal;
@@ -156,6 +157,29 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             let conn = db::open(&app_data_dir)?;
             app.manage(make_app_state(conn, app_data_dir));
+            // Starts off; the block below restores it to whatever the
+            // Settings "Enable Remote Access" toggle last left it as
+            // (`relay::mod.rs`'s `RELAY_ENABLED_SETTING_KEY`) — without
+            // this, a device paired earlier would silently lose its
+            // connection on every desktop restart, not just when the user
+            // actually meant to turn remote access off.
+            app.manage(relay::RelayState::default());
+            let relay_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = relay_app.state::<AppState>();
+                let should_enable = match state.db.lock() {
+                    Ok(conn) => relay::read_persisted_enabled(&conn),
+                    Err(_) => false,
+                };
+                if should_enable {
+                    let relay_state = relay_app.state::<relay::RelayState>();
+                    if let Err(error) =
+                        relay::set_relay_enabled(relay_app.clone(), relay_state, true).await
+                    {
+                        log::error!("Failed to restore remote access on startup: {error}");
+                    }
+                }
+            });
 
             // Started before the app finishes setup so the port is always
             // set by the time any agent turn can spawn (`agents/manager.rs`
@@ -316,6 +340,14 @@ pub fn run() {
             agents::manager::kill_agent_runs_for_worktree,
             processes::list_managed_processes,
             processes::kill_managed_process,
+            relay::set_relay_enabled,
+            relay::relay_status,
+            relay::pairing::create_pairing_code,
+            relay::devices::list_paired_devices,
+            relay::devices::revoke_device,
+            relay::devices::delete_device,
+            relay::devices::set_device_access,
+            relay::devices::rename_device,
             terminal::spawn_terminal,
             terminal::write_terminal,
             terminal::resize_terminal,

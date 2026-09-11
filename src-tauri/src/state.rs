@@ -61,6 +61,13 @@ pub struct AgentRunEntry {
     pub pid: Option<u32>,
     /// When this run (the tab, not the current turn) was created.
     pub started_at_ms: u64,
+    /// A short, human-readable slug generated from the run's first message
+    /// (`manager.rs::spawn_title_generation`) — `None` until that
+    /// generation finishes, during which `processes.rs` falls back to the
+    /// provider's display name. Lets a tab's name distinguish "the
+    /// payment-fix session" from "the other Claude Code tab" instead of
+    /// every tab of the same CLI sharing one label.
+    pub title: Option<String>,
 }
 
 /// One in-flight worktree hook run — the cancel signal

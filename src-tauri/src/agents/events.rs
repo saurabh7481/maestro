@@ -114,6 +114,17 @@ pub enum AgentEvent {
         /// compaction. `None` unless `capabilities.reports_context_window`.
         context_window: Option<u64>,
         result_text: Option<String>,
+        /// Git state captured right before this turn's CLI process spawned
+        /// (`agents/manager.rs::run_turn`) — the authoritative "what was
+        /// already dirty" baseline for `agentFileChanges.ts`'s per-turn
+        /// diff, captured server-side so it exists for *every* turn
+        /// regardless of which surface started it (desktop composer or the
+        /// mobile relay), not just ones that went through the desktop's own
+        /// pre-send git calls. `None`/empty on a git failure — the turn
+        /// itself still completes, just with unscoped attribution for it,
+        /// same degradation as before this field existed.
+        baseline_head: Option<String>,
+        baseline_paths: Vec<String>,
     },
     /// stderr output or a spawn-level failure.
     #[serde(rename_all = "camelCase")]
@@ -164,6 +175,8 @@ mod tests {
             cache_write_tokens: None,
             context_window: Some(1_000_000),
             result_text: None,
+            baseline_head: Some("abc123".to_string()),
+            baseline_paths: vec!["src/lib.rs".to_string()],
         })
         .unwrap();
         assert_eq!(json["type"], "turnResult");

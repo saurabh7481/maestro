@@ -176,6 +176,11 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                 cache_write_tokens: None,
                 context_window: None,
                 result_text: None,
+                // Always overwritten by `manager.rs::run_turn` before this
+                // reaches the frontend — no adapter can know the pre-spawn
+                // git baseline itself.
+                baseline_head: None,
+                baseline_paths: Vec::new(),
             }],
             None,
         ),
@@ -336,6 +341,11 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                         .get("last_agent_message")
                         .and_then(|s| s.as_str())
                         .map(str::to_string),
+                    // Always overwritten by `manager.rs::run_turn` before
+                    // this reaches the frontend — no adapter can know the
+                    // pre-spawn git baseline itself.
+                    baseline_head: None,
+                    baseline_paths: Vec::new(),
                 }],
                 None,
             )
@@ -366,6 +376,11 @@ pub fn parse_line(line: &str, _cache: &mut ToolUseCache) -> (Vec<AgentEvent>, Op
                     cache_write_tokens: None,
                     context_window: None,
                     result_text: Some(message),
+                    // Always overwritten by `manager.rs::run_turn` before
+                    // this reaches the frontend — no adapter can know the
+                    // pre-spawn git baseline itself.
+                    baseline_head: None,
+                    baseline_paths: Vec::new(),
                 }],
                 None,
             )

@@ -727,6 +727,11 @@ pub fn finish(
                     .to_string()
             }))
         },
+        // Always overwritten by `manager.rs::run_turn` before this reaches
+        // the frontend — no adapter can know the pre-spawn git baseline
+        // itself.
+        baseline_head: None,
+        baseline_paths: Vec::new(),
     });
     events
 }

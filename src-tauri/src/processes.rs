@@ -16,6 +16,7 @@
 //! parsing, since Maestro ships on Linux, macOS and Windows and this is
 //! the one part of the feature that is genuinely platform-specific.
 
+use crate::agents::AgentKind;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Mutex, OnceLock};
@@ -74,6 +75,11 @@ pub struct ManagedProcess {
     /// can offer "reveal in tab". Agent and terminal ids *are* tab ids;
     /// language servers and hooks have no tab.
     pub tab_id: Option<String>,
+    /// Which CLI an agent run is — `None` for every other kind. Lets a
+    /// client that only sees this snapshot (the mobile relay's session
+    /// list, which has no other way to know) still offer the right
+    /// model/effort picker for a session it didn't create itself.
+    pub agent_kind: Option<AgentKind>,
     pub pid: Option<u32>,
     pub started_at_ms: u64,
     pub status: ManagedProcessStatus,
@@ -220,6 +226,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
         pid: Option<u32>,
         started_at_ms: u64,
         status: ManagedProcessStatus,
+        agent_kind: Option<AgentKind>,
     }
 
     let mut rows: Vec<Row> = Vec::new();
@@ -234,7 +241,10 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
             rows.push(Row {
                 id: run_id.clone(),
                 kind: ManagedProcessKind::Agent,
-                label: entry.kind.display_name().to_string(),
+                label: entry
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| entry.kind.display_name().to_string()),
                 detail: entry
                     .session_id
                     .as_ref()
@@ -250,6 +260,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 } else {
                     ManagedProcessStatus::Idle
                 },
+                agent_kind: Some(entry.kind),
             });
         }
     }
@@ -268,6 +279,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 pid: handle.pid,
                 started_at_ms: handle.started_at_ms,
                 status: ManagedProcessStatus::Running,
+                agent_kind: None,
             });
         }
     }
@@ -286,6 +298,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 pid: entry.pid,
                 started_at_ms: entry.started_at_ms,
                 status: ManagedProcessStatus::Running,
+                agent_kind: None,
             });
         }
     }
@@ -304,6 +317,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 pid: entry.pid,
                 started_at_ms: entry.started_at_ms,
                 status: ManagedProcessStatus::Running,
+                agent_kind: None,
             });
         }
     }
@@ -341,6 +355,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 cpu_percent: measured.cpu_percent,
                 memory_bytes: measured.memory_bytes,
                 child_process_count: measured.child_process_count,
+                agent_kind: row.agent_kind,
             }
         })
         .collect();

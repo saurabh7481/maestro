@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDesignSystem } from "../../design/useDesignSystem";
 import { useSessionPersistence } from "../../design/useSessionPersistence";
@@ -10,6 +10,9 @@ import type { Tab } from "../../state/tabsStore";
 import { useOpenFilesStore } from "../../state/openFilesStore";
 import { useCloseConfirmStore } from "../../state/closeConfirmStore";
 import { useAgentAvailabilityStore } from "../../state/agentAvailabilityStore";
+import { listenToAgentSessionCreated, listenToAgentSessionTitled } from "../../api/agentEvents";
+import { AGENT_DISPLAY_NAME } from "../../types/agent";
+import { useAgentSessionStore } from "../../state/agentSessionStore";
 import { ensureNotificationPermission } from "../../design/osNotifications";
 import { useUpdateStore } from "../../state/updateStore";
 import { useUiStore } from "../../state/uiStore";
@@ -137,6 +140,103 @@ function useQuitGuard() {
       });
     return () => unlisten?.();
   }, []);
+}
+
+/** Adds a tab for any agent run this window doesn't already have one for
+ * — the desktop's own "+ New Agent" flow creates its tab locally before
+ * the backend run even starts, so `ensureTab` is a no-op there; this only
+ * actually does something for a run created elsewhere, i.e. the mobile
+ * relay (`docs` — see the mobile-relay plan). Single app-lifetime
+ * subscription, not per-tab, since its job is to learn about runs no tab
+ * exists for yet.
+ *
+ * Also opens the run's live event stream (`openRun`) immediately, before
+ * creating the tab — a relay-created run's first turn starts spawning
+ * right away on the backend (`agents/manager.rs::start_agent_session`),
+ * so waiting for this component tree to re-render, mount an `AgentTab`,
+ * and have *its* mount effect call `openRun` would risk missing the
+ * user-message echo and early transcript events. `openRun` is idempotent
+ * (`agentSessionStore.ts`), so `AgentTab`'s own call is a harmless no-op
+ * once it does mount. */
+function useRelaySessionSync() {
+  const ensureTab = useTabsStore((s) => s.ensureTab);
+  const renameTab = useTabsStore((s) => s.renameTab);
+  const openRun = useAgentSessionStore((s) => s.openRun);
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenToAgentSessionCreated(({ runId, worktreeId, worktreeRoot, kind }) => {
+      openRun(runId);
+      ensureTab({
+        id: runId,
+        type: "agent",
+        title: AGENT_DISPLAY_NAME[kind],
+        agentKind: kind,
+        worktreeId,
+        worktreeRoot,
+      });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [ensureTab, openRun]);
+
+  // A short, distinguishing title generated from the run's first message
+  // (`agents/manager.rs::spawn_title_generation`) — mobile picks this up
+  // "for free" from the same `ManagedProcess.label` its own polling
+  // already reads, but the desktop tab strip needs an explicit rename
+  // since its titles live in `tabsStore`, not re-derived from the backend
+  // on every render.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listenToAgentSessionTitled(({ runId, title }) => {
+      renameTab(runId, title);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [renameTab]);
+}
+
+/** Registers every restored agent tab's backend run on launch, not just
+ * whichever tab happens to be its pane's active one — `AgentTab.tsx`'s own
+ * `openRun`/`hydrateRun` effects only fire once that specific tab actually
+ * *mounts* (`TabHost.tsx` mounts only a pane's active tab plus a small
+ * MRU-capped budget of recently-active ones, not every open tab at once),
+ * and a tab with no live `AgentRunEntry` yet is invisible to
+ * `processes::list_managed_processes` — which is what the mobile relay's
+ * session list/dock polls. Without this, a tab the user hasn't clicked on
+ * yet this launch simply doesn't exist as far as mobile is concerned, even
+ * though it's sitting right there in the desktop's own tab strip. Both
+ * `openRun` and `hydrateRun` are idempotent and already guard against
+ * clobbering a run that's since gone live for real, so this and the
+ * per-tab mount effect racing each other (whichever tab the user clicks
+ * first) is harmless. */
+function useEagerAgentRunRestore() {
+  const openRun = useAgentSessionStore((s) => s.openRun);
+  const hydrateRun = useAgentSessionStore((s) => s.hydrateRun);
+  const tabs = useTabsStore((s) => s.tabs);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    // `tabs` starts empty and is filled in asynchronously by
+    // `useSessionPersistence`'s disk read (an IPC round-trip gated on
+    // `workspaceStore`'s own `loadAll()`), so this can't just run once on
+    // mount — it has to wait for that first real population, then run
+    // exactly once against it. A later `tabs` change (a tab opened/closed
+    // during the live session) is already covered by the mechanisms that
+    // created it and must not re-trigger this scan.
+    if (restoredRef.current || tabs.length === 0) return;
+    restoredRef.current = true;
+    for (const tab of tabs) {
+      if (tab.type !== "agent") continue;
+      openRun(tab.id);
+      void hydrateRun(tab.id, {
+        kind: tab.agentKind ?? "claudeCode",
+        worktreeId: tab.worktreeId ?? "",
+        worktreeRoot: tab.worktreeRoot ?? "",
+      });
+    }
+  }, [tabs, openRun, hydrateRun]);
 }
 
 /** Cmd/Ctrl+S saves the active tab if it's a dirty file/markdown tab. A
@@ -402,6 +502,8 @@ export function AppShell() {
   useWorktreeScmSync();
   useWorktreeTabSync();
   useQuitGuard();
+  useRelaySessionSync();
+  useEagerAgentRunRestore();
   useSaveShortcut();
   useTerminalShortcut();
   useAgentAvailabilitySync();

@@ -16,8 +16,10 @@ use crate::state::AppState;
 
 /// Cap on `TerminalHandle::scrollback` — enough for an agent tool call to
 /// see several screens of dev-server log output without letting a terminal
-/// left running for days grow unbounded.
-const SCROLLBACK_CAP_BYTES: usize = 256 * 1024;
+/// left running for days grow unbounded. `pub(crate)` so the mobile relay's
+/// scrollback route (`relay/routes.rs`) can request the whole buffer
+/// without duplicating this number.
+pub(crate) const SCROLLBACK_CAP_BYTES: usize = 256 * 1024;
 
 pub struct TerminalHandle {
     writer: Box<dyn Write + Send>,
@@ -74,7 +76,7 @@ impl TerminalHandle {
     }
 }
 
-fn pty_event_channel(terminal_id: &str) -> String {
+pub(crate) fn pty_event_channel(terminal_id: &str) -> String {
     format!("pty://{terminal_id}/data")
 }
 

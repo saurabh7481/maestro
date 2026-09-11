@@ -174,6 +174,14 @@ export type AgentEvent =
       cacheWriteTokens: number | null;
       contextWindow: number | null;
       resultText: string | null;
+      /** Git state captured server-side right before this turn's CLI
+       * process spawned (`agents/manager.rs::run_turn`) — the "what was
+       * already dirty" baseline `agentFileChanges.ts` diffs against, so
+       * this turn's file-change card only shows what *it* actually
+       * changed. Backend-authoritative: unlike before, this exists for
+       * every turn regardless of which surface started it. */
+      baselineHead: string | null;
+      baselinePaths: string[];
     }
   | { type: "error"; message: string }
   | { type: "exit"; code: number | null }

@@ -59,7 +59,8 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 fs2 = "0.4.3"
 atomic-write-file = "0.3.1"
 rmcp = { version = "3.2.0", features = ["server", "macros", "transport-streamable-http-server"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tauri-plugin-updater = "2.11.0"
 tauri-plugin-process = "2.3.1"
 url = "2.5.8"
