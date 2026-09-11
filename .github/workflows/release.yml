@@ -87,6 +87,17 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # The desktop's own frontend is built by Tauri itself
+      # (`beforeBuildCommand` in `tauri.conf.json`), but the mobile web
+      # app (`mobile/`, a separate Vite project the relay serves as a
+      # bundled resource — see `relay/mod.rs`'s module doc) is not, so it
+      # has to be built explicitly before the Rust build below: its
+      # `bundle.resources` entry requires `mobile/dist` to already exist
+      # the moment `cargo` compiles this crate, real bundle this time —
+      # unlike `ci.yml`'s placeholder, this build actually ships.
+      - name: Build the mobile web app
+        run: pnpm --filter ./mobile build
+
       # `createUpdaterArtifacts` (tauri.conf.json) + these two secrets make
       # tauri-action sign every bundle it builds and publish/merge a
       # `latest.json` updater manifest on the release automatically — that

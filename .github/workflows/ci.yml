@@ -48,6 +48,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `tauri.conf.json`'s `bundle.resources` bundles the mobile web
+      # app's build output (`../mobile/dist`, a separate Vite project —
+      # see `relay/mod.rs`'s module doc) as a Tauri resource, and the
+      # build script checks that path exists on *every* `cargo` invocation
+      # that compiles this crate, `cargo fmt` excepted — including this
+      # job's `clippy`/`test`, which have nothing to do with the mobile
+      # app itself. A placeholder is enough for them; the real bundle is
+      # only needed for an actual release build (`release.yml`).
+      - name: Create placeholder mobile dist (unused by this job)
+        run: |
+          mkdir -p mobile/dist
+          echo '<!doctype html><title>placeholder</title>' > mobile/dist/index.html
+
       # No `apt-get update` — these are long-standing Ubuntu 22.04 packages
       # that resolve fine against the index already baked into the runner
       # image, and skipping it avoids depending on GitHub's regional apt
