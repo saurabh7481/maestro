@@ -2683,7 +2683,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "atomic-write-file",
  "axum",
