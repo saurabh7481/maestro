@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { CaretDown, Check, Copy, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import QRCode from "qrcode";
 import { relayApi } from "../../api/relay";
-import type { PairedDevice, RelayStatus } from "../../api/relay";
-import { Button, IconButton, Switch, TextInput } from "../primitives";
+import type { FunnelReport, PairedDevice, RelayStatus } from "../../api/relay";
+import { Button, IconButton, Switch, TextInput, Tooltip } from "../primitives";
+import { FunnelSetupCard } from "./FunnelSetupCard";
 import settingsStyles from "./SettingsModal.module.css";
 import styles from "./ConnectedDevicesPane.module.css";
 
@@ -11,6 +12,10 @@ import styles from "./ConnectedDevicesPane.module.css";
  * online/offline dot and "last seen" stay roughly live without a push
  * channel of their own — same tradeoff as `processStore.ts`'s polling. */
 const REFRESH_INTERVAL_MS = 5000;
+
+function isFunnelReport(value: unknown): value is FunnelReport {
+  return !!value && typeof value === "object" && "state" in value && "blocksEnabling" in value;
+}
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -43,6 +48,10 @@ export function ConnectedDevicesPane() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The Tailscale setup diagnosis — `null` until the first check comes
+   * back, so the pane doesn't flash "not installed" before it knows. */
+  const [funnel, setFunnel] = useState<FunnelReport | null>(null);
+  const [rechecking, setRechecking] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -54,26 +63,59 @@ export function ConnectedDevicesPane() {
     }
   }, []);
 
+  // Status is polled alongside the device list, not just read once on
+  // mount: startup restore retries for a few minutes while Tailscale comes
+  // up (`relay::restore_persisted`), so a pane opened during that window
+  // would otherwise keep showing the toggle off after the relay is
+  // actually running. Both calls are local and cheap — a mutex read and a
+  // small SQLite select.
   useEffect(() => {
-    relayApi
-      .status()
-      .then(setStatus)
-      .catch((e) => setError(String(e)));
-    relayApi
-      .listDevices()
-      .then(setDevices)
-      .catch((e) => setError(String(e)));
-    const interval = setInterval(() => void refreshDevices(), REFRESH_INTERVAL_MS);
+    const load = () => {
+      relayApi
+        .status()
+        .then(setStatus)
+        .catch((e) => setError(String(e)));
+      relayApi
+        .listDevices()
+        .then(setDevices)
+        .catch((e) => setError(String(e)));
+      // Polled with the rest: Tailscale can come up (or drop) while this
+      // pane is open, and the guidance below has to follow it rather than
+      // strand the user on a diagnosis that stopped being true.
+      relayApi
+        .checkFunnel()
+        .then(setFunnel)
+        .catch(() => setFunnel(null));
+    };
+    load();
+    const interval = setInterval(load, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [refreshDevices]);
+  }, []);
+
+  async function recheck() {
+    setRechecking(true);
+    setError(null);
+    try {
+      setFunnel(await relayApi.checkFunnel());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRechecking(false);
+    }
+  }
 
   async function toggleEnabled(next: boolean) {
     setBusy(true);
     setError(null);
     try {
       setStatus(await relayApi.setEnabled(next));
+      if (next) setFunnel(await relayApi.checkFunnel());
     } catch (e) {
-      setError(String(e));
+      // A failed enable rejects with the same `FunnelReport` the readiness
+      // check returns, so it lands in the same card rather than as a
+      // second, differently-shaped error — see `relay/funnel.rs`.
+      if (isFunnelReport(e)) setFunnel(e);
+      else setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -148,6 +190,12 @@ export function ConnectedDevicesPane() {
   const pairUrl =
     status.hostname && pairingCode ? `https://${status.hostname}/?code=${pairingCode}` : null;
 
+  // Only the states the backend is certain about block the toggle — see
+  // `FunnelState::blocks_enabling` for why a capability-derived guess
+  // must not lock someone out of a setup that actually works.
+  const blocked = funnel?.blocksEnabling ?? false;
+  const blockedReason = blocked ? funnel?.title : null;
+
   return (
     <>
       <div className={settingsStyles.group}>
@@ -163,13 +211,30 @@ export function ConnectedDevicesPane() {
                 : "Starts a relay server, reachable from anywhere via Tailscale Funnel, that a paired device — phone, tablet, or another computer — can control agent and terminal tabs through."}
             </p>
           </div>
-          <Switch
-            checked={status.enabled}
-            onCheckedChange={(next) => void toggleEnabled(next)}
-            label="Enable remote access"
-            disabled={busy}
-          />
+          <Tooltip label={blockedReason ?? "Enable remote access"}>
+            {/* A span, not the Switch itself: a disabled control emits no
+                pointer events, so the tooltip explaining *why* it's
+                disabled would never appear on the thing it describes. */}
+            <span>
+              <Switch
+                checked={status.enabled}
+                onCheckedChange={(next) => void toggleEnabled(next)}
+                label="Enable remote access"
+                disabled={busy || (!status.enabled && blocked)}
+              />
+            </span>
+          </Tooltip>
         </div>
+        {/* Shown whenever setup is incomplete — including while remote
+            access is off and nobody has touched the toggle yet, which is
+            exactly when the user needs to know what's missing. */}
+        {funnel && funnel.state !== "ready" && (
+          <FunnelSetupCard
+            report={funnel}
+            rechecking={rechecking}
+            onRecheck={() => void recheck()}
+          />
+        )}
       </div>
 
       <div className={settingsStyles.group}>
@@ -186,7 +251,10 @@ export function ConnectedDevicesPane() {
             {qrDataUrl ? (
               <>
                 <img src={qrDataUrl} alt="Pairing QR code" className={styles.qrImage} />
-                <p className={styles.pairingHint}>Scan this with your phone's camera to connect.</p>
+                <p className={styles.pairingHint}>
+                  Scan this with your phone's camera — or, if Maestro is already open on it, with
+                  "Scan QR code" on its pairing screen.
+                </p>
               </>
             ) : (
               <p className={styles.pairingHint}>

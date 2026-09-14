@@ -158,29 +158,16 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             let conn = db::open(&app_data_dir)?;
             app.manage(make_app_state(conn, app_data_dir));
-            // Starts off; the block below restores it to whatever the
-            // Settings "Enable Remote Access" toggle last left it as
-            // (`relay::mod.rs`'s `RELAY_ENABLED_SETTING_KEY`) — without
-            // this, a device paired earlier would silently lose its
+            // Starts off; `relay::restore_persisted` below brings it back
+            // up if the Settings "Enable Remote Access" toggle was last
+            // left on (`relay::mod.rs`'s `RELAY_ENABLED_SETTING_KEY`) —
+            // without it, a device paired earlier would silently lose its
             // connection on every desktop restart, not just when the user
-            // actually meant to turn remote access off.
+            // actually meant to turn remote access off. A fresh install
+            // has no stored value and stays off.
             app.manage(relay::RelayState::default());
             let relay_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let state = relay_app.state::<AppState>();
-                let should_enable = match state.db.lock() {
-                    Ok(conn) => relay::read_persisted_enabled(&conn),
-                    Err(_) => false,
-                };
-                if should_enable {
-                    let relay_state = relay_app.state::<relay::RelayState>();
-                    if let Err(error) =
-                        relay::set_relay_enabled(relay_app.clone(), relay_state, true).await
-                    {
-                        log::error!("Failed to restore remote access on startup: {error}");
-                    }
-                }
-            });
+            tauri::async_runtime::spawn(relay::restore_persisted(relay_app));
 
             // Started before the app finishes setup so the port is always
             // set by the time any agent turn can spawn (`agents/manager.rs`
@@ -342,6 +329,7 @@ pub fn run() {
             processes::list_managed_processes,
             processes::kill_managed_process,
             relay::set_relay_enabled,
+            relay::check_funnel,
             relay::relay_status,
             relay::pairing::create_pairing_code,
             relay::devices::list_paired_devices,

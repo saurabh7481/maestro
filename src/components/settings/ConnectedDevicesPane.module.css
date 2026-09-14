@@ -86,6 +86,113 @@
   text-align: left;
 }
 
+/* --- Tailscale setup guidance --- */
+
+/* Tinted by tone rather than always-red: "Tailscale is still connecting"
+   is a step in progress, not a fault, and shouldn't read like one. */
+.setupCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border-2);
+  background: var(--bg-2);
+}
+
+.setupCard[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--yellow) 32%, transparent);
+  background: color-mix(in srgb, var(--yellow) 8%, var(--bg-2));
+}
+
+.setupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.setupGlyph {
+  flex: none;
+  color: var(--text-mute);
+}
+
+.setupCard[data-tone="warn"] .setupGlyph {
+  color: var(--yellow);
+}
+
+.setupTitle {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.setupMessage {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.setupCommand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-3);
+  border: var(--border-width) solid var(--border);
+}
+
+.setupCommand code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  user-select: text;
+}
+
+.setupCopy {
+  flex: none;
+  display: flex;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+
+.setupCopy:hover {
+  color: var(--text);
+}
+
+.setupActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.setupDetail {
+  max-height: 10rem;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .copyField {
   display: flex;
   align-items: center;

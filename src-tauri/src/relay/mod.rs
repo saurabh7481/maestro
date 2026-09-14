@@ -27,16 +27,24 @@ use tauri::Manager;
 use tokio::sync::oneshot;
 
 use crate::state::AppState;
+pub use funnel::FunnelReport;
+
+/// Failures that aren't about Tailscale setup at all (a poisoned mutex, a
+/// socket that wouldn't bind) still have to reach the UI in the one shape
+/// it renders, so they arrive as `Unknown` with their own text in
+/// `detail` rather than as a second error type.
+fn internal_error(error: impl std::fmt::Display) -> FunnelReport {
+    funnel::internal(error.to_string())
+}
 
 const RELAY_ENABLED_SETTING_KEY: &str = "relay.enabled";
 
-/// Whether remote access was last left on — checked on app startup
-/// (`lib.rs`'s `.setup()`) to restore it automatically, so a device
-/// paired once stays paired across desktop restarts instead of the user
-/// having to flip the Settings toggle back on every time. Defaults to
-/// `false`, same as `RelayState::default()`'s own starting point, for a
-/// fresh install that has never touched the toggle at all.
-pub fn read_persisted_enabled(conn: &rusqlite::Connection) -> bool {
+/// Whether remote access was last left on. Defaults to `false` so a fresh
+/// install — one that has never touched the toggle — starts with the relay
+/// off and nothing exposed; after that the stored value is authoritative in
+/// both directions, and only the user flipping the Settings toggle changes
+/// it.
+pub fn read_enabled(conn: &rusqlite::Connection) -> bool {
     conn.query_row(
         "SELECT value_json FROM settings WHERE key = ?1",
         rusqlite::params![RELAY_ENABLED_SETTING_KEY],
@@ -49,9 +57,7 @@ pub fn read_persisted_enabled(conn: &rusqlite::Connection) -> bool {
     .unwrap_or(false)
 }
 
-fn write_persisted_enabled(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let app_state = app.state::<AppState>();
-    let conn = app_state.db.lock().map_err(|e| e.to_string())?;
+fn write_enabled(conn: &rusqlite::Connection, enabled: bool) -> Result<(), String> {
     conn.execute(
         "INSERT INTO settings (key, value_json) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
@@ -62,6 +68,82 @@ fn write_persisted_enabled(app: &tauri::AppHandle, enabled: bool) -> Result<(), 
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn write_persisted_enabled(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let app_state = app.state::<AppState>();
+    let conn = app_state.db.lock().map_err(|e| e.to_string())?;
+    write_enabled(&conn, enabled)
+}
+
+/// How long to keep trying to bring the relay back up on startup, as
+/// delays between attempts (the first is immediate).
+///
+/// Restoring is not a one-shot: Maestro commonly launches at login, *next
+/// to* Tailscale rather than after it, and `funnel::enable`'s preflight
+/// fails outright while the daemon is still connecting ("installed but not
+/// logged in"). A single attempt at t=0 therefore loses remote access for
+/// the whole session on exactly the restart the user is most likely to be
+/// away from the machine for — the setting says on, the relay is off, and
+/// nothing ever reconciles the two. Spread over ~3.5 minutes this rides
+/// out a cold boot; past that it's a real misconfiguration to report, not
+/// a race to wait on.
+const RESTORE_RETRY_DELAYS_SECS: [u64; 5] = [5, 10, 30, 60, 120];
+
+/// Brings the relay back up if the Settings toggle was last left on.
+/// Called once from `lib.rs`'s `.setup()`; never flips the stored setting
+/// itself, so a startup that can't reach Tailscale leaves "enabled" intact
+/// for the next launch rather than silently opting the user out.
+pub async fn restore_persisted(app: tauri::AppHandle) {
+    let should_enable = match app.state::<AppState>().db.lock() {
+        Ok(conn) => read_enabled(&conn),
+        Err(_) => false,
+    };
+    if !should_enable {
+        return;
+    }
+
+    let mut last_error = String::new();
+    for (attempt, delay) in std::iter::once(0)
+        .chain(RESTORE_RETRY_DELAYS_SECS)
+        .enumerate()
+    {
+        if delay > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+        }
+        // Re-read each time: the user may have opened Settings and turned
+        // remote access off (or on, which already started it) while these
+        // retries were still pending.
+        let still_wanted = match app.state::<AppState>().db.lock() {
+            Ok(conn) => read_enabled(&conn),
+            Err(_) => false,
+        };
+        if !still_wanted {
+            return;
+        }
+
+        let state = app.state::<RelayState>();
+        match set_relay_enabled(app.clone(), state, true).await {
+            Ok(_) => {
+                if attempt > 0 {
+                    log::info!("Remote access restored on startup after {attempt} retries");
+                }
+                return;
+            }
+            Err(report) => {
+                last_error = format!("{}: {}", report.title, report.message);
+                // A settled condition — Tailscale not installed, Funnel
+                // never enabled for the tailnet — won't resolve by
+                // waiting, so report it now instead of retrying for
+                // minutes. The Settings pane shows the same diagnosis with
+                // a link to the fix.
+                if !report.state.worth_retrying() {
+                    break;
+                }
+            }
+        }
+    }
+    log::error!("Failed to restore remote access on startup: {last_error}");
 }
 
 /// One running relay server's shutdown handle. Dropping/firing
@@ -139,29 +221,29 @@ pub async fn set_relay_enabled(
     app: tauri::AppHandle,
     state: tauri::State<'_, RelayState>,
     enabled: bool,
-) -> Result<RelayStatus, String> {
+) -> Result<RelayStatus, FunnelReport> {
     if enabled {
-        let already_running = state.running.lock().map_err(|e| e.to_string())?.is_some();
+        let already_running = state.running.lock().map_err(internal_error)?.is_some();
         if already_running {
-            return relay_status(state).await;
+            return relay_status(state).await.map_err(internal_error);
         }
-        let (port, shutdown_tx) = server::serve(app.clone()).await?;
+        let (port, shutdown_tx) = server::serve(app.clone()).await.map_err(internal_error)?;
         let hostname = match funnel::enable(port).await {
             Ok(hostname) => Some(hostname),
-            Err(err) => {
+            Err(report) => {
                 // Roll back: don't leave a relay server running that
                 // Funnel failed to expose — "enabled" must mean "reachable".
                 let _ = shutdown_tx.send(());
-                return Err(err);
+                return Err(report);
             }
         };
-        *state.running.lock().map_err(|e| e.to_string())? = Some(RunningRelay {
+        *state.running.lock().map_err(internal_error)? = Some(RunningRelay {
             port,
             shutdown_tx,
             hostname,
         });
     } else {
-        let taken = state.running.lock().map_err(|e| e.to_string())?.take();
+        let taken = state.running.lock().map_err(internal_error)?.take();
         if let Some(running) = taken {
             let _ = running.shutdown_tx.send(());
             if let Err(err) = funnel::disable().await {
@@ -175,7 +257,16 @@ pub async fn set_relay_enabled(
         // remembering it — not worth failing this toggle over.
         log::warn!("failed to persist remote access setting: {err}");
     }
-    relay_status(state).await
+    relay_status(state).await.map_err(internal_error)
+}
+
+/// Read-only diagnosis of whether remote access *can* be turned on, so the
+/// Settings pane can show which setup step is missing (and link at its fix)
+/// before the user flips a toggle that would only snap back. Changes
+/// nothing — see `funnel::check`.
+#[tauri::command]
+pub async fn check_funnel() -> FunnelReport {
+    funnel::check().await
 }
 
 #[tauri::command]
@@ -186,4 +277,61 @@ pub async fn relay_status(state: tauri::State<'_, RelayState>) -> Result<RelaySt
         port: running.as_ref().map(|r| r.port),
         hostname: running.as_ref().and_then(|r| r.hostname.clone()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only the `settings` table matters here; `db::open` needs a real
+    /// app-data directory, which a unit test has no business creating.
+    fn settings_db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn a_fresh_install_has_remote_access_off() {
+        assert!(!read_enabled(&settings_db()));
+    }
+
+    #[test]
+    fn the_toggle_survives_a_restart_in_both_directions() {
+        let conn = settings_db();
+
+        write_enabled(&conn, true).unwrap();
+        assert!(read_enabled(&conn), "enabling must outlive the process");
+
+        write_enabled(&conn, false).unwrap();
+        assert!(!read_enabled(&conn), "disabling must outlive it too");
+
+        // Re-enabling overwrites rather than colliding on the primary key.
+        write_enabled(&conn, true).unwrap();
+        assert!(read_enabled(&conn));
+    }
+
+    /// A corrupt or hand-edited row must not read as "on" — failing open
+    /// would expose the relay on a machine whose user never asked for it.
+    #[test]
+    fn an_unreadable_stored_value_falls_back_to_off() {
+        let conn = settings_db();
+        conn.execute(
+            "INSERT INTO settings (key, value_json) VALUES (?1, ?2)",
+            rusqlite::params![RELAY_ENABLED_SETTING_KEY, "not-json"],
+        )
+        .unwrap();
+        assert!(!read_enabled(&conn));
+    }
+
+    /// The retry window has to outlast a cold boot racing the Tailscale
+    /// daemon, without turning into an unbounded background loop.
+    #[test]
+    fn the_startup_retry_window_covers_a_slow_tailscale_start() {
+        let total: u64 = RESTORE_RETRY_DELAYS_SECS.iter().sum();
+        assert!((120..=600).contains(&total), "retry window was {total}s");
+    }
 }
