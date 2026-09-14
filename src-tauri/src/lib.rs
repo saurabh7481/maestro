@@ -324,6 +324,7 @@ pub fn run() {
             agents::manager::set_permission_mode,
             agents::manager::fork_agent_session,
             agents::manager::set_agent_configuration,
+            agents::manager::get_agent_configuration,
             agents::manager::interrupt_agent,
             agents::manager::kill_agent,
             agents::manager::kill_agent_runs_for_worktree,

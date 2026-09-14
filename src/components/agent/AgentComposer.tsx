@@ -24,7 +24,7 @@ import { fsApi } from "../../api/fs";
 import { searchApi } from "../../api/search";
 import { fuzzyScore } from "../../design/fuzzy";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
-import { loadAgentModelPrefs, saveAgentModelPref } from "../../design/persistence";
+import { loadAgentModelPref, saveAgentModelPref } from "../../design/persistence";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type {
   AgentCapabilities,
@@ -520,6 +520,7 @@ function AttachFileButton({
 export function AgentComposer({
   runId,
   kind,
+  worktreeId,
   worktreeRoot,
   disabled,
   locked,
@@ -530,6 +531,8 @@ export function AgentComposer({
 }: {
   runId: string;
   kind: AgentKind;
+  /** Scopes the remembered model preference — see `persistence.ts`. */
+  worktreeId: string;
   worktreeRoot: string;
   /** Working — can't send right now. */
   disabled: boolean;
@@ -580,24 +583,43 @@ export function AgentComposer({
     if (element) resizeComposerTextarea(element);
   }, [draft]);
 
-  // A run only ever needs to pick up the last-used model once, right after
-  // mount — and only once real options are known, so a stale/removed model
-  // id from a previous session can't be applied blind (`resolvedModel`
-  // below would send it straight to the CLI with no validation otherwise).
-  // Guarded by a ref rather than `model !== null` because `null` is also
-  // the legitimate "explicitly use the provider's own default" state once
-  // a user has picked it — nothing here should stomp back over that.
+  // The picker hydrates once, right after mount, and only once real
+  // options are known — a stale/removed model id from a previous session
+  // must not be applied blind (`resolvedModel` below would send it
+  // straight to the CLI with no validation otherwise). Guarded by a ref
+  // rather than `model !== null` because `null` is also the legitimate
+  // "explicitly use the provider's own default" state once a user has
+  // picked it, and nothing here should stomp back over that.
+  //
+  // *What* it hydrates from depends on whether this run has started:
+  //
+  // - A started run already has a model, persisted on its own run entry.
+  //   That is the only correct answer, and it used to be ignored — the
+  //   picker adopted the remembered preference instead, so a model chosen
+  //   in some *other* worktree's tab became what this run sent on its next
+  //   turn. A live agent silently changing model between turns is the
+  //   worst version of this bug, and this is the line that caused it.
+  // - A new tab has no model of its own yet, so the preference is exactly
+  //   the right default — scoped to this worktree, so another project's
+  //   choice doesn't reach in here.
   const appliedModelPrefRef = useRef(false);
   useEffect(() => {
     if (appliedModelPrefRef.current || modelOptions.length === 0) return;
     appliedModelPrefRef.current = true;
-    void loadAgentModelPrefs().then((prefs) => {
-      const preferred = prefs[kind];
-      if (preferred && modelOptions.some((option) => option.id === preferred)) {
-        setModel(preferred);
-      }
+
+    const known = (id: string | null | undefined): id is string =>
+      !!id && modelOptions.some((option) => option.id === id);
+
+    if (locked) {
+      void agentsApi.getAgentConfiguration(runId).then((configuration) => {
+        if (known(configuration?.model)) setModel(configuration.model);
+      });
+      return;
+    }
+    void loadAgentModelPref(worktreeId, kind).then((preferred) => {
+      if (known(preferred)) setModel(preferred);
     });
-  }, [kind, modelOptions]);
+  }, [kind, modelOptions, locked, runId, worktreeId]);
 
   const worktreeFiles = useWorktreeFileList(worktreeRoot);
   const selectedModel = modelOptions.find((option) => option.id === model) ?? null;
@@ -634,11 +656,12 @@ export function AgentComposer({
     setThinking(nextThinking);
     setFast(nextFast);
     // Only an actual model switch (not an effort/thinking/fast-only call)
-    // updates the remembered preference — and only per `kind`, so picking
-    // a model in a Claude Code tab never overwrites what's remembered for
-    // Cursor/Codex/Aider.
+    // updates the remembered preference — and only for this worktree and
+    // this `kind`, so picking a model in a Claude Code tab neither
+    // overwrites what's remembered for Cursor/Codex/Aider nor reaches into
+    // another worktree.
     if (next.model !== undefined && next.model !== null && next.model !== model) {
-      void saveAgentModelPref(kind, next.model);
+      void saveAgentModelPref(worktreeId, kind, next.model);
     }
     if (locked) {
       const option = modelOptions.find((candidate) => candidate.id === nextModel) ?? null;

@@ -109,6 +109,19 @@ export const agentsApi = {
     effort: string | null,
     fast: boolean,
   ) => invoke<void>("set_agent_configuration", { runId, model, effort, fast }),
+  /** What a run is *actually* configured with, straight off its
+   * `AgentRunEntry`. The composer hydrates a started run from this rather
+   * than from the remembered per-worktree preference — a run already has
+   * a model, and a picker that quietly showed something else would send
+   * that something else on the next turn. `null` for a run that no longer
+   * exists. */
+  getAgentConfiguration: (runId: string) =>
+    invoke<{
+      model: string | null;
+      effort: string | null;
+      fast: boolean;
+      permissionMode: PermissionMode;
+    } | null>("get_agent_configuration", { runId }),
   /** Persisted rendering of a conversation — see `agents/transcripts.rs`
    * for why the CLI's own session history isn't a substitute. `lastResult`
    * mirrors `AgentTabState.lastResult` (`agentSessionStore.ts`) so a

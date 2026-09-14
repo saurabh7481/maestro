@@ -1303,6 +1303,7 @@ export function AgentTab({ tab, active }: { tab: Tab; active: boolean }) {
       <AgentComposer
         runId={runId}
         kind={kind}
+        worktreeId={tab.worktreeId ?? ""}
         worktreeRoot={tab.worktreeRoot ?? ""}
         disabled={busy}
         locked={!!tabState?.started}

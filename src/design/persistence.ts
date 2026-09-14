@@ -88,19 +88,45 @@ function getAgentModelStore(): Promise<Store> {
   return agentModelStorePromise;
 }
 
-/** The last model a user explicitly picked for each provider, so a new
- * tab of the same agent kind starts on it instead of that provider's own
- * default every time — see `AgentComposer.tsx`'s model-picker hydration
- * effect, the only reader/writer of this. */
-export async function loadAgentModelPrefs(): Promise<Partial<Record<AgentKind, string>>> {
-  const store = await getAgentModelStore();
-  return (await store.get<Partial<Record<AgentKind, string>>>(AGENT_MODEL_KEY)) ?? {};
+/** Keyed per worktree *and* provider.
+ *
+ * Previously just per provider, which made the preference global: picking
+ * Opus in one worktree silently changed what every other worktree's next
+ * Claude tab started on. A model choice is a property of the work being
+ * done — one project wants the expensive model, another wants the fast
+ * one — so the two must not share a slot. */
+type AgentModelPrefs = Record<string, string>;
+
+function modelPrefKey(worktreeId: string, kind: AgentKind): string {
+  return `${worktreeId}:${kind}`;
 }
 
-export async function saveAgentModelPref(kind: AgentKind, modelId: string): Promise<void> {
+/** The last model a user explicitly picked in this worktree for this
+ * provider, so a **new** tab starts on it instead of the provider's own
+ * default every time — see `AgentComposer.tsx`'s model-picker hydration
+ * effect, the only reader/writer of this. Deliberately never applied to a
+ * run that has already started: that run has its own configuration, and
+ * `agentsApi.getAgentConfiguration` is what a started run hydrates from. */
+export async function loadAgentModelPref(
+  worktreeId: string,
+  kind: AgentKind,
+): Promise<string | null> {
   const store = await getAgentModelStore();
-  const existing = (await store.get<Partial<Record<AgentKind, string>>>(AGENT_MODEL_KEY)) ?? {};
-  await store.set(AGENT_MODEL_KEY, { ...existing, [kind]: modelId });
+  const prefs = (await store.get<AgentModelPrefs>(AGENT_MODEL_KEY)) ?? {};
+  return prefs[modelPrefKey(worktreeId, kind)] ?? null;
+}
+
+export async function saveAgentModelPref(
+  worktreeId: string,
+  kind: AgentKind,
+  modelId: string,
+): Promise<void> {
+  const store = await getAgentModelStore();
+  const existing = (await store.get<AgentModelPrefs>(AGENT_MODEL_KEY)) ?? {};
+  await store.set(AGENT_MODEL_KEY, {
+    ...existing,
+    [modelPrefKey(worktreeId, kind)]: modelId,
+  });
 }
 
 const COMMAND_RECENCY_STORE_FILE = "command-recency.json";
