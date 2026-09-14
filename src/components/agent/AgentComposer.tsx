@@ -20,6 +20,8 @@ import { EMPTY_QUEUE, useAgentSessionStore } from "../../state/agentSessionStore
 import { useFocusRequest } from "../../state/focusRequestStore";
 import { useAgentCapabilities } from "../../state/agentAvailabilityStore";
 import { agentsApi } from "../../api/agents";
+import { attachmentName, ComposerAttachments, isImagePath } from "./ComposerAttachments";
+import type { ComposerAttachment } from "../../state/agentSessionStore";
 import { fsApi } from "../../api/fs";
 import { searchApi } from "../../api/search";
 import { fuzzyScore } from "../../design/fuzzy";
@@ -517,6 +519,9 @@ function AttachFileButton({
   );
 }
 
+/** Stable empty array for runs with nothing staged — see the selector. */
+const NO_ATTACHMENTS: ComposerAttachment[] = [];
+
 export function AgentComposer({
   runId,
   kind,
@@ -552,6 +557,14 @@ export function AgentComposer({
 }) {
   const draft = useAgentSessionStore((s) => s.draftByRunId[runId] ?? "");
   const setDraft = useAgentSessionStore((s) => s.setDraft);
+  // Selected raw and defaulted outside the selector: returning `?? []`
+  // from it would hand zustand a new array identity every render and
+  // re-render this composer forever.
+  const stagedAttachments = useAgentSessionStore((s) => s.attachmentsByRunId[runId]);
+  const attachments = stagedAttachments ?? NO_ATTACHMENTS;
+  const addAttachments = useAgentSessionStore((s) => s.addAttachments);
+  const removeAttachment = useAgentSessionStore((s) => s.removeAttachment);
+  const clearAttachments = useAgentSessionStore((s) => s.clearAttachments);
   const queueMessage = useAgentSessionStore((s) => s.queueMessage);
   const unqueueMessage = useAgentSessionStore((s) => s.unqueueMessage);
   const queued = useAgentSessionStore((s) => s.byRunId[runId]?.queued ?? EMPTY_QUEUE);
@@ -777,6 +790,30 @@ export function AgentComposer({
     insertMentionTokens([path]);
   }
 
+  /** Where every *staged* file lands — pasted bytes, a pasted file
+   * reference, or one chosen from the picker. They become preview chips
+   * above the input instead of `@path` text in it: the user just pasted
+   * something they can recognise on sight, and a generated path like
+   * `@.maestro/attachments/pasted-image-3.png` in the middle of their
+   * sentence is neither recognisable nor editable.
+   *
+   * A file dragged from the file tree deliberately still inserts a
+   * mention: that's a reference to a file already in the repo, which the
+   * user named on purpose and may want to move or delete in the text. */
+  function stageAttachments(relPaths: string[]) {
+    const staged = relPaths.filter(Boolean);
+    if (staged.length === 0) return;
+    addAttachments(
+      runId,
+      staged.map((relPath) => ({
+        relPath,
+        name: attachmentName(relPath),
+        isImage: isImagePath(relPath),
+      })),
+    );
+    textareaRef.current?.focus();
+  }
+
   /** Only reacts to drags carrying the file tree's own custom MIME type
    * (set in `FileTreeRow.tsx`) — checked before `preventDefault` so an
    * unrelated drag (a text selection, something from outside the app)
@@ -855,7 +892,7 @@ export function AgentComposer({
       for (const path of paths) {
         relPaths.push(await fsApi.copyFileIntoAttachments(worktreeRoot, path));
       }
-      insertMentionTokens(relPaths);
+      stageAttachments(relPaths);
     } catch (err) {
       setAttachError(String(err));
     } finally {
@@ -940,7 +977,7 @@ export function AgentComposer({
         if (imagePng) {
           const base64 = await readBlobAsBase64(imagePng);
           const relPath = await stagePastedContent(base64, "pasted-image.png");
-          if (relPath) insertMention(relPath);
+          if (relPath) stageAttachments([relPath]);
         } else if (plainText) {
           insertPlainText(plainText);
         }
@@ -966,7 +1003,7 @@ export function AgentComposer({
       for (const path of fileUris) {
         relPaths.push(await fsApi.copyFileIntoAttachments(worktreeRoot, path));
       }
-      insertMentionTokens(relPaths);
+      stageAttachments(relPaths);
     } catch (err) {
       setAttachError(String(err));
     } finally {
@@ -975,9 +1012,17 @@ export function AgentComposer({
   }
 
   function submit() {
-    const fullText = draft.trim();
+    const typed = draft.trim();
+    // Attachments are appended as `@mentions` here rather than living in
+    // the draft, which is what lets them render as previews without
+    // changing how the agent receives them. A message that is *only*
+    // attachments still sends — dropping a pasted screenshot because no
+    // sentence accompanied it would be the wrong call.
+    const mentions = attachments.map((attachment) => `@${attachment.relPath}`).join(" ");
+    const fullText = [typed, mentions].filter(Boolean).join(typed ? "\n\n" : "");
     if (!fullText) return;
     setDraft(runId, "");
+    clearAttachments(runId);
     // Each turn is its own CLI process, so there is nothing to hand a
     // mid-turn message to. Hold it until the agent is free rather than
     // dropping it — the composer accepted the keystrokes, so silently
@@ -1134,6 +1179,11 @@ export function AgentComposer({
               Couldn't attach that: {attachError}
             </div>
           )}
+          <ComposerAttachments
+            attachments={attachments}
+            worktreeRoot={worktreeRoot}
+            onRemove={(relPath) => removeAttachment(runId, relPath)}
+          />
           <textarea
             ref={textareaRef}
             className={styles.textarea}
@@ -1209,7 +1259,7 @@ export function AgentComposer({
             <button
               type="button"
               className={styles.send}
-              disabled={draft.trim().length === 0}
+              disabled={draft.trim().length === 0 && attachments.length === 0}
               onClick={submit}
               aria-label={disabled ? "Queue message" : "Send"}
               title={

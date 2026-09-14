@@ -115,6 +115,12 @@ export const agentsApi = {
    * a model, and a picker that quietly showed something else would send
    * that something else on the next turn. `null` for a run that no longer
    * exists. */
+  /** A staged image attachment as a `data:` URL for the composer's
+   * preview. `null` for anything that isn't a recognised image — the
+   * caller shows a document card instead. See
+   * `commands/attachments.rs::read_attachment_preview`. */
+  readAttachmentPreview: (worktreeRoot: string, relPath: string) =>
+    invoke<string | null>("read_attachment_preview", { worktreeRoot, relPath }),
   getAgentConfiguration: (runId: string) =>
     invoke<{
       model: string | null;

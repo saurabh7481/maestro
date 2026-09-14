@@ -545,3 +545,45 @@ describe("setIdle", () => {
     expect(state().turnStartedAtMs).toBeNull();
   });
 });
+
+describe("composer attachments", () => {
+  beforeEach(() => {
+    useAgentSessionStore.setState({ attachmentsByRunId: {}, draftByRunId: {} });
+  });
+
+  const shot = { relPath: ".maestro/attachments/shot.png", name: "shot.png", isImage: true };
+  const pdf = { relPath: ".maestro/attachments/report.pdf", name: "report.pdf", isImage: false };
+
+  it("keeps attachments per run so switching tabs can't move them", () => {
+    useAgentSessionStore.getState().addAttachments("run-a", [shot]);
+    useAgentSessionStore.getState().addAttachments("run-b", [pdf]);
+
+    const state = useAgentSessionStore.getState();
+    expect(state.attachmentsByRunId["run-a"]).toEqual([shot]);
+    expect(state.attachmentsByRunId["run-b"]).toEqual([pdf]);
+  });
+
+  it("does not stage the same file twice", () => {
+    useAgentSessionStore.getState().addAttachments("run-a", [shot]);
+    useAgentSessionStore.getState().addAttachments("run-a", [shot, pdf]);
+
+    expect(useAgentSessionStore.getState().attachmentsByRunId["run-a"]).toEqual([shot, pdf]);
+  });
+
+  it("removes exactly the one asked for", () => {
+    useAgentSessionStore.getState().addAttachments("run-a", [shot, pdf]);
+    useAgentSessionStore.getState().removeAttachment("run-a", shot.relPath);
+
+    expect(useAgentSessionStore.getState().attachmentsByRunId["run-a"]).toEqual([pdf]);
+  });
+
+  it("clears them for one run without touching another", () => {
+    useAgentSessionStore.getState().addAttachments("run-a", [shot]);
+    useAgentSessionStore.getState().addAttachments("run-b", [pdf]);
+    useAgentSessionStore.getState().clearAttachments("run-a");
+
+    const state = useAgentSessionStore.getState();
+    expect(state.attachmentsByRunId["run-a"]).toBeUndefined();
+    expect(state.attachmentsByRunId["run-b"]).toEqual([pdf]);
+  });
+});

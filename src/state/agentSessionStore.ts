@@ -120,6 +120,20 @@ export type TranscriptItem =
  * backend's one-turn-at-a-time latch, so this must stay distinct from idle. */
 export type AgentRunStatus = "idle" | "working" | "settling" | "awaitingPermission" | "error";
 
+/** One file staged for the next message, shown as a preview chip in the
+ * composer. `relPath` is worktree-relative and is what gets appended to
+ * the message as an `@mention` on send — the previews are presentation,
+ * not a second attachment protocol (see `commands/attachments.rs`). */
+export interface ComposerAttachment {
+  relPath: string;
+  /** Basename, for the document card and the image's alt text. */
+  name: string;
+  /** Drives thumbnail vs. document card. Decided from the extension by
+   * the caller; the backend independently refuses to hand back a preview
+   * for anything it doesn't recognise as an image. */
+  isImage: boolean;
+}
+
 export interface AgentTabState {
   items: TranscriptItem[];
   status: AgentRunStatus;
@@ -315,6 +329,15 @@ interface AgentSessionState {
    * mounts the active tab's component. */
   draftByRunId: Record<string, string>;
   setDraft: (runId: string, text: string) => void;
+  /** Files staged into `.maestro/attachments/` for this run's next
+   * message, shown as previews above the composer rather than as `@path`
+   * text. Per-run and outside the draft string so switching tabs (or
+   * editing the draft) can't lose or mangle them — the paths are still
+   * appended to the message on send, which is how the agent reads them. */
+  attachmentsByRunId: Record<string, ComposerAttachment[]>;
+  addAttachments: (runId: string, attachments: ComposerAttachment[]) => void;
+  removeAttachment: (runId: string, relPath: string) => void;
+  clearAttachments: (runId: string) => void;
 
   /** Idempotent — sets up the `agent://{runId}/event` listener once per
    * run id. Safe to call from a component's mount effect every render. */
@@ -375,6 +398,33 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
   unlistenByRunId: {},
   draftByRunId: {},
   setDraft: (runId, text) => set((s) => ({ draftByRunId: { ...s.draftByRunId, [runId]: text } })),
+
+  attachmentsByRunId: {},
+  addAttachments: (runId, attachments) =>
+    set((s) => {
+      const existing = s.attachmentsByRunId[runId] ?? [];
+      // Re-attaching the same staged file is a no-op rather than a second
+      // identical chip — paste twice, or paste something already browsed
+      // for, and there is still one of it.
+      const merged = [...existing];
+      for (const attachment of attachments) {
+        if (!merged.some((a) => a.relPath === attachment.relPath)) merged.push(attachment);
+      }
+      return { attachmentsByRunId: { ...s.attachmentsByRunId, [runId]: merged } };
+    }),
+  removeAttachment: (runId, relPath) =>
+    set((s) => ({
+      attachmentsByRunId: {
+        ...s.attachmentsByRunId,
+        [runId]: (s.attachmentsByRunId[runId] ?? []).filter((a) => a.relPath !== relPath),
+      },
+    })),
+  clearAttachments: (runId) =>
+    set((s) => {
+      const attachmentsByRunId = { ...s.attachmentsByRunId };
+      delete attachmentsByRunId[runId];
+      return { attachmentsByRunId };
+    }),
 
   openRun: (runId) => {
     if (get().unlistenByRunId[runId]) return;
@@ -487,10 +537,12 @@ export const useAgentSessionStore = create<AgentSessionState>((set, get) => ({
       const byRunId = { ...s.byRunId };
       const unlistenByRunId = { ...s.unlistenByRunId };
       const draftByRunId = { ...s.draftByRunId };
+      const attachmentsByRunId = { ...s.attachmentsByRunId };
       delete byRunId[runId];
       delete unlistenByRunId[runId];
       delete draftByRunId[runId];
-      return { byRunId, unlistenByRunId, draftByRunId };
+      delete attachmentsByRunId[runId];
+      return { byRunId, unlistenByRunId, draftByRunId, attachmentsByRunId };
     });
   },
 

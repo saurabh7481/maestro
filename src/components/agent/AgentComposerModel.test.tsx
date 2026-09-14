@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../primitives";
 
@@ -6,6 +6,7 @@ const agentsApi = {
   listAgentModels: vi.fn(),
   listSlashCommands: vi.fn(async () => []),
   getAgentConfiguration: vi.fn(),
+  readAttachmentPreview: vi.fn(),
   setAgentConfiguration: vi.fn(),
   getAgentCapabilities: vi.fn(),
 };
@@ -16,6 +17,7 @@ vi.mock("../../api/agents", () => ({ agentsApi }));
 vi.mock("../../api/fs", () => ({ fsApi: { listFiles: vi.fn(async () => []) } }));
 vi.mock("../../design/persistence", () => ({ loadAgentModelPref, saveAgentModelPref }));
 
+const useAgentSessionStore = (await import("../../state/agentSessionStore")).useAgentSessionStore;
 const { AgentComposer } = await import("./AgentComposer");
 
 const MODELS = [
@@ -47,7 +49,83 @@ describe("AgentComposer model hydration", () => {
     vi.clearAllMocks();
     agentsApi.listAgentModels.mockResolvedValue(MODELS);
     agentsApi.getAgentConfiguration.mockResolvedValue(null);
+    agentsApi.readAttachmentPreview.mockResolvedValue(null);
     loadAgentModelPref.mockResolvedValue(null);
+    useAgentSessionStore.setState({ draftByRunId: {}, attachmentsByRunId: {} });
+  });
+
+  /** The whole point of the preview strip: the user sees a thumbnail, but
+   * the agent must still receive the path, or the attachment is decorative. */
+  it("still sends staged attachments to the agent as @mentions", async () => {
+    const onSend = vi.fn();
+    useAgentSessionStore.setState({
+      draftByRunId: { "run-1": "look at this" },
+      attachmentsByRunId: {
+        "run-1": [
+          { relPath: ".maestro/attachments/shot.png", name: "shot.png", isImage: true },
+          { relPath: ".maestro/attachments/report.pdf", name: "report.pdf", isImage: false },
+        ],
+      },
+    });
+
+    render(
+      <TooltipProvider>
+        <AgentComposer
+          runId="run-1"
+          kind="claudeCode"
+          worktreeId="wt-a"
+          worktreeRoot="/repo"
+          disabled={false}
+          locked={false}
+          permissionMode="manual"
+          onPermissionModeChange={() => {}}
+          onSend={onSend}
+          onReplace={() => {}}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const sent = onSend.mock.calls[0][0] as string;
+    expect(sent).toContain("look at this");
+    expect(sent).toContain("@.maestro/attachments/shot.png");
+    expect(sent).toContain("@.maestro/attachments/report.pdf");
+    // Consumed, so the next message doesn't re-send them.
+    expect(useAgentSessionStore.getState().attachmentsByRunId["run-1"]).toBeUndefined();
+  });
+
+  it("sends an attachment-only message rather than refusing it", async () => {
+    const onSend = vi.fn();
+    useAgentSessionStore.setState({
+      draftByRunId: { "run-1": "" },
+      attachmentsByRunId: {
+        "run-1": [{ relPath: ".maestro/attachments/shot.png", name: "shot.png", isImage: true }],
+      },
+    });
+
+    render(
+      <TooltipProvider>
+        <AgentComposer
+          runId="run-1"
+          kind="claudeCode"
+          worktreeId="wt-a"
+          worktreeRoot="/repo"
+          disabled={false}
+          locked={false}
+          permissionMode="manual"
+          onPermissionModeChange={() => {}}
+          onSend={onSend}
+          onReplace={() => {}}
+        />
+      </TooltipProvider>,
+    );
+
+    const send = screen.getByLabelText("Send");
+    expect(send.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(send);
+    expect(onSend.mock.calls[0][0]).toBe("@.maestro/attachments/shot.png");
   });
 
   it("starts a new tab on the model remembered for this worktree", async () => {

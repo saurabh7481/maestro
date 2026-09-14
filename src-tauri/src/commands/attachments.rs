@@ -196,6 +196,62 @@ pub async fn copy_file_into_attachments(
 /// Mirrors `projects.rs::pick_project_folder`: the dialog is callback-
 /// based and must not block the event loop, so the result comes back over
 /// a oneshot. An empty vec means the user cancelled.
+/// The media type to render a staged attachment as a preview under, keyed
+/// off the extension. Only image types matter — anything else is shown as
+/// a named document card, so guessing wrong there costs nothing.
+fn image_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        _ => return None,
+    })
+}
+
+/// Renders a staged image attachment as a `data:` URL for the composer's
+/// preview thumbnail and its click-to-expand view.
+///
+/// A `data:` URL rather than Tauri's asset protocol because that protocol
+/// is not enabled for this app, and turning it on would grant the webview
+/// filesystem read access through a second, scope-configured path purely
+/// to show a thumbnail. This reuses `safe_join`, so the only readable
+/// files are the ones already staged under the worktree's own attachments
+/// directory.
+///
+/// `None` for anything that isn't a recognised image: the caller shows a
+/// document card instead, and must never be handed a `data:` URL claiming
+/// a type the bytes aren't.
+#[tauri::command]
+pub async fn read_attachment_preview(
+    worktree_root: String,
+    rel_path: String,
+) -> Result<Option<String>, String> {
+    let root = PathBuf::from(&worktree_root);
+    let path = safe_join(&root, &rel_path)?;
+    let Some(mime) = image_mime(&path) else {
+        return Ok(None);
+    };
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("failed to read attachment: {e}"))?;
+    if metadata.len() > MAX_ATTACHMENT_BYTES {
+        return Err(format!(
+            "attachment is larger than the {} MB preview limit",
+            MAX_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("failed to read attachment: {e}"))?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(format!("data:{mime};base64,{encoded}")))
+}
+
 #[tauri::command]
 pub async fn pick_attachment_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     use tauri_plugin_dialog::DialogExt;

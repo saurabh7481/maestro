@@ -1,0 +1,112 @@
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+/* The remove button overhangs the top-right corner, so the card can't clip
+   its own control — the overhang is paid for by the strip's padding. */
+.card {
+  position: relative;
+  flex: none;
+}
+
+.thumbButton {
+  display: block;
+  padding: 0;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-3);
+  cursor: zoom-in;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.thumbButton:hover {
+  border-color: var(--border);
+}
+
+.thumbButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Square, cropped: a preview's job is recognition, not fidelity — the
+   click-to-expand view is where the whole image is. */
+.thumb {
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: cover;
+}
+
+.document {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 14rem;
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-3);
+}
+
+.documentIcon {
+  flex: none;
+  color: var(--text-mute);
+}
+
+.documentName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.remove {
+  position: absolute;
+  top: calc(-1 * var(--space-2));
+  right: calc(-1 * var(--space-2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: var(--border-width) solid var(--border-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-3);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.remove:hover {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-9);
+  background: rgba(0, 0, 0, 0.75);
+  cursor: zoom-out;
+}
+
+/* Bounded by the viewport rather than shown at natural size: a screenshot
+   from a high-DPI display is routinely wider than the window. */
+.lightboxImage {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  object-fit: contain;
+  cursor: default;
+}

@@ -217,6 +217,7 @@ pub fn run() {
             commands::attachments::save_pasted_attachment,
             commands::attachments::copy_file_into_attachments,
             commands::attachments::pick_attachment_files,
+            commands::attachments::read_attachment_preview,
             commands::daybook::get_daybook_overview,
             commands::daybook::list_daybook_runs,
             commands::daybook::save_daybook_config,
