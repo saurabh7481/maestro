@@ -136,6 +136,14 @@ pub struct GitRemoteError {
     pub actions: Vec<GitErrorAction>,
 }
 
+/// Boxed in every `Result` below. `GitRemoteError` carries five heap
+/// fields of user-facing prose, which puts the `Err` variant at 128 bytes
+/// — enough that `clippy::result_large_err` flags it, and enough to widen
+/// every `Result` in the call chain for a value that only exists when a
+/// remote operation has already failed. One allocation on the failure path
+/// is the right trade.
+pub type GitResult<T> = Result<T, Box<GitRemoteError>>;
+
 impl GitRemoteError {
     /// For failures that never reached git's network layer — a missing
     /// remote, a helper command that failed, a spawn error. `detail`
@@ -154,8 +162,8 @@ impl GitRemoteError {
 
 /// A local (non-networked) git helper failing mid-operation still has to
 /// reach the UI as a structured error, not a bare string.
-fn local_failure(op: RemoteOp, detail: String) -> GitRemoteError {
-    classify(op, &detail, false)
+fn local_failure(op: RemoteOp, detail: String) -> Box<GitRemoteError> {
+    Box::new(classify(op, &detail, false))
 }
 
 // ---------------------------------------------------------------------
@@ -592,26 +600,26 @@ pub fn classify(op: RemoteOp, output: &str, timed_out: bool) -> GitRemoteError {
 /// "which remote" guess when auto-wiring upstream tracking below. Almost
 /// every repo has exactly one (`origin`); reading it avoids hardcoding
 /// that name for the rarer repo that renamed or added a second.
-async fn default_remote(dir: &Path) -> Result<String, GitRemoteError> {
+async fn default_remote(dir: &Path) -> GitResult<String> {
     let out = run_git(dir, &["remote"]).await.map_err(|e| {
-        GitRemoteError::simple(
+        Box::new(GitRemoteError::simple(
             GitErrorCode::NoRemote,
             "No remote configured",
             "This repository has no remote to sync with. Add one with `git remote add origin <url>`.",
             e,
-        )
+        ))
     })?;
     out.lines()
         .next()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            GitRemoteError::simple(
+            Box::new(GitRemoteError::simple(
                 GitErrorCode::NoRemote,
                 "No remote configured",
                 "This repository has no remote to sync with. Add one with `git remote add origin <url>`.",
                 "git remote listed no remotes".to_string(),
-            )
+            ))
         })
 }
 
@@ -638,7 +646,7 @@ async fn upstream_ref(dir: &Path) -> Option<String> {
 /// remote already has a branch of this name, wire tracking to it; if it
 /// doesn't, that's a genuine error rather than a setup step to paper
 /// over, and the caller reports it.
-async fn ensure_pull_upstream(dir: &Path) -> Result<String, GitRemoteError> {
+async fn ensure_pull_upstream(dir: &Path) -> GitResult<String> {
     if let Some(existing) = upstream_ref(dir).await {
         return Ok(existing);
     }
@@ -650,19 +658,19 @@ async fn ensure_pull_upstream(dir: &Path) -> Result<String, GitRemoteError> {
 
     run_remote_git(dir, &["fetch", &remote])
         .await
-        .map_err(|f| classify(RemoteOp::Pull, &f.output, f.timed_out))?;
+        .map_err(|f| Box::new(classify(RemoteOp::Pull, &f.output, f.timed_out)))?;
 
     let remote_ref = format!("{remote}/{branch}");
     if run_git(dir, &["rev-parse", "--verify", "--quiet", &remote_ref])
         .await
         .is_err()
     {
-        return Err(GitRemoteError::simple(
+        return Err(Box::new(GitRemoteError::simple(
             GitErrorCode::NoRemoteBranch,
             "No matching branch on the remote",
             &format!("`{remote}` has no branch called `{branch}`, so there's nothing to pull. Push this branch first to create it."),
             format!("{remote_ref} does not exist"),
-        ));
+        )));
     }
 
     run_git(dir, &["branch", "--set-upstream-to", &remote_ref, &branch])
@@ -739,7 +747,7 @@ async fn stash_head(dir: &Path) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-pub async fn pull(dir: &Path, strategy: PullStrategy) -> Result<RemoteOutcome, GitRemoteError> {
+pub async fn pull(dir: &Path, strategy: PullStrategy) -> GitResult<RemoteOutcome> {
     let upstream = ensure_pull_upstream(dir).await?;
     let before = head_hash(dir).await;
 
@@ -801,7 +809,7 @@ pub async fn pull(dir: &Path, strategy: PullStrategy) -> Result<RemoteOutcome, G
     let pop_failed = stashed && run_git(dir, &["stash", "pop"]).await.is_err();
 
     if let Err(failure) = pull_result {
-        let mut err = classify(RemoteOp::Pull, &failure.output, failure.timed_out);
+        let mut err = Box::new(classify(RemoteOp::Pull, &failure.output, failure.timed_out));
         if pop_failed {
             err.message.push_str(
                 " Your uncommitted work was stashed before this attempt and couldn't be restored automatically — it's safe in the Stashes section.",
@@ -811,7 +819,7 @@ pub async fn pull(dir: &Path, strategy: PullStrategy) -> Result<RemoteOutcome, G
     }
 
     if pop_failed {
-        return Err(GitRemoteError {
+        return Err(Box::new(GitRemoteError {
             code: GitErrorCode::MergeConflict,
             title: "Pulled, but your stashed changes conflict".to_string(),
             message: "The pull succeeded. Restoring your stashed changes hit conflicts, so they're still saved in the Stashes section — resolve the conflicts and pop it from there."
@@ -819,7 +827,7 @@ pub async fn pull(dir: &Path, strategy: PullStrategy) -> Result<RemoteOutcome, G
             detail: format!("`git stash pop` could not apply {AUTO_STASH_MESSAGE} cleanly"),
             paths: Vec::new(),
             actions: Vec::new(),
-        });
+        }));
     }
 
     let after = head_hash(dir).await;
@@ -846,17 +854,17 @@ pub async fn pull(dir: &Path, strategy: PullStrategy) -> Result<RemoteOutcome, G
 /// `--set-upstream <remote> <branch>` — the same thing `git push -u`
 /// would do, without changing behavior for branches that already track a
 /// remote (the plain push still runs first, and is enough for that case).
-pub async fn push(dir: &Path, force_with_lease: bool) -> Result<RemoteOutcome, GitRemoteError> {
+pub async fn push(dir: &Path, force_with_lease: bool) -> GitResult<RemoteOutcome> {
     let branch = current_branch(dir)
         .await
         .map_err(|e| local_failure(RemoteOp::Push, e))?;
     if branch == "HEAD" {
-        return Err(GitRemoteError::simple(
+        return Err(Box::new(GitRemoteError::simple(
             GitErrorCode::DetachedHead,
             "HEAD is detached",
             "This worktree isn't on a branch, so there's nothing to push. Check out a branch first.",
             "git rev-parse --abbrev-ref HEAD returned HEAD".to_string(),
-        ));
+        )));
     }
 
     let mut base: Vec<&str> = vec!["push"];
@@ -885,7 +893,7 @@ pub async fn push(dir: &Path, force_with_lease: bool) -> Result<RemoteOutcome, G
         Err(failure) => Err(failure),
     };
 
-    let output = result.map_err(|f| classify(RemoteOp::Push, &f.output, f.timed_out))?;
+    let output = result.map_err(|f| Box::new(classify(RemoteOp::Push, &f.output, f.timed_out)))?;
 
     let upstream = upstream_ref(dir).await.unwrap_or_else(|| branch.clone());
     let summary = if output.to_lowercase().contains("everything up-to-date") || ahead_before == 0 {
@@ -897,10 +905,10 @@ pub async fn push(dir: &Path, force_with_lease: bool) -> Result<RemoteOutcome, G
     Ok(RemoteOutcome { summary })
 }
 
-pub async fn fetch(dir: &Path) -> Result<RemoteOutcome, GitRemoteError> {
+pub async fn fetch(dir: &Path) -> GitResult<RemoteOutcome> {
     run_remote_git(dir, &["fetch", "--prune"])
         .await
-        .map_err(|f| classify(RemoteOp::Fetch, &f.output, f.timed_out))?;
+        .map_err(|f| Box::new(classify(RemoteOp::Fetch, &f.output, f.timed_out)))?;
     Ok(RemoteOutcome {
         summary: "Fetched from remote".to_string(),
     })

@@ -141,6 +141,13 @@ pub struct FunnelReport {
     pub detail: String,
 }
 
+/// Boxed in every `Result` below, for the same reason `git_remote.rs`
+/// boxes its own: six heap fields of user-facing prose put the `Err`
+/// variant at 152 bytes, which `clippy::result_large_err` flags and which
+/// would widen every `Result` in the call chain for a value that only
+/// exists once setup has already gone wrong.
+pub type FunnelResult<T> = Result<T, Box<FunnelReport>>;
+
 impl FunnelReport {
     fn new(state: FunnelState, title: &str, message: &str) -> Self {
         FunnelReport {
@@ -265,35 +272,37 @@ fn status_failure_report(failure: &CliFailure) -> FunnelReport {
     .with_detail(err)
 }
 
-async fn status_json() -> Result<serde_json::Value, FunnelReport> {
+async fn status_json() -> FunnelResult<serde_json::Value> {
     let raw = run_tailscale(&["status", "--json"])
         .await
-        .map_err(|e| status_failure_report(&e))?;
+        .map_err(|e| Box::new(status_failure_report(&e)))?;
     serde_json::from_str(&raw).map_err(|e| {
-        FunnelReport::new(
-            FunnelState::Unknown,
-            "Couldn't read Tailscale's status",
-            "Tailscale returned something this version of Maestro couldn't parse.",
+        Box::new(
+            FunnelReport::new(
+                FunnelState::Unknown,
+                "Couldn't read Tailscale's status",
+                "Tailscale returned something this version of Maestro couldn't parse.",
+            )
+            .with_detail(format!("failed to parse `tailscale status --json`: {e}")),
         )
-        .with_detail(format!("failed to parse `tailscale status --json`: {e}"))
     })
 }
 
 /// This node's MagicDNS hostname, trailing dot stripped (`tailscale
 /// status --json`'s `Self.DNSName` is fully-qualified, e.g.
 /// `"my-laptop.tailxxxx.ts.net."`).
-async fn hostname_from_status() -> Result<String, FunnelReport> {
+async fn hostname_from_status() -> FunnelResult<String> {
     let status = status_json().await?;
     let dns_name = status
         .get("Self")
         .and_then(|s| s.get("DNSName"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            FunnelReport::new(
+            Box::new(FunnelReport::new(
                 FunnelState::Unknown,
                 "Tailscale didn't report a hostname",
                 "The relay is running locally but Tailscale didn't say what public name it's reachable under.",
-            )
+            ))
         })?;
     Ok(dns_name.trim_end_matches('.').to_string())
 }
@@ -353,8 +362,8 @@ fn https_not_enabled_report() -> FunnelReport {
 
 /// Free function mirror of [`FunnelReport::internal`], for `mod.rs`'s
 /// `map_err` call sites.
-pub fn internal(detail: String) -> FunnelReport {
-    FunnelReport::internal(detail)
+pub fn internal(detail: String) -> Box<FunnelReport> {
+    Box::new(FunnelReport::internal(detail))
 }
 
 /// Diagnoses whether remote access can be turned on, changing nothing.
@@ -363,7 +372,7 @@ pub fn internal(detail: String) -> FunnelReport {
 pub async fn check() -> FunnelReport {
     match status_json().await {
         Ok(status) => classify_status(&status),
-        Err(report) => report,
+        Err(report) => *report,
     }
 }
 
@@ -449,14 +458,14 @@ fn classify_status(status: &serde_json::Value) -> FunnelReport {
 /// can change between the pane rendering and the user flipping the toggle,
 /// and a specific "Tailscale isn't signed in" beats whatever `tailscale
 /// funnel` would have said about it.
-pub async fn enable(port: u16) -> Result<String, FunnelReport> {
+pub async fn enable(port: u16) -> FunnelResult<String> {
     let report = check().await;
     if report.state != FunnelState::Ready {
-        return Err(report);
+        return Err(Box::new(report));
     }
 
     if let Err(failure) = run_tailscale(&["funnel", "--bg", &port.to_string()]).await {
-        return Err(enable_failure_report(&failure).await);
+        return Err(Box::new(enable_failure_report(&failure).await));
     }
     hostname_from_status().await
 }

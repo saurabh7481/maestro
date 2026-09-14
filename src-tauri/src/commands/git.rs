@@ -3,7 +3,7 @@ use crate::git::{
     self, BlameLine, CommitSummary, ConflictContent, DiffContent, DiffMode, StashEntry, StatusKind,
     WorkingStatus,
 };
-use crate::git_remote::{self, GitRemoteError, PullStrategy, RemoteOutcome};
+use crate::git_remote::{self, PullStrategy, RemoteOutcome};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -204,7 +204,7 @@ pub async fn push_changes(
     worktree_id: String,
     worktree_root: String,
     force_with_lease: Option<bool>,
-) -> Result<RemoteOutcome, GitRemoteError> {
+) -> git_remote::GitResult<RemoteOutcome> {
     let root = PathBuf::from(worktree_root);
     let result = git_remote::push(&root, force_with_lease.unwrap_or(false)).await;
     emit_scm_status(&app, &worktree_id, &root).await;
@@ -217,7 +217,7 @@ pub async fn pull_changes(
     worktree_id: String,
     worktree_root: String,
     strategy: Option<PullStrategy>,
-) -> Result<RemoteOutcome, GitRemoteError> {
+) -> git_remote::GitResult<RemoteOutcome> {
     let root = PathBuf::from(worktree_root);
     let result = git_remote::pull(&root, strategy.unwrap_or_default()).await;
     emit_scm_status(&app, &worktree_id, &root).await;
@@ -229,7 +229,7 @@ pub async fn fetch_remote(
     app: AppHandle,
     worktree_id: String,
     worktree_root: String,
-) -> Result<RemoteOutcome, GitRemoteError> {
+) -> git_remote::GitResult<RemoteOutcome> {
     let root = PathBuf::from(worktree_root);
     let result = git_remote::fetch(&root).await;
     emit_scm_status(&app, &worktree_id, &root).await;

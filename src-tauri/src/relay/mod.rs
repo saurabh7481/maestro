@@ -27,13 +27,13 @@ use tauri::Manager;
 use tokio::sync::oneshot;
 
 use crate::state::AppState;
-pub use funnel::FunnelReport;
+pub use funnel::{FunnelReport, FunnelResult};
 
 /// Failures that aren't about Tailscale setup at all (a poisoned mutex, a
 /// socket that wouldn't bind) still have to reach the UI in the one shape
 /// it renders, so they arrive as `Unknown` with their own text in
 /// `detail` rather than as a second error type.
-fn internal_error(error: impl std::fmt::Display) -> FunnelReport {
+fn internal_error(error: impl std::fmt::Display) -> Box<FunnelReport> {
     funnel::internal(error.to_string())
 }
 
@@ -237,7 +237,7 @@ pub async fn set_relay_enabled(
     app: tauri::AppHandle,
     state: tauri::State<'_, RelayState>,
     enabled: bool,
-) -> Result<RelayStatus, FunnelReport> {
+) -> FunnelResult<RelayStatus> {
     if enabled {
         let already_running = state.running.lock().map_err(internal_error)?.is_some();
         if already_running {
