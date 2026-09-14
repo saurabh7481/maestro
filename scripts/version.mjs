@@ -13,8 +13,30 @@ const tagIndex = args.indexOf("--tag");
 const expectedTag = tagIndex >= 0 ? args[tagIndex + 1] : undefined;
 const requestedVersion = args.find((arg) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(arg));
 
-const packageJson = JSON.parse(await readFile(files.package, "utf8"));
-const tauriConfig = JSON.parse(await readFile(files.tauri, "utf8"));
+/** The top-level `"version"` field, which is the only `"version"` key in
+ * either manifest (dependency entries are `"name": "range"` pairs). */
+const JSON_VERSION_FIELD = /^(\s*"version":\s*)"[^"]+"/m;
+
+/** Rewrites just the version, leaving the rest of the file byte-for-byte
+ * alone.
+ *
+ * Deliberately not `JSON.parse` → edit → `JSON.stringify`: that reformats
+ * the whole file to `JSON.stringify`'s house style, which disagrees with
+ * Prettier's (single-element arrays get expanded across three lines). The
+ * result was that `pnpm version:set` left `tauri.conf.json` failing
+ * `pnpm format` — two steps later in the very same release checklist.
+ * Cargo.toml was always edited this way; the JSON files now match. */
+function setJsonVersion(source, version, label) {
+  if (!JSON_VERSION_FIELD.test(source)) {
+    throw new Error(`No top-level "version" field found in ${label}`);
+  }
+  return source.replace(JSON_VERSION_FIELD, `$1"${version}"`);
+}
+
+const packageSource = await readFile(files.package, "utf8");
+const tauriSource = await readFile(files.tauri, "utf8");
+const packageJson = JSON.parse(packageSource);
+const tauriConfig = JSON.parse(tauriSource);
 const cargoToml = await readFile(files.cargo, "utf8");
 const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1];
 
@@ -38,11 +60,8 @@ if (!requestedVersion) {
   throw new Error("Usage: pnpm version:set <major.minor.patch>");
 }
 
-packageJson.version = requestedVersion;
-tauriConfig.version = requestedVersion;
-
-await writeFile(files.package, `${JSON.stringify(packageJson, null, 2)}\n`);
-await writeFile(files.tauri, `${JSON.stringify(tauriConfig, null, 2)}\n`);
+await writeFile(files.package, setJsonVersion(packageSource, requestedVersion, "package.json"));
+await writeFile(files.tauri, setJsonVersion(tauriSource, requestedVersion, "tauri.conf.json"));
 await writeFile(
   files.cargo,
   cargoToml.replace(/^version = "[^"]+"/m, `version = "${requestedVersion}"`),
