@@ -71,6 +71,40 @@ pub struct PersistedAgentConfiguration {
     pub effort: Option<String>,
     pub fast: bool,
     pub permission_mode: Option<PermissionMode>,
+    pub title: Option<String>,
+}
+
+/// Upserts only the generated title, leaving every other column alone.
+/// Separate from `persist_agent_configuration` because the title arrives
+/// on its own schedule — a background one-shot that finishes seconds after
+/// the turn it describes — and must not race the configuration writer into
+/// overwriting fields neither of them owns.
+pub fn persist_agent_title(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    worktree_id: &str,
+    agent: AgentKind,
+    title: &str,
+) -> Result<(), String> {
+    let agent_json = serde_json::to_string(&agent).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO agent_transcripts
+             (run_id, worktree_id, agent, version, items, updated_at, title)
+         VALUES (?1, ?2, ?3, ?4, '[]', ?5, ?6)
+         ON CONFLICT(run_id) DO UPDATE SET
+             title      = excluded.title,
+             updated_at = excluded.updated_at",
+        rusqlite::params![
+            run_id,
+            worktree_id,
+            agent_json,
+            TRANSCRIPT_VERSION,
+            chrono::Utc::now().to_rfc3339(),
+            title
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Bundled purely to stay under clippy's argument-count lint — see
@@ -138,7 +172,7 @@ pub fn load_agent_configuration(
     run_id: &str,
 ) -> PersistedAgentConfiguration {
     conn.query_row(
-        "SELECT model, effort, fast, permission_mode
+        "SELECT model, effort, fast, permission_mode, title
          FROM agent_transcripts WHERE run_id = ?1 AND version = ?2",
         rusqlite::params![run_id, TRANSCRIPT_VERSION],
         |row| {
@@ -149,6 +183,7 @@ pub fn load_agent_configuration(
                 fast: row.get::<_, Option<bool>>(2)?.unwrap_or(false),
                 permission_mode: permission_mode_json
                     .and_then(|json| serde_json::from_str(&json).ok()),
+                title: row.get(4)?,
             })
         },
     )
@@ -256,6 +291,9 @@ pub async fn delete_agent_transcript(
     state: State<'_, AppState>,
     run_id: String,
 ) -> Result<(), String> {
+    // The in-memory event log is the other half of this run's history
+    // (`agents/run_log.rs`); a closed tab should not keep either.
+    crate::agents::run_log::forget(&state, &run_id);
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "DELETE FROM agent_transcripts WHERE run_id = ?1",

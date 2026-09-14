@@ -65,13 +65,14 @@ const DELTA_FLUSH_INTERVAL: Duration = Duration::from_millis(60);
 /// Emits whatever streamed text has pooled, if any, and clears the buffer.
 /// Must be called before emitting any non-delta event so the transcript
 /// keeps the order the model produced things in.
-fn flush_delta(app: &AppHandle, channel: &str, pending: &mut String) {
+fn flush_delta(app: &AppHandle, run_id: &str, pending: &mut String) {
     if pending.is_empty() {
         return;
     }
-    let _ = app.emit(
-        channel,
-        &AgentEvent::MessageDelta {
+    crate::agents::run_log::publish(
+        app,
+        run_id,
+        AgentEvent::MessageDelta {
             text: std::mem::take(pending),
         },
     );
@@ -188,9 +189,10 @@ async fn run_turn(
         .map(|commit| commit.hash);
 
     if announce_as_user_message {
-        let _ = app.emit(
-            &agent_event_channel(&run_id),
-            &AgentEvent::Message {
+        crate::agents::run_log::publish(
+            &app,
+            &run_id,
+            AgentEvent::Message {
                 role: "user".to_string(),
                 text: text.clone(),
             },
@@ -310,7 +312,10 @@ async fn run_turn(
     let pause_on_permission = permission_mode == PermissionMode::Manual;
 
     let stdout_app = app.clone();
-    let stdout_channel = channel.clone();
+    // The run id, not the channel string: every event now goes through
+    // `run_log::publish`, which derives the channel itself so the log
+    // append and the emit can never target different runs.
+    let stdout_run_id = run_id.clone();
     // Stopping a turn is a normal thing a user does, but from inside the
     // reader tasks it looks exactly like the child dying mid-stream. This
     // flag is set *before* the signal goes out, so both readers can tell
@@ -401,13 +406,13 @@ async fn run_turn(
                 if let AgentEvent::MessageDelta { text } = &event {
                     pending_delta.push_str(text);
                     if last_delta_flush.elapsed() >= DELTA_FLUSH_INTERVAL {
-                        flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+                        flush_delta(&stdout_app, &stdout_run_id, &mut pending_delta);
                         last_delta_flush = std::time::Instant::now();
                     }
                     continue;
                 }
                 // Anything else has to come *after* the text it follows.
-                flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+                flush_delta(&stdout_app, &stdout_run_id, &mut pending_delta);
                 last_delta_flush = std::time::Instant::now();
 
                 // Only a gated run turns a refusal into a question. Outside
@@ -419,7 +424,7 @@ async fn run_turn(
                     *gated = pause_on_permission && pause_tx.is_some();
                 }
 
-                let _ = stdout_app.emit(&stdout_channel, &event);
+                crate::agents::run_log::publish(&stdout_app, &stdout_run_id, event.clone());
                 // Stop the turn at the point of the request rather than
                 // letting the CLI barrel on past its own inline denial.
                 // None of these CLIs has a live approve/deny round-trip
@@ -439,7 +444,7 @@ async fn run_turn(
         }
         // Whatever the last flush didn't cover — a reply that ends on text
         // would otherwise lose its final fragment.
-        flush_delta(&stdout_app, &stdout_channel, &mut pending_delta);
+        flush_delta(&stdout_app, &stdout_run_id, &mut pending_delta);
 
         // Adapters whose CLI prints no end-of-turn record get to build one
         // here from what they accumulated. Empty for the three CLIs whose
@@ -451,7 +456,7 @@ async fn run_turn(
             turn_started.elapsed().as_millis() as u64,
             stdout_interrupted.load(std::sync::atomic::Ordering::SeqCst),
         ) {
-            let _ = stdout_app.emit(&stdout_channel, &event);
+            crate::agents::run_log::publish(&stdout_app, &stdout_run_id, event);
         }
         learned_session_id
     });
@@ -533,7 +538,11 @@ async fn run_turn(
     };
 
     if let Some(tool_use_id) = paused_for {
-        let _ = app.emit(&channel, &AgentEvent::AwaitingPermission { tool_use_id });
+        crate::agents::run_log::publish(
+            &app,
+            &run_id,
+            AgentEvent::AwaitingPermission { tool_use_id },
+        );
     }
 
     let learned_session_id = stdout_task.await.unwrap_or(None);
@@ -548,7 +557,7 @@ async fn run_turn(
             }
         }
     }
-    let _ = app.emit(&channel, &AgentEvent::Exit { code: exit_code });
+    crate::agents::run_log::publish(&app, &run_id, AgentEvent::Exit { code: exit_code });
     Ok(())
 }
 
@@ -726,7 +735,7 @@ fn spawn_title_generation(
         if title.is_empty() {
             return;
         }
-        {
+        let (worktree_id, entry_kind) = {
             let state = app.state::<AppState>();
             let Ok(mut runs) = state.agent_runs.lock() else {
                 return;
@@ -735,6 +744,17 @@ fn spawn_title_generation(
                 return;
             };
             entry.title = Some(title.clone());
+            (entry.worktree_id.clone(), entry.kind)
+        };
+        let state = app.state::<AppState>();
+        if let Ok(conn) = state.db.lock() {
+            let _ = crate::agents::transcripts::persist_agent_title(
+                &conn,
+                &run_id,
+                &worktree_id,
+                entry_kind,
+                &title,
+            );
         }
         announce_session_titled(&app, &run_id, &title);
     });
@@ -790,7 +810,11 @@ pub async fn resume_agent_session(
             cancel_tx: None,
             pid: None,
             started_at_ms: crate::processes::now_ms(),
-            title: None,
+            // Restored, not reset: this is the line that used to make
+            // every relaunched tab report itself to other devices as a
+            // nameless "Cursor Agent" while the desktop still showed the
+            // name its own tab store had kept.
+            title: persisted.title,
         },
     );
     announce_session_created(&app, &run_id, &worktree_id, &worktree_root, kind);

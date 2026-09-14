@@ -107,6 +107,13 @@ pub struct AppState {
     /// needing to hand the running `Child` itself across the command
     /// boundary.
     pub hook_runs: Mutex<HashMap<String, HookRunEntry>>,
+    /// Per-run sequenced event logs — see `agents::run_log`. Deliberately
+    /// separate from `agent_runs` rather than a field on `AgentRunEntry`:
+    /// every agent event appends here, on paths that already hold no other
+    /// lock, and folding it into the entry map would put a high-frequency
+    /// writer behind the same mutex the Process Manager and every command
+    /// take for unrelated reads.
+    pub agent_run_logs: Mutex<HashMap<String, crate::agents::run_log::RunLog>>,
     /// In-flight `git clone` runs (Add Project → "Clone from GitHub…"),
     /// keyed by a client-minted clone id — see `CloneRunEntry`.
     pub clone_runs: Mutex<HashMap<String, CloneRunEntry>>,

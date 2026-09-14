@@ -1,13 +1,23 @@
 import { listen } from "@tauri-apps/api/event";
 import type { AgentEvent, AgentKind } from "../types/agent";
 
-/** Subscribes to one agent run's event stream — emitted by
- * `agents/manager.rs::run_turn` on `agent://{runId}/event`. Mirrors
+/** One event as `agents/run_log.rs` publishes it: the event itself plus
+ * the monotonic sequence it was appended to the run's log under. The
+ * desktop doesn't need the sequence to stay in sync (it is in-process and
+ * never misses an emit), but the payload carries it because the relay's
+ * remote clients resume from it — see `relay/ws.rs`. */
+interface SequencedAgentEvent {
+  seq: number;
+  event: AgentEvent;
+}
+
+/** Subscribes to one agent run's event stream — published by
+ * `agents/run_log.rs::publish` on `agent://{runId}/event`. Mirrors
  * `scmEvents.ts`'s pattern. */
 export function listenToAgentEvents(runId: string, onEvent: (event: AgentEvent) => void) {
-  return listen<AgentEvent>(`agent://${runId}/event`, (event) => {
+  return listen<SequencedAgentEvent>(`agent://${runId}/event`, (message) => {
     // Defensive against a malformed/undefined payload — see `fsEvents.ts`.
-    if (event?.payload) onEvent(event.payload);
+    if (message?.payload?.event) onEvent(message.payload.event);
   });
 }
 

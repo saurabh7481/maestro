@@ -255,10 +255,18 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 tab_id: Some(run_id.clone()),
                 pid: entry.pid,
                 started_at_ms: entry.started_at_ms,
-                status: if running {
-                    ManagedProcessStatus::Running
-                } else {
-                    ManagedProcessStatus::Idle
+                // The event log knows a turn parked on a permission
+                // prompt is still an in-flight turn; `cancel_tx` only
+                // knows whether a child process is currently alive, which
+                // reported "idle" for a run that is very much mid-turn.
+                status: match crate::agents::run_log::status_of(&state, run_id) {
+                    Some(crate::agents::run_log::RunStatus::Working)
+                    | Some(crate::agents::run_log::RunStatus::AwaitingPermission) => {
+                        ManagedProcessStatus::Running
+                    }
+                    Some(_) => ManagedProcessStatus::Idle,
+                    None if running => ManagedProcessStatus::Running,
+                    None => ManagedProcessStatus::Idle,
                 },
                 agent_kind: Some(entry.kind),
             });

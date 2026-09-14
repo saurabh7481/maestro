@@ -250,6 +250,14 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         "effort TEXT",
         "fast INTEGER",
         "permission_mode TEXT",
+        // The generated tab title (`manager.rs::spawn_title_generation`).
+        // Previously in-memory only, which meant `resume_agent_session`
+        // reset it to NULL on every restart: the desktop kept showing the
+        // name its own tab store had persisted, while the relay's session
+        // list — reading the run entry — fell back to the provider's
+        // display name, so a phone labelled every restored tab "Cursor
+        // Agent". One name, one place, restored with the rest of the run.
+        "title TEXT",
     ] {
         let _ = conn.execute(
             &format!("ALTER TABLE agent_transcripts ADD COLUMN {column}"),

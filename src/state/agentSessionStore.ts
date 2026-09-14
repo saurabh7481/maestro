@@ -250,20 +250,29 @@ function forPersistence(items: TranscriptItem[]): TranscriptItem[] {
   });
 }
 
-/** Debounced per run: a streaming turn touches the transcript many times a
- * second, and writing SQLite on each one would be pure waste. */
+/** Throttled per run: a streaming turn touches the transcript many times a
+ * second, and writing SQLite on each one would be pure waste.
+ *
+ * Throttled, *not* debounced. A debounce reset its timer on every touch,
+ * so a turn that streamed continuously never let the timer reach its
+ * deadline and never wrote at all until the stream went quiet for a full
+ * interval — the persisted transcript stayed frozen at whatever it held
+ * before the turn began. That was invisible on the desktop, which reads
+ * from memory, and very visible on a phone, which hydrates from exactly
+ * this row and so showed a conversation stuck before the reply it was
+ * watching arrive. The first touch now schedules a write that actually
+ * happens, and subsequent touches within the window coalesce into it. */
 const persistTimers = new Map<string, number>();
-const PERSIST_DEBOUNCE_MS = 1500;
+const PERSIST_INTERVAL_MS = 1500;
 
 function schedulePersist(runId: string): void {
-  const existing = persistTimers.get(runId);
-  if (existing !== undefined) window.clearTimeout(existing);
+  if (persistTimers.has(runId)) return;
   persistTimers.set(
     runId,
     window.setTimeout(() => {
       persistTimers.delete(runId);
       void persistNow(runId);
-    }, PERSIST_DEBOUNCE_MS),
+    }, PERSIST_INTERVAL_MS),
   );
 }
 

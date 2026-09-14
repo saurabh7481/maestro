@@ -11,6 +11,7 @@ pub mod mcp_tools;
 pub mod one_shot;
 pub mod opencode;
 pub mod registry;
+pub mod run_log;
 pub mod session_overrides;
 pub mod sessions;
 pub mod slash_commands;

@@ -30,6 +30,7 @@ fn make_app_state(conn: rusqlite::Connection, app_data_dir: std::path::PathBuf) 
         ),
         app_data_dir,
         hook_runs: Mutex::new(HashMap::new()),
+        agent_run_logs: Mutex::new(HashMap::new()),
         clone_runs: Mutex::new(HashMap::new()),
         watchers: Mutex::new(HashMap::new()),
         agent_status_cache: Mutex::new(HashMap::new()),

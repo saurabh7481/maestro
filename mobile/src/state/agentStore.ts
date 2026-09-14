@@ -17,6 +17,11 @@ interface AgentSessionState {
   byRunId: Record<string, RunState>;
   streamStatusByRunId: Record<string, StreamStatus>;
   closersByRunId: Record<string, () => void>;
+  /** The last event sequence received per run. Sent back as `?since=` on
+   * every reconnect, which is what makes a WiFi/cellular handoff resume
+   * exactly where it stopped instead of silently dropping whatever
+   * streamed while the socket was down. */
+  lastSeqByRunId: Record<string, number>;
 
   /** Idempotent — subscribes to the run's live event stream and, once
    * connected, best-effort hydrates its saved transcript. Safe to call
@@ -92,33 +97,120 @@ async function hydrate(
   });
 }
 
+/** One frame off the agent socket — see `relay/ws.rs::RelayFrame`. The
+ * stream always opens with a `snapshot` saying where the run is and how
+ * much history follows, then streams `event` frames. */
+type RelayFrame =
+  | {
+      frame: "snapshot";
+      snapshot: {
+        status: "idle" | "working" | "awaitingPermission" | "error";
+        seq: number;
+        events: { seq: number; event: AgentEvent }[];
+        /** The requested `since` is older than the server's log can
+         * serve — the transcript can't be rebuilt from this backlog. */
+        truncated: boolean;
+        /** No in-memory log at all (the run predates this desktop
+         * process), so the persisted transcript is the only history. */
+        cold: boolean;
+      };
+    }
+  | { frame: "event"; event: { seq: number; event: AgentEvent } };
+
+/** The run status the backend folded from the run's own events, mapped
+ * onto the transcript reducer's vocabulary. This is the fix for a phone
+ * showing "idle" for a turn the desktop started: status is now a fact
+ * reported by the run, not something a client could only know by having
+ * sent the prompt itself. */
+const STATUS_FROM_SNAPSHOT = {
+  idle: "idle",
+  working: "working",
+  awaitingPermission: "awaitingPermission",
+  error: "error",
+} as const;
+
 export const useAgentStore = create<AgentSessionState>((set, get) => ({
   byRunId: {},
   streamStatusByRunId: {},
   closersByRunId: {},
+  lastSeqByRunId: {},
 
   open: (runId) => {
     if (get().closersByRunId[runId]) return;
     set((s) => ({ byRunId: { ...s.byRunId, [runId]: s.byRunId[runId] ?? emptyRunState() } }));
+
+    const applySequenced = (sequenced: { seq: number; event: AgentEvent }) => {
+      set((s) => {
+        // Out-of-order or repeated frames are dropped rather than applied
+        // twice — the seam between a replayed backlog and the live tail is
+        // exactly where a duplicate would otherwise land.
+        if (sequenced.seq !== 0 && sequenced.seq <= (s.lastSeqByRunId[runId] ?? 0)) return s;
+        const run = s.byRunId[runId] ?? emptyRunState();
+        return {
+          byRunId: { ...s.byRunId, [runId]: applyEvent(run, sequenced.event) },
+          lastSeqByRunId: {
+            ...s.lastSeqByRunId,
+            [runId]: Math.max(s.lastSeqByRunId[runId] ?? 0, sequenced.seq),
+          },
+        };
+      });
+    };
+
     const close = openStream(
-      `/api/agents/${encodeURIComponent(runId)}/stream`,
+      () => {
+        const since = get().lastSeqByRunId[runId] ?? 0;
+        return `/api/agents/${encodeURIComponent(runId)}/stream?since=${since}`;
+      },
       (raw) => {
-        let event: AgentEvent;
+        let frame: RelayFrame;
         try {
-          event = JSON.parse(raw) as AgentEvent;
+          frame = JSON.parse(raw) as RelayFrame;
         } catch {
           return;
         }
+
+        if (frame.frame === "event") {
+          applySequenced(frame.event);
+          return;
+        }
+
+        const { snapshot } = frame;
+        const resuming = (get().lastSeqByRunId[runId] ?? 0) > 0;
+        if (snapshot.cold || snapshot.truncated) {
+          // Either the desktop restarted (no live log) or this client fell
+          // too far behind to be caught up. Both are recoverable, but only
+          // by starting from the persisted transcript rather than
+          // rendering a hole.
+          set((s) => ({
+            byRunId: { ...s.byRunId, [runId]: emptyRunState() },
+            lastSeqByRunId: { ...s.lastSeqByRunId, [runId]: snapshot.seq },
+          }));
+          void hydrate(runId, get, set);
+        } else if (!resuming) {
+          // A fresh attach: the backlog *is* the whole conversation, so
+          // start from nothing and let it rebuild — no stale persisted
+          // copy to reconcile against.
+          set((s) => ({ byRunId: { ...s.byRunId, [runId]: emptyRunState() } }));
+        }
+
+        for (const sequenced of snapshot.events) applySequenced(sequenced);
+
+        // Applied last so it wins over whatever the replayed events
+        // implied: the server's fold is authoritative.
         set((s) => {
           const run = s.byRunId[runId] ?? emptyRunState();
-          return { byRunId: { ...s.byRunId, [runId]: applyEvent(run, event) } };
+          return {
+            byRunId: {
+              ...s.byRunId,
+              [runId]: { ...run, status: STATUS_FROM_SNAPSHOT[snapshot.status] },
+            },
+          };
         });
       },
       (status) =>
         set((s) => ({ streamStatusByRunId: { ...s.streamStatusByRunId, [runId]: status } })),
     );
     set((s) => ({ closersByRunId: { ...s.closersByRunId, [runId]: close } }));
-    void hydrate(runId, get, set);
   },
 
   close: (runId) => {

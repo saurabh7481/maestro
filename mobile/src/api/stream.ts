@@ -9,7 +9,11 @@ import { wsUrl } from "./client";
  * connection is held open for a few seconds, so one real drop doesn't
  * leave a session crawling back for minutes. */
 export function openStream(
-  path: string,
+  /** A function, not a string, when the URL has to change between
+   * attempts: the agent stream appends `?since=<lastSeq>` so a reconnect
+   * asks for exactly the events it missed, and that sequence advances with
+   * every frame received. Evaluated fresh on each connect. */
+  path: string | (() => string),
   onMessage: (raw: string) => void,
   onStatus?: (status: "connecting" | "open" | "closed") => void,
 ): () => void {
@@ -29,7 +33,7 @@ export function openStream(
   function connect() {
     if (stopped) return;
     onStatus?.("connecting");
-    const ws = new WebSocket(wsUrl(path));
+    const ws = new WebSocket(wsUrl(typeof path === "function" ? path() : path));
     socket = ws;
     ws.onopen = () => {
       openedAt = Date.now();
