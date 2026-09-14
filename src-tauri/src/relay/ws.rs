@@ -17,6 +17,8 @@ use axum::Extension;
 use axum::Router;
 use tauri::{Listener, Manager};
 
+use crate::state::AppState;
+
 use super::auth::DeviceAuth;
 use super::server::RelayCtx;
 use super::RelayState;
@@ -210,6 +212,83 @@ async fn forward_channel(mut socket: WebSocket, ctx: RelayCtx, auth: DeviceAuth,
     relay_state.mark_disconnected(&auth.device_id);
 }
 
+/// Pushes the whole session list whenever anything about it changes.
+///
+/// The last piece of polling in the mobile client, and the last place a
+/// change could be missed entirely: a session that started and finished
+/// between two 3-second polls was never seen at all, and a title landed up
+/// to a poll late. Now the list is pushed on
+/// `SESSIONS_CHANGED_CHANNEL` — created, retitled, status moved, disposed
+/// — with the client's poll demoted to a slow reconcile.
+///
+/// Coalesced: a burst of changes (a turn finishing touches status, then
+/// the run entry, then the title) collapses into one push, and the list is
+/// rebuilt at send time so the push always carries current state rather
+/// than a queue of stale ones.
+async fn sessions_stream(
+    ws: WebSocketUpgrade,
+    State(ctx): State<RelayCtx>,
+    Extension(auth): Extension<DeviceAuth>,
+) -> Response {
+    ws.on_upgrade(move |socket| forward_sessions(socket, ctx, auth))
+}
+
+/// How long to pool change notifications before rebuilding and sending.
+/// Short enough to read as instant, long enough that the several
+/// notifications one user action produces cost one push.
+const SESSIONS_COALESCE: std::time::Duration = std::time::Duration::from_millis(80);
+
+async fn forward_sessions(mut socket: WebSocket, ctx: RelayCtx, auth: DeviceAuth) {
+    let relay_state = ctx.app.state::<RelayState>();
+    relay_state.mark_connected(&auth.device_id);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let listener_id = ctx.app.listen(super::SESSIONS_CHANGED_CHANNEL, move |_| {
+        let _ = tx.send(());
+    });
+
+    // Subscribe first, then send the current list: a change landing during
+    // the handover queues a notification rather than being lost, so the
+    // client's first push is never stale.
+    let mut ok = send_sessions(&mut socket, &ctx).await;
+
+    while ok {
+        tokio::select! {
+            notified = rx.recv() => {
+                if notified.is_none() {
+                    break;
+                }
+                // Drain whatever else piled up in the coalesce window;
+                // they all describe the same "re-read the list" work.
+                tokio::time::sleep(SESSIONS_COALESCE).await;
+                while rx.try_recv().is_ok() {}
+                ok = send_sessions(&mut socket, &ctx).await;
+            }
+            incoming = socket.recv() => {
+                if !matches!(incoming, Some(Ok(_))) {
+                    break;
+                }
+            }
+        }
+    }
+
+    ctx.app.unlisten(listener_id);
+    relay_state.mark_disconnected(&auth.device_id);
+}
+
+async fn send_sessions(socket: &mut WebSocket, ctx: &RelayCtx) -> bool {
+    let Ok(sessions) = crate::processes::session_rows(&ctx.app.state::<AppState>()) else {
+        return true;
+    };
+    send_json(socket, &SessionsFrame { sessions }).await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionsFrame {
+    sessions: Vec<crate::processes::SessionRow>,
+}
+
 pub(super) fn router(ctx: RelayCtx) -> Router {
     let read = axum::middleware::from_fn_with_state(ctx.clone(), super::auth::require_read);
     Router::new()
@@ -219,7 +298,11 @@ pub(super) fn router(ctx: RelayCtx) -> Router {
         )
         .route(
             "/api/terminals/{terminal_id}/stream",
-            get(terminal_stream).route_layer(read),
+            get(terminal_stream).route_layer(read.clone()),
+        )
+        .route(
+            "/api/sessions/stream",
+            get(sessions_stream).route_layer(read),
         )
         .with_state(ctx)
 }

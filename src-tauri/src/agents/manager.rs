@@ -54,6 +54,7 @@ fn announce_session_created(
             kind,
         },
     );
+    crate::relay::notify_sessions_changed(app);
 }
 
 /// How long streamed text is allowed to pool before being sent to the UI.
@@ -679,6 +680,9 @@ fn announce_session_titled(app: &AppHandle, run_id: &str, title: &str) {
         AGENT_SESSION_TITLED_CHANNEL,
         &AgentSessionTitled { run_id, title },
     );
+    // The title *is* what the session list shows, so a paired device has
+    // to be told the moment it lands rather than on its next poll.
+    crate::relay::notify_sessions_changed(app);
 }
 
 const TITLE_PROMPT: &str = "Summarize the following user request as a short slug for a tab \

@@ -10,7 +10,6 @@ use crate::agents::transcripts::StoredTranscript;
 use crate::agents::AgentKind;
 use crate::commands::agents::ModelOption;
 use crate::models::{Project, Worktree};
-use crate::processes::ManagedProcess;
 use crate::state::AppState;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -87,50 +86,31 @@ async fn list_worktrees(
 async fn list_sessions(
     State(ctx): State<RelayCtx>,
     Path(worktree_id): Path<String>,
-) -> Result<Json<Vec<ManagedProcess>>, ApiError> {
+) -> Result<Json<Vec<crate::processes::SessionRow>>, ApiError> {
     let state = ctx.app.state::<AppState>();
     let root = worktree_root_path(&state, &worktree_id).map_err(ApiError)?;
-    let snapshot = crate::processes::list_managed_processes(state)
-        .await
-        .map_err(ApiError)?;
-    let sessions = snapshot
-        .processes
+    let sessions = crate::processes::session_rows(&state)
+        .map_err(ApiError)?
         .into_iter()
-        .filter(|p| {
-            matches!(
-                p.kind,
-                crate::processes::ManagedProcessKind::Agent
-                    | crate::processes::ManagedProcessKind::Terminal
-            )
-        })
-        .filter(|p| p.worktree_root.as_deref() == Some(root.as_str()))
+        .filter(|row| row.worktree_root.as_deref() == Some(root.as_str()))
         .collect();
     Ok(Json(sessions))
 }
 
-/// Every agent/terminal session across every worktree, not just one —
-/// what the mobile app's tab dock polls so a session started on the
-/// desktop (or on another device) shows up there without the user having
-/// to go find and open it themselves first.
+/// Every agent/terminal session across every worktree, not just one.
+///
+/// Now the *reconcile* path — `/api/sessions/stream` is what keeps the
+/// list live. Reads `AppState` directly rather than going through
+/// `list_managed_processes`, whose `sysinfo` refresh made every paired
+/// device's poll re-sample the desktop's entire process table for metrics
+/// no session list displays.
 async fn list_all_sessions(
     State(ctx): State<RelayCtx>,
-) -> Result<Json<Vec<ManagedProcess>>, ApiError> {
+) -> Result<Json<Vec<crate::processes::SessionRow>>, ApiError> {
     let state = ctx.app.state::<AppState>();
-    let snapshot = crate::processes::list_managed_processes(state)
-        .await
-        .map_err(ApiError)?;
-    let sessions = snapshot
-        .processes
-        .into_iter()
-        .filter(|p| {
-            matches!(
-                p.kind,
-                crate::processes::ManagedProcessKind::Agent
-                    | crate::processes::ManagedProcessKind::Terminal
-            )
-        })
-        .collect();
-    Ok(Json(sessions))
+    Ok(Json(
+        crate::processes::session_rows(&state).map_err(ApiError)?,
+    ))
 }
 
 /// Backs the mobile composer's "Add context" file picker — the same
@@ -391,7 +371,7 @@ async fn kill_terminal(
     Path(terminal_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let state = ctx.app.state::<AppState>();
-    crate::terminal::kill_terminal(state, terminal_id)
+    crate::terminal::kill_terminal(ctx.app.clone(), state, terminal_id)
         .await
         .map_err(ApiError)?;
     Ok(StatusCode::NO_CONTENT)

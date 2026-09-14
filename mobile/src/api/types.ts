@@ -45,7 +45,11 @@ export interface Worktree {
 export type ManagedProcessKind = "agent" | "terminal" | "languageServer" | "hook";
 export type ManagedProcessStatus = "running" | "idle" | "exited";
 
-/** Mirrors `processes.rs`'s `ManagedProcess`. */
+/** Mirrors `processes.rs`'s `SessionRow` — identity and status, without
+ * the CPU/memory metrics the desktop Process Manager shows. Those cost a
+ * full `sysinfo` process-table refresh on the desktop and nothing here
+ * renders them, so the relay serves this lighter row to both the
+ * `/api/sessions` reconcile and the `/api/sessions/stream` push. */
 export interface ManagedProcess {
   id: string;
   kind: ManagedProcessKind;
@@ -57,10 +61,6 @@ export interface ManagedProcess {
   pid: number | null;
   startedAtMs: number;
   status: ManagedProcessStatus;
-  cpuPercent: number;
-  memoryBytes: number;
-  childProcessCount: number;
-  killable: boolean;
   /** Which CLI an agent process is — `null` for every other kind. Lets the
    * sessions list open an existing agent as a tab that already knows which
    * model/effort/permission-mode picker to show, without mobile having

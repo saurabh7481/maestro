@@ -39,6 +39,22 @@ fn internal_error(error: impl std::fmt::Display) -> FunnelReport {
 
 const RELAY_ENABLED_SETTING_KEY: &str = "relay.enabled";
 
+/// Fired whenever the set of agent/terminal sessions — or anything the
+/// session list displays about one — changes: created, retitled, status
+/// moved, disposed. Carries no payload; a listener re-reads
+/// `processes::session_rows`, which is cheap.
+///
+/// Pushing the whole list rather than a delta is deliberate. The list is
+/// tens of rows, and a full-state push has no way to drift: a dropped or
+/// reordered delta would leave a client subtly wrong forever, which is
+/// exactly the class of bug this whole change exists to remove.
+pub const SESSIONS_CHANGED_CHANNEL: &str = "agent-sessions://changed";
+
+pub fn notify_sessions_changed(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    let _ = app.emit(SESSIONS_CHANGED_CHANNEL, ());
+}
+
 /// Whether remote access was last left on. Defaults to `false` so a fresh
 /// install — one that has never touched the toggle — starts with the relay
 /// off and nothing exposed; after that the stored value is authoritative in

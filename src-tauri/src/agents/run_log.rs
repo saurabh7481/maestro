@@ -148,6 +148,7 @@ fn fold_status(current: RunStatus, event: &AgentEvent) -> RunStatus {
 /// lock *before* the emit, so a client that receives seq N and then asks
 /// for "everything after N" can never be told N doesn't exist yet.
 pub fn publish(app: &AppHandle, run_id: &str, event: AgentEvent) {
+    let status_changed;
     let sequenced = {
         let state = app.state::<AppState>();
         let Ok(mut logs) = state.agent_run_logs.lock() else {
@@ -159,9 +160,20 @@ pub fn publish(app: &AppHandle, run_id: &str, event: AgentEvent) {
             );
             return;
         };
-        logs.entry(run_id.to_string()).or_default().push(event)
+        let log = logs.entry(run_id.to_string()).or_default();
+        let before = log.status;
+        let sequenced = log.push(event);
+        status_changed = log.status != before;
+        sequenced
     };
     let _ = app.emit(&super::manager::agent_event_channel(run_id), &sequenced);
+    // A run going Working -> Idle (or parking on a permission prompt) is a
+    // change to the *session list*, not just to this run's transcript, and
+    // anything watching the list has to hear about it without waiting for
+    // its next poll.
+    if status_changed {
+        crate::relay::notify_sessions_changed(app);
+    }
 }
 
 /// Everything a client needs to start showing a run correctly: where the

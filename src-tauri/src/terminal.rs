@@ -307,6 +307,11 @@ pub async fn spawn_terminal(
         );
     }
 
+    // The session list gained a row; every device watching it — the
+    // desktop dock and a paired phone alike — hears about it now rather
+    // than on whatever poll tick comes next.
+    crate::relay::notify_sessions_changed(&app);
+
     // Blocking reads run on a dedicated OS thread, not the async
     // runtime's workers — a busy terminal must not starve agent-process
     // I/O sharing the same runtime (docs/ARCHITECTURE.md §8).
@@ -358,6 +363,9 @@ pub async fn spawn_terminal(
                             .as_mut()
                             .and_then(|t| t.remove(&batch_terminal_id))
                     };
+                    // A shell that exited on its own removes a session-list
+                    // row just as surely as an explicit kill does.
+                    crate::relay::notify_sessions_changed(&batch_app);
                     let code = if let Some(mut handle) = handle {
                         tokio::task::spawn_blocking(move || {
                             handle
@@ -458,7 +466,11 @@ pub async fn resize_terminal(
 }
 
 #[tauri::command]
-pub async fn kill_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
+pub async fn kill_terminal(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    terminal_id: String,
+) -> Result<(), String> {
     let handle = {
         let mut terminals = state.terminals.lock().map_err(|e| e.to_string())?;
         terminals.remove(&terminal_id)
@@ -466,6 +478,7 @@ pub async fn kill_terminal(state: State<'_, AppState>, terminal_id: String) -> R
     if let Some(mut handle) = handle {
         let _ = handle.child.kill();
     }
+    crate::relay::notify_sessions_changed(&app);
     Ok(())
 }
 

@@ -213,23 +213,36 @@ fn sample_metrics(pids: &[u32]) -> (HashMap<u32, Metrics>, bool, usize, u64) {
 /// timer (one `/proc` sweep plus four `AppState` map reads); the frontend
 /// only polls while the Process Manager tab or its status-bar popover is
 /// actually open (`state/processStore.ts`).
-#[tauri::command]
-pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<ProcessSnapshot, String> {
-    struct Row {
-        id: String,
-        kind: ManagedProcessKind,
-        label: String,
-        detail: Option<String>,
-        worktree_id: Option<String>,
-        worktree_root: Option<String>,
-        tab_id: Option<String>,
-        pid: Option<u32>,
-        started_at_ms: u64,
-        status: ManagedProcessStatus,
-        agent_kind: Option<AgentKind>,
-    }
+/// One managed process as the *session list* sees it: identity and status,
+/// without resource metrics.
+///
+/// Split out from `ManagedProcess` because those metrics cost a full
+/// `sysinfo` process-table refresh, and the two consumers want different
+/// things. The desktop Process Manager wants CPU/memory and polls slowly.
+/// The relay's session list — read by every paired device, and now pushed
+/// on every status change — wants identity and status only; leaving it on
+/// the metrics path meant each phone's poll refreshed the whole process
+/// table on the desktop.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRow {
+    pub id: String,
+    pub kind: ManagedProcessKind,
+    pub label: String,
+    pub detail: Option<String>,
+    pub worktree_id: Option<String>,
+    pub worktree_root: Option<String>,
+    pub tab_id: Option<String>,
+    pub pid: Option<u32>,
+    pub started_at_ms: u64,
+    pub status: ManagedProcessStatus,
+    pub agent_kind: Option<AgentKind>,
+}
 
-    let mut rows: Vec<Row> = Vec::new();
+/// Every agent run, terminal, language server and hook Maestro currently
+/// owns. Cheap: pure `AppState` reads, no process sampling.
+pub fn collect_rows(state: &AppState) -> Result<Vec<SessionRow>, String> {
+    let mut rows: Vec<SessionRow> = Vec::new();
 
     {
         let runs = state.agent_runs.lock().map_err(|e| e.to_string())?;
@@ -238,7 +251,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
             // `AgentRunEntry`'s doc comment) — `cancel_tx`/`pid` are only
             // `Some` while a turn is actually in flight.
             let running = entry.cancel_tx.is_some();
-            rows.push(Row {
+            rows.push(SessionRow {
                 id: run_id.clone(),
                 kind: ManagedProcessKind::Agent,
                 label: entry
@@ -259,7 +272,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
                 // prompt is still an in-flight turn; `cancel_tx` only
                 // knows whether a child process is currently alive, which
                 // reported "idle" for a run that is very much mid-turn.
-                status: match crate::agents::run_log::status_of(&state, run_id) {
+                status: match crate::agents::run_log::status_of(state, run_id) {
                     Some(crate::agents::run_log::RunStatus::Working)
                     | Some(crate::agents::run_log::RunStatus::AwaitingPermission) => {
                         ManagedProcessStatus::Running
@@ -276,7 +289,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
     {
         let terminals = state.terminals.lock().map_err(|e| e.to_string())?;
         for (terminal_id, handle) in terminals.iter() {
-            rows.push(Row {
+            rows.push(SessionRow {
                 id: terminal_id.clone(),
                 kind: ManagedProcessKind::Terminal,
                 label: handle.shell_name().to_string(),
@@ -295,7 +308,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
     {
         let servers = state.lsp_servers.lock().map_err(|e| e.to_string())?;
         for (key, entry) in servers.iter() {
-            rows.push(Row {
+            rows.push(SessionRow {
                 id: format!("{}:{}", key.worktree_id, key.kind.slug()),
                 kind: ManagedProcessKind::LanguageServer,
                 label: key.kind.display_name().to_string(),
@@ -314,7 +327,7 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
     {
         let hooks = state.hook_runs.lock().map_err(|e| e.to_string())?;
         for (worktree_id, entry) in hooks.iter() {
-            rows.push(Row {
+            rows.push(SessionRow {
                 id: worktree_id.clone(),
                 kind: ManagedProcessKind::Hook,
                 label: "Worktree setup hook".to_string(),
@@ -329,6 +342,26 @@ pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<Proces
             });
         }
     }
+    Ok(rows)
+}
+
+/// Just the agent and terminal sessions — what a tab dock shows, on the
+/// desktop and on a paired device alike.
+pub fn session_rows(state: &AppState) -> Result<Vec<SessionRow>, String> {
+    Ok(collect_rows(state)?
+        .into_iter()
+        .filter(|row| {
+            matches!(
+                row.kind,
+                ManagedProcessKind::Agent | ManagedProcessKind::Terminal
+            )
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn list_managed_processes(state: State<'_, AppState>) -> Result<ProcessSnapshot, String> {
+    let rows = collect_rows(&state)?;
 
     let pids: Vec<u32> = rows.iter().filter_map(|row| row.pid).collect();
     let (metrics, cpu_ready, cpu_core_count, total_memory_bytes) = sample_metrics(&pids);
