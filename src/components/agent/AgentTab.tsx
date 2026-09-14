@@ -707,8 +707,8 @@ function Transcript({
    * gap to the bottom that the user never created and concluded they had
    * scrolled away — auto-follow then stopped for the rest of the turn. */
   const scrolledToRef = useRef(-1);
-  /** The window of rendered rows, watched for height changes — see the
-   * `ResizeObserver` below. */
+  /** The virtualizer-sized box the rows are positioned inside, watched for
+   * height changes — see the `ResizeObserver` below. */
   const contentRef = useRef<HTMLDivElement>(null);
   /** Mirrors `pinnedRef` for rendering only. Kept as a separate piece of
    * state, and set only when the value actually flips, so scrolling still
@@ -792,7 +792,7 @@ function Transcript({
   // measurements, so between an append and its measurement the transcript
   // sat one chunk behind — visibly, for a fast-streaming turn.
   // `isEmpty` is a dependency only because the empty transcript renders a
-  // different tree, with no window element to observe.
+  // different tree, with no sizer element to observe.
   const isEmpty = groups.length === 0;
   useEffect(() => {
     const content = contentRef.current;
@@ -835,50 +835,43 @@ function Transcript({
     // content, which is precisely what "jump to latest" must not do.
     <div className={styles.transcriptViewport}>
       <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
-        <div className={styles.transcriptSizer} style={{ height: totalSize }}>
-          <div
-            className={styles.transcriptWindow}
-            ref={contentRef}
-            style={{ top: `${virtualItems[0]?.start ?? 0}px` }}
-          >
-            {virtualItems.map((virtualItem) => {
-              const group = groups[virtualItem.index];
-              return (
-                <div
-                  key={virtualItem.key}
-                  data-index={virtualItem.index}
-                  ref={virtualizer.measureElement}
-                  className={styles.transcriptRow}
-                  // The transcript's vertical breathing room lives on the
-                  // first and last rows rather than as padding on the scroll
-                  // container: padding there would offset every item from the
-                  // virtualizer's coordinate space, which is what
-                  // `scrollMargin` exists to correct. Folding it into the
-                  // measured rows keeps one source of truth for offsets.
-                  data-first={virtualItem.index === 0 || undefined}
-                  data-last={virtualItem.index === lastIndex || undefined}
-                >
-                  <TranscriptGroup
-                    group={group}
-                    kind={kind}
-                    runId={runId}
-                    isNewest={virtualItem.index === lastIndex}
-                    worktreeId={worktreeId}
-                    worktreeRoot={worktreeRoot}
-                    active={
-                      working && virtualItem.index === lastIndex && group.role === "assistant"
-                    }
-                    turnStartedAtMs={turnStartedAtMs}
-                    totalCostUsd={totalCostUsd}
-                    onEdit={onEdit}
-                    planExitTool={planExitTool}
-                    onApprovePlan={onApprovePlan}
-                    onAnswerQuestions={onAnswerQuestions}
-                  />
-                </div>
-              );
-            })}
-          </div>
+        <div className={styles.transcriptSizer} ref={contentRef} style={{ height: totalSize }}>
+          {virtualItems.map((virtualItem) => {
+            const group = groups[virtualItem.index];
+            return (
+              <div
+                key={virtualItem.key}
+                data-index={virtualItem.index}
+                ref={virtualizer.measureElement}
+                className={styles.transcriptRow}
+                style={{ top: `${virtualItem.start}px` }}
+                // The transcript's vertical breathing room lives on the
+                // first and last rows rather than as padding on the scroll
+                // container: padding there would offset every item from the
+                // virtualizer's coordinate space, which is what
+                // `scrollMargin` exists to correct. Folding it into the
+                // measured rows keeps one source of truth for offsets.
+                data-first={virtualItem.index === 0 || undefined}
+                data-last={virtualItem.index === lastIndex || undefined}
+              >
+                <TranscriptGroup
+                  group={group}
+                  kind={kind}
+                  runId={runId}
+                  isNewest={virtualItem.index === lastIndex}
+                  worktreeId={worktreeId}
+                  worktreeRoot={worktreeRoot}
+                  active={working && virtualItem.index === lastIndex && group.role === "assistant"}
+                  turnStartedAtMs={turnStartedAtMs}
+                  totalCostUsd={totalCostUsd}
+                  onEdit={onEdit}
+                  planExitTool={planExitTool}
+                  onApprovePlan={onApprovePlan}
+                  onAnswerQuestions={onAnswerQuestions}
+                />
+              </div>
+            );
+          })}
         </div>
         {working && groups[lastIndex]?.role === "user" && (
           <div className={styles.workingRow}>

@@ -178,36 +178,38 @@
   min-width: 0;
 }
 
-/* The window of rendered rows, offset in one move rather than positioning
- * each row individually. That offset is reassigned via inline style on
- * essentially every scroll frame.
+/* Each row is positioned at its own absolute offset inside the sizer,
+ * rather than flowing inside one window element that gets moved on every
+ * scroll frame.
  *
- * This used to be a `transform: translateY(...)`, promoted with
- * `will-change: transform` after WebKitGTK was live-observed briefly
- * painting rows on top of one another while scrolling (the same class of
- * missed invalidation `Sidebar.module.css`'s `.row` comment documents).
- * The promotion turned out to be insufficient: with `overscan: 10` and
- * tall rows (tables, diffs, code blocks) the window layer routinely
- * exceeds what the compositor tiles as one texture, and on the tiled path
- * WebKitGTK keeps missing tile invalidations on the transform reassign —
- * live-observed as *persisting* stale rows (user bubbles, specifically)
- * painted under content scrolled into their old position, not just a
- * brief flicker. Positioning with `top` instead routes every move through
- * the ordinary style → layout → paint invalidation path, which WebKitGTK
- * does not miss. The per-frame cost is bounded: only the strips newly
- * exposed by the move repaint, and the transcript already re-renders per
- * scroll frame to swap virtualized rows in and out. */
-.transcriptWindow {
+ * That window is where this list's long-running rendering bug lived. It
+ * was first a `transform: translateY(...)`, promoted with `will-change`
+ * after WebKitGTK was live-observed briefly painting rows on top of one
+ * another (the same missed invalidation `Sidebar.module.css`'s `.row`
+ * comment documents). With `overscan: 10` and tall rows — tables, diffs,
+ * code blocks — the window layer exceeded what the compositor tiles as
+ * one texture, and on the tiled path WebKitGTK kept missing tile
+ * invalidations on the reassign: stale user bubbles persisted under
+ * content scrolled into their old position. Switching to `top` moved it
+ * onto the ordinary style/layout/paint path, which helped but did not
+ * close it — a fast scroll could still leave an un-repainted strip beside
+ * newly painted content.
+ *
+ * The common factor in both was reassigning one element's offset every
+ * frame: an ordinary scroll became a per-frame layout mutation of a layer
+ * taller than the viewport. Per-row offsets remove that entirely. A row's
+ * `top` is fixed for as long as it is mounted, so scrolling is just the
+ * container scrolling — the path WebKitGTK composites correctly — and an
+ * offset is only ever rewritten when a row above it actually changes
+ * height.
+ *
+ * `gap` can't apply across absolutely-positioned rows, so the 2rem
+ * spacing is per-row padding, which `measureElement` accounts for as part
+ * of the row's height. */
+.transcriptRow {
   position: absolute;
-  top: 0;
   left: 0;
   width: 100%;
-}
-
-/* Was `gap: 2rem` on a flex column; absolutely-positioned virtual rows
- * can't use `gap`, so the spacing is per-row padding that `measureElement`
- * accounts for as part of the row's height. */
-.transcriptRow {
   padding: 0 var(--space-8) 2rem;
   min-width: 0;
 }

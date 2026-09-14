@@ -274,11 +274,17 @@
 }
 
 /* One transform for the whole rendered window rather than positioning each
-   row individually — see `AgentTab.module.css`'s `.transcriptWindow`
-   comment for why this also needs `will-change: transform`: the same
+   row individually, promoted with `will-change: transform`: the same
    inline-style transform update on every scroll frame, without a
    compositor-layer promotion, is what WebKitGTK has been observed
-   occasionally failing to repaint cleanly. */
+   occasionally failing to repaint cleanly.
+
+   The transcript hit the *unfixable* version of this and now offsets each
+   row individually instead (see `AgentTab.module.css`'s `.transcriptRow`).
+   Kept here because the failure needs a window layer taller than one
+   compositor tile, which these fixed-height ~24px rows never produce — and
+   a single transform stays meaningfully cheaper for a list this long. If
+   stale rows are ever observed here, this is the first thing to change. */
 .scmWindow {
   position: absolute;
   top: 0;
