@@ -3,6 +3,7 @@ use crate::git::{
     self, BlameLine, CommitSummary, ConflictContent, DiffContent, DiffMode, StashEntry, StatusKind,
     WorkingStatus,
 };
+use crate::git_remote::{self, GitRemoteError, PullStrategy, RemoteOutcome};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -192,16 +193,22 @@ pub async fn commit_changes(
     Ok(hash)
 }
 
+/// Remote operations return a structured [`GitRemoteError`] rather than a
+/// string so the Source Control panel can render a title, an explanation
+/// and the remedies that apply — see `git_remote.rs`. The SCM status is
+/// re-emitted on the failure path too: a pull can leave conflicts or a
+/// partially-applied stash behind, and the file list has to reflect that.
 #[tauri::command]
 pub async fn push_changes(
     app: AppHandle,
     worktree_id: String,
     worktree_root: String,
-) -> Result<(), String> {
+    force_with_lease: Option<bool>,
+) -> Result<RemoteOutcome, GitRemoteError> {
     let root = PathBuf::from(worktree_root);
-    git::push(&root).await?;
+    let result = git_remote::push(&root, force_with_lease.unwrap_or(false)).await;
     emit_scm_status(&app, &worktree_id, &root).await;
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -209,11 +216,12 @@ pub async fn pull_changes(
     app: AppHandle,
     worktree_id: String,
     worktree_root: String,
-) -> Result<(), String> {
+    strategy: Option<PullStrategy>,
+) -> Result<RemoteOutcome, GitRemoteError> {
     let root = PathBuf::from(worktree_root);
-    git::pull(&root).await?;
+    let result = git_remote::pull(&root, strategy.unwrap_or_default()).await;
     emit_scm_status(&app, &worktree_id, &root).await;
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -221,11 +229,11 @@ pub async fn fetch_remote(
     app: AppHandle,
     worktree_id: String,
     worktree_root: String,
-) -> Result<(), String> {
+) -> Result<RemoteOutcome, GitRemoteError> {
     let root = PathBuf::from(worktree_root);
-    git::fetch(&root).await?;
+    let result = git_remote::fetch(&root).await;
     emit_scm_status(&app, &worktree_id, &root).await;
-    Ok(())
+    result
 }
 
 #[tauri::command]

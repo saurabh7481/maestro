@@ -653,79 +653,11 @@ pub async fn commit(dir: &Path, message: &str) -> Result<String, String> {
     Ok(hash.trim().to_string())
 }
 
-async fn current_branch(dir: &Path) -> Result<String, String> {
+/// `pub(crate)` so `git_remote.rs` can reuse it when wiring up upstream
+/// tracking, rather than re-deriving the branch name there.
+pub(crate) async fn current_branch(dir: &Path) -> Result<String, String> {
     let out = run_git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
     Ok(out.trim().to_string())
-}
-
-/// The first configured remote, or an error if there isn't one — used as
-/// the "which remote" guess when auto-wiring upstream tracking below.
-/// Almost every repo has exactly one remote (`origin`), and this avoids
-/// hardcoding that name for the (rarer) repo that renamed or added a
-/// second one.
-async fn default_remote(dir: &Path) -> Result<String, String> {
-    let out = run_git(dir, &["remote"]).await?;
-    out.lines()
-        .next()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "no git remote configured".to_string())
-}
-
-/// Every worktree's branch starts with no upstream configured (`git
-/// worktree add -b` never wires one up — see `commands/worktrees.rs`), so
-/// a plain `git push` on a brand-new branch always fails with "no
-/// upstream branch" until the user runs `--set-upstream` manually once.
-/// Retrying with `--set-upstream <remote> <branch>` on exactly that
-/// failure makes the first push from a new worktree just work, the same
-/// way `git push -u` would, without silently changing behavior for repos
-/// that already track a remote branch (the plain `push` still runs first
-/// and is enough for that common case).
-pub async fn push(dir: &Path) -> Result<(), String> {
-    match run_git(dir, &["push"]).await {
-        Ok(_) => Ok(()),
-        Err(err) if err.contains("has no upstream branch") => {
-            let branch = current_branch(dir).await?;
-            let remote = default_remote(dir).await.map_err(|_| err.clone())?;
-            run_git(dir, &["push", "--set-upstream", &remote, &branch]).await?;
-            Ok(())
-        }
-        Err(err) => Err(err),
-    }
-}
-
-/// Fast-forward only — never silently creates a merge commit. A diverged
-/// history surfaces as an `Err` for the caller to show, not to resolve.
-///
-/// Same upstream gap as `push` above, but pull can only wire tracking up
-/// if the remote actually already has a branch of this name (there being
-/// nothing to fast-forward from a branch that doesn't exist remotely is a
-/// real error, not a one-time setup step to paper over).
-pub async fn pull(dir: &Path) -> Result<(), String> {
-    match run_git(dir, &["pull", "--ff-only"]).await {
-        Ok(_) => Ok(()),
-        Err(err) if err.contains("no tracking information") => {
-            let branch = current_branch(dir).await?;
-            let remote = default_remote(dir).await.map_err(|_| err.clone())?;
-            run_git(dir, &["fetch", &remote]).await?;
-            let remote_ref = format!("{remote}/{branch}");
-            if run_git(dir, &["rev-parse", "--verify", &remote_ref])
-                .await
-                .is_err()
-            {
-                return Err(err);
-            }
-            run_git(dir, &["branch", "--set-upstream-to", &remote_ref, &branch]).await?;
-            run_git(dir, &["pull", "--ff-only"]).await?;
-            Ok(())
-        }
-        Err(err) => Err(err),
-    }
-}
-
-pub async fn fetch(dir: &Path) -> Result<(), String> {
-    run_git(dir, &["fetch"]).await?;
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

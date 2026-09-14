@@ -28,6 +28,58 @@ export interface WorkingStatus {
 
 export type ScmEvent = { type: "statusChanged"; status: WorkingStatus };
 
+/** Mirrors `src-tauri/src/git_remote.rs`'s `GitErrorCode`. The UI
+ * switches on this for iconography and tone; the human-readable halves of
+ * a `GitRemoteError` are never parsed. */
+export type GitErrorCode =
+  | "noRemote"
+  | "noRemoteBranch"
+  | "authFailed"
+  | "hostKey"
+  | "network"
+  | "repositoryNotFound"
+  | "dirtyWorkingTree"
+  | "untrackedOverwrite"
+  | "diverged"
+  | "mergeConflict"
+  | "rejected"
+  | "hookRejected"
+  | "operationInProgress"
+  | "detachedHead"
+  | "unbornBranch"
+  | "forcePushStale"
+  | "locked"
+  | "timedOut"
+  | "unknown";
+
+/** A remedy the backend says applies to this failure, rendered as a
+ * button. Mirrors `git_remote.rs`'s `GitErrorAction`. */
+export type GitErrorAction =
+  "stashAndPull" | "rebasePull" | "mergePull" | "pullThenPush" | "forcePush" | "retry";
+
+/** The structured failure `push_changes`/`pull_changes`/`fetch_remote`
+ * reject with — see `git_remote.rs`. `detail` is git's own output, kept
+ * verbatim and shown only behind a disclosure. */
+export interface GitRemoteError {
+  code: GitErrorCode;
+  title: string;
+  message: string;
+  detail: string;
+  paths: string[];
+  actions: GitErrorAction[];
+}
+
+/** How a pull reconciles local and remote history. Anything other than
+ * the default is only ever chosen by the user picking a remedy off a
+ * failed pull. */
+export type PullStrategy = "fastForward" | "stashFastForward" | "rebase" | "merge";
+
+export interface RemoteOutcome {
+  /** One line, already phrased for display — "Pulled 198 commits from
+   * origin/sayar", "Everything up to date on origin/main". */
+  summary: string;
+}
+
 export type DiffMode = "unstaged" | "staged" | "commit";
 
 export type DiffContent =

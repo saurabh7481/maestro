@@ -4,6 +4,7 @@ mod daybook;
 mod db;
 mod fs_ops;
 mod git;
+mod git_remote;
 mod lsp;
 mod models;
 mod process_ext;

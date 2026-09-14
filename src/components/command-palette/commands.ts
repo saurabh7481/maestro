@@ -192,9 +192,18 @@ function useGitCommands(): Command[] {
   const push = useScmStore((s) => s.push);
   if (!activeWorktree) return [];
   return [
-    { id: "git.fetch", label: "Git: Fetch", group: "git", run: () => void fetchRemote() },
-    { id: "git.pull", label: "Git: Pull", group: "git", run: () => void pull() },
-    { id: "git.push", label: "Git: Push", group: "git", run: () => void push() },
+    // Failures surface through the store (the Source Control panel's
+    // error card, plus a toast when that panel isn't open), so the
+    // rejection is handled there — swallowed here only to keep it from
+    // becoming an unhandled promise rejection.
+    {
+      id: "git.fetch",
+      label: "Git: Fetch",
+      group: "git",
+      run: () => void fetchRemote().catch(() => {}),
+    },
+    { id: "git.pull", label: "Git: Pull", group: "git", run: () => void pull().catch(() => {}) },
+    { id: "git.push", label: "Git: Push", group: "git", run: () => void push().catch(() => {}) },
   ];
 }
 

@@ -364,6 +364,22 @@ remove <path>` (guarded — refuse on dirty tree unless `--force` is
 HEAD:<path>` vs working tree, or index vs working tree for unstaged) —
   reuses Monaco's own diff algorithm/rendering rather than hand-rolling a
   line-diff UI.
+- **Remote operations (`fetch`/`pull`/`push`) live in their own module**
+  (`src-tauri/src/git_remote.rs`), because they are the only git calls
+  that can (a) block forever and (b) fail in ways the user has to _act_
+  on. They run with stdin closed, `GIT_TERMINAL_PROMPT=0`, an `ssh`
+  `ConnectTimeout`, and a hard wall-clock timeout, so a credential prompt
+  with nowhere to prompt surfaces as an error rather than a spinner that
+  never stops. A configured askpass helper is deliberately left intact —
+  it _can_ prompt properly. Failures are classified into a
+  `GitRemoteError { code, title, message, detail, paths, actions }`
+  before crossing the IPC boundary; the Source Control panel renders the
+  prose, lists the blocking paths, offers `actions` as buttons
+  (stash-and-pull, rebase, pull-then-push, force-with-lease) and keeps
+  git's verbatim output behind a "Show details" disclosure. `--ff-only`
+  pulls pin `-c pull.rebase=false` so a user's own `pull.rebase` setting
+  can't turn a blocked-by-local-changes pull into git's unrelated,
+  path-less rebase precondition error.
 
 ## 8. Terminal architecture
 

@@ -7,6 +7,8 @@ import type {
   DiffMode,
   WorkingStatus,
   ConflictContent,
+  PullStrategy,
+  RemoteOutcome,
   StashEntry,
 } from "../types/git";
 
@@ -53,12 +55,15 @@ export const gitApi = {
 
   commitChanges: (worktreeId: string, worktreeRoot: string, message: string) =>
     invoke<string>("commit_changes", { worktreeId, worktreeRoot, message }),
-  pushChanges: (worktreeId: string, worktreeRoot: string) =>
-    invoke<void>("push_changes", { worktreeId, worktreeRoot }),
-  pullChanges: (worktreeId: string, worktreeRoot: string) =>
-    invoke<void>("pull_changes", { worktreeId, worktreeRoot }),
+  /** Rejects with a `GitRemoteError` object, not a string — see
+   * `git_remote.rs`. `forceWithLease` is only ever set from the remedy
+   * offered on a rejected push. */
+  pushChanges: (worktreeId: string, worktreeRoot: string, forceWithLease = false) =>
+    invoke<RemoteOutcome>("push_changes", { worktreeId, worktreeRoot, forceWithLease }),
+  pullChanges: (worktreeId: string, worktreeRoot: string, strategy: PullStrategy = "fastForward") =>
+    invoke<RemoteOutcome>("pull_changes", { worktreeId, worktreeRoot, strategy }),
   fetchRemote: (worktreeId: string, worktreeRoot: string) =>
-    invoke<void>("fetch_remote", { worktreeId, worktreeRoot }),
+    invoke<RemoteOutcome>("fetch_remote", { worktreeId, worktreeRoot }),
 
   // `DiffMode`'s `#[serde(rename_all = "camelCase")]` already lowercases
   // the Rust variant names (`Unstaged` -> `"unstaged"`, etc.), matching

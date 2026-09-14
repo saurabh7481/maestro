@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwise,
   ArrowsClockwise,
   ArrowDown,
+  ArrowUp,
   CaretDown,
   CaretRight,
   Check,
@@ -32,6 +33,7 @@ import { SearchPanel } from "../search/SearchPanel";
 import { ProblemsPanel } from "../problems/ProblemsPanel";
 import { AgentChangesPanel } from "../agent/AgentChangesPanel";
 import { ScmContextMenu } from "./ScmContextMenu";
+import { ScmErrorCard } from "./ScmErrorCard";
 import type {
   CommitFileEntry,
   FileStatusEntry,
@@ -220,36 +222,25 @@ function GenerateCommitMessageButton({
 
 function CommitBox() {
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
   const status = useScmStore((s) => s.status);
   const error = useScmStore((s) => s.error);
-  const clearError = useScmStore((s) => s.clearError);
+  const busy = useScmStore((s) => s.busy);
   const commit = useScmStore((s) => s.commit);
   const push = useScmStore((s) => s.push);
   const pull = useScmStore((s) => s.pull);
+  const fetch = useScmStore((s) => s.fetch);
   const activeWorktree = useActiveWorktree();
 
   const stagedCount =
     status?.entries.filter((e) => e.staged && e.staged.kind !== "conflicted").length ?? 0;
   const canCommit = stagedCount > 0 && message.trim().length > 0 && busy === null;
 
-  async function run(name: string, action: () => Promise<void>) {
-    setBusy(name);
-    try {
-      await action();
-    } catch {
-      // Surfaced via `error` below — nothing further to do here.
-    } finally {
-      setBusy(null);
-    }
-  }
-
   function handleCommit() {
     if (!canCommit) return;
-    void run("commit", async () => {
-      await commit(message.trim());
-      setMessage("");
-    });
+    void commit(message.trim())
+      .then(() => setMessage(""))
+      // Surfaced by the error card below — nothing further to do here.
+      .catch(() => {});
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -287,11 +278,7 @@ function CommitBox() {
           </div>
         )}
       </div>
-      {error && (
-        <div className={styles.scmError} onClick={clearError}>
-          {error}
-        </div>
-      )}
+      {error && <ScmErrorCard key={`${error.code}:${error.title}`} error={error} />}
       <div className={styles.scmActions}>
         <Button
           variant="primary"
@@ -311,7 +298,7 @@ function CommitBox() {
           className={styles.scmAction}
           disabled={busy !== null}
           title="Pull from remote"
-          onClick={() => void run("pull", pull)}
+          onClick={() => void pull().catch(() => {})}
         >
           {busy === "pull" ? (
             <ArrowsClockwise size={14} className="mo-spin" />
@@ -328,18 +315,33 @@ function CommitBox() {
           className={styles.scmAction}
           disabled={busy !== null}
           title="Push to remote"
-          onClick={() => void run("push", push)}
+          onClick={() => void push().catch(() => {})}
         >
           {busy === "push" ? (
             <ArrowsClockwise size={14} className="mo-spin" />
           ) : (
-            <ArrowsClockwise size={14} style={{ transform: "rotate(180deg)" }} />
+            <ArrowUp size={14} />
           )}
           Push
           {!!activeWorktree?.ahead && (
             <span className={styles.scmActionCount}>{activeWorktree.ahead}</span>
           )}
         </Button>
+        {/* Ahead/behind only move when something refreshes the remote-
+            tracking refs, and nothing else in this panel does — without a
+            fetch here the Pull count can sit stale for a whole session
+            and the button looks like it did nothing. */}
+        <Tooltip label="Fetch from remote">
+          <Button
+            variant="secondary"
+            className={styles.scmFetch}
+            disabled={busy !== null}
+            aria-label="Fetch from remote"
+            onClick={() => void fetch().catch(() => {})}
+          >
+            <ArrowsClockwise size={14} className={busy === "fetch" ? "mo-spin" : undefined} />
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );
