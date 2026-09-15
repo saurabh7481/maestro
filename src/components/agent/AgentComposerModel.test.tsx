@@ -179,3 +179,127 @@ describe("AgentComposer model hydration", () => {
     expect(screen.getByText("Default")).toBeTruthy();
   });
 });
+
+/** Cursor is the one provider whose model ids encode effort/thinking/fast
+ * (`capabilities.separateOptionFlags === false`), so what gets persisted
+ * for a run is a *variant* id while the picker lists families. Shaped like
+ * a real `cursor-agent --list-models` slice. */
+const CURSOR_MODELS = [
+  {
+    id: "cursor-grok-4.6",
+    label: "Cursor Grok 4.6",
+    supportedEfforts: ["high", "low", "medium", "xhigh"],
+    supportsThinking: false,
+    supportsFast: true,
+    variants: [
+      { id: "cursor-grok-4.6-high-fast", effort: "high", thinking: false, fast: true },
+      { id: "cursor-grok-4.6-low", effort: "low", thinking: false, fast: false },
+      { id: "cursor-grok-4.6-medium", effort: "medium", thinking: false, fast: false },
+      { id: "cursor-grok-4.6-high", effort: "high", thinking: false, fast: false },
+      { id: "cursor-grok-4.6-xhigh", effort: "xhigh", thinking: false, fast: false },
+    ],
+  },
+  {
+    id: "composer-2.5",
+    label: "Composer 2.5",
+    supportedEfforts: [],
+    supportsThinking: false,
+    supportsFast: true,
+    variants: [
+      { id: "composer-2.5", effort: null, thinking: false, fast: false },
+      { id: "composer-2.5-fast", effort: null, thinking: false, fast: true },
+    ],
+  },
+];
+
+function renderCursorComposer(locked: boolean) {
+  return render(
+    <TooltipProvider>
+      <AgentComposer
+        runId="run-1"
+        kind="cursorAgent"
+        worktreeId="wt-a"
+        worktreeRoot="/repo"
+        disabled={false}
+        locked={locked}
+        permissionMode="manual"
+        onPermissionModeChange={() => {}}
+        onSend={() => {}}
+        onReplace={() => {}}
+      />
+    </TooltipProvider>,
+  );
+}
+
+/** The reported bug: pick Grok 4.6 in a Cursor tab, and as soon as the tab
+ * remounts — the mount budget in `TabHost.tsx`, a restart, a resumed
+ * session — the picker reads "Default", so the run claims no model while
+ * genuinely still running on Grok. */
+describe("AgentComposer model hydration (Cursor variant ids)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentsApi.listAgentModels.mockResolvedValue(CURSOR_MODELS);
+    agentsApi.getAgentConfiguration.mockResolvedValue(null);
+    agentsApi.readAttachmentPreview.mockResolvedValue(null);
+    loadAgentModelPref.mockResolvedValue(null);
+    useAgentSessionStore.setState({ draftByRunId: {}, attachmentsByRunId: {} });
+  });
+
+  it("shows the family a started run's variant id belongs to, with its dials", async () => {
+    agentsApi.getAgentConfiguration.mockResolvedValue({
+      model: "cursor-grok-4.6-high-fast",
+      effort: null,
+      fast: false,
+      permissionMode: "manual",
+    });
+
+    renderCursorComposer(true);
+
+    await waitFor(() => expect(screen.getByText("Cursor Grok 4.6")).toBeTruthy());
+    expect(screen.queryByText("Default")).toBeNull();
+    // Both dials recovered from the id itself, not from the (null/false)
+    // separate flags a variant-encoding provider never sends.
+    expect(screen.getByText("Effort: High")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fast" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("starts a new tab on the exact variant remembered for this worktree", async () => {
+    loadAgentModelPref.mockResolvedValue("cursor-grok-4.6-xhigh");
+    renderCursorComposer(false);
+
+    await waitFor(() => expect(screen.getByText("Cursor Grok 4.6")).toBeTruthy());
+    expect(screen.getByText("Effort: Extra high")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fast" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  /** A bare id that is both a family and its own no-suffix variant must
+   * resolve through the variant, so its dials come out off rather than
+   * inherited from whatever the composer last showed. */
+  it("resolves an id that is both a family and a variant", async () => {
+    loadAgentModelPref.mockResolvedValue("composer-2.5-fast");
+    renderCursorComposer(false);
+
+    await waitFor(() => expect(screen.getByText("Composer 2.5")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Fast" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  /** What makes the two halves line up: the preference is stored as the id
+   * the CLI takes, which is what hydration above reads back. */
+  it("remembers the resolved variant, not the family, when a model is picked", async () => {
+    renderCursorComposer(false);
+    await waitFor(() => expect(agentsApi.listAgentModels).toHaveBeenCalled());
+
+    // Radix opens its menu on pointerdown, not click.
+    fireEvent.pointerDown(screen.getByText("Default"), { button: 0, ctrlKey: false });
+    const item = await screen.findByRole("menuitem", { name: "Cursor Grok 4.6" });
+    fireEvent.click(item);
+
+    await waitFor(() =>
+      expect(saveAgentModelPref).toHaveBeenCalledWith(
+        "wt-a",
+        "cursorAgent",
+        "cursor-grok-4.6-high",
+      ),
+    );
+  });
+});

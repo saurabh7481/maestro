@@ -27,6 +27,7 @@ import { searchApi } from "../../api/search";
 import { fuzzyScore } from "../../design/fuzzy";
 import { useScrollActiveIntoView } from "../../design/useScrollActiveIntoView";
 import { loadAgentModelPref, saveAgentModelPref } from "../../design/persistence";
+import { selectionForModelId, supportedEffort } from "./modelSelection";
 import { AGENT_DISPLAY_NAME } from "../../types/agent";
 import type {
   AgentCapabilities,
@@ -615,22 +616,42 @@ export function AgentComposer({
   // - A new tab has no model of its own yet, so the preference is exactly
   //   the right default — scoped to this worktree, so another project's
   //   choice doesn't reach in here.
+  //
+  // Either way the id being hydrated is a *CLI* model id, which for a
+  // provider that encodes effort/thinking/fast into the id (Cursor) is a
+  // variant, never the family the picker labels — so it goes through
+  // `selectionForModelId`, which restores the dials along with the family.
   const appliedModelPrefRef = useRef(false);
   useEffect(() => {
     if (appliedModelPrefRef.current || modelOptions.length === 0) return;
     appliedModelPrefRef.current = true;
 
-    const known = (id: string | null | undefined): id is string =>
-      !!id && modelOptions.some((option) => option.id === id);
+    /** `storedEffort`/`storedFast` are only ever set by a provider whose
+     * ids *don't* carry them (`separateOptionFlags`); for the others the
+     * variant is the whole answer, and they arrive null/false. */
+    const apply = (
+      id: string | null | undefined,
+      storedEffort?: string | null,
+      storedFast?: boolean,
+    ) => {
+      const selection = selectionForModelId(modelOptions, id);
+      if (!selection) return;
+      const option = modelOptions.find((candidate) => candidate.id === selection.model);
+      const effort = selection.effort ?? supportedEffort(option, storedEffort);
+      setModel(selection.model);
+      if (effort) setEffort(effort);
+      setThinking(selection.thinking);
+      setFast(selection.fast || storedFast === true);
+    };
 
     if (locked) {
       void agentsApi.getAgentConfiguration(runId).then((configuration) => {
-        if (known(configuration?.model)) setModel(configuration.model);
+        apply(configuration?.model, configuration?.effort, configuration?.fast);
       });
       return;
     }
     void loadAgentModelPref(worktreeId, kind).then((preferred) => {
-      if (known(preferred)) setModel(preferred);
+      apply(preferred);
     });
   }, [kind, modelOptions, locked, runId, worktreeId]);
 
@@ -668,25 +689,28 @@ export function AgentComposer({
     setEffort(nextEffort);
     setThinking(nextThinking);
     setFast(nextFast);
-    // Only an actual model switch (not an effort/thinking/fast-only call)
-    // updates the remembered preference — and only for this worktree and
-    // this `kind`, so picking a model in a Claude Code tab neither
-    // overwrites what's remembered for Cursor/Codex/Aider nor reaches into
-    // another worktree.
-    if (next.model !== undefined && next.model !== null && next.model !== model) {
-      void saveAgentModelPref(worktreeId, kind, next.model);
+    const option = modelOptions.find((candidate) => candidate.id === nextModel) ?? null;
+    const variant = option?.variants.find(
+      (candidate) =>
+        candidate.effort === (option.supportedEfforts.length ? nextEffort : null) &&
+        candidate.thinking === nextThinking &&
+        candidate.fast === nextFast,
+    );
+    const nextResolved = option?.variants.length
+      ? (variant?.id ?? option.variants[0]?.id ?? null)
+      : nextModel;
+    // Remembered as the id the CLI itself takes, not the picker's family:
+    // for a provider that encodes effort/thinking/fast in the id, the
+    // family alone would drop the dials, so the next tab in this worktree
+    // came back on the same model at whatever effort the composer happened
+    // to default to. `selectionForModelId` maps it back on the way in.
+    // Scoped to this worktree and this `kind`, so picking a model in a
+    // Claude Code tab neither overwrites what's remembered for
+    // Cursor/Codex/Aider nor reaches into another worktree.
+    if (nextResolved) {
+      void saveAgentModelPref(worktreeId, kind, nextResolved);
     }
     if (locked) {
-      const option = modelOptions.find((candidate) => candidate.id === nextModel) ?? null;
-      const variant = option?.variants.find(
-        (candidate) =>
-          candidate.effort === (option.supportedEfforts.length ? nextEffort : null) &&
-          candidate.thinking === nextThinking &&
-          candidate.fast === nextFast,
-      );
-      const nextResolved = option?.variants.length
-        ? (variant?.id ?? option.variants[0]?.id ?? null)
-        : nextModel;
       void agentsApi.setAgentConfiguration(
         runId,
         nextResolved,
