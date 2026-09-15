@@ -80,6 +80,12 @@ function estimateGroupHeight(group: Group): number {
  * this the user is reading scrollback and must not be yanked down. */
 const PIN_THRESHOLD_PX = 80;
 
+/** How long after the last scroll event the transcript repaints itself —
+ * see `repaintTranscript` in `Transcript`. Long enough that a continuous
+ * gesture repaints once at its end rather than throughout it, short enough
+ * that a stale band is never left on screen to be read. */
+const REPAINT_SETTLE_MS = 120;
+
 function groupItems(items: TranscriptItem[]): Group[] {
   const groups: Group[] = [];
   for (const item of items) {
@@ -732,9 +738,67 @@ function Transcript({
   const virtualItems = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
 
+  /** Pending `repaintTranscript`, and the flip-flop that makes each call a
+   * style change the engine can actually see. */
+  const repaintTimerRef = useRef<number | null>(null);
+  const repaintPhaseRef = useRef(false);
+
+  /* Repaint every mounted row, from scratch, once a scroll gesture ends.
+   *
+   * This is the fourth pass at a bug that has now outlived three attempts
+   * to remove its cause — `AgentTab.module.css`'s `.transcriptRow` comment
+   * has the history. The symptom never changed: after a fast scroll,
+   * WebKitGTK leaves a vertical band of the transcript showing the pixels
+   * it held *before* the scroll, and leaves them there. It is a persistent
+   * double exposure, not a flicker.
+   *
+   * What the last report added was the band's edge. It ended exactly at
+   * the left edge of a user bubble's box-shadow — the boundary of the one
+   * thing on screen the engine had decided was damaged. So the engine
+   * repaints a region that is correct and far too small, and never touches
+   * the rest; the scroll itself is simply missing from everything outside
+   * it. Nothing about how we position or stack rows changes which rect it
+   * picks, which is why each previous attempt moved the failure instead of
+   * ending it, and why it still doesn't reproduce on demand — not even in
+   * a harness running this same WebKitGTK build, driven by real wheel
+   * events, on the same row geometry.
+   *
+   * So stop trying to be incrementally painted correctly, and repaint in
+   * full when the gesture is over. Marking a layer's contents as needing
+   * display takes a style change, and a style change the engine acts on
+   * has to differ from the last one — hence the flip-flop between two
+   * backgrounds that composite to the same pixels: 0.4% black over the
+   * transcript's own background rounds back to the transcript's own
+   * background. The cost is one repaint of the ~20 mounted rows per
+   * gesture, not per frame. */
+  const repaintTranscript = useCallback(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    repaintPhaseRef.current = !repaintPhaseRef.current;
+    content.style.backgroundColor = repaintPhaseRef.current ? "rgba(0, 0, 0, 0.004)" : "";
+  }, []);
+
+  const scheduleRepaint = useCallback(() => {
+    if (repaintTimerRef.current !== null) clearTimeout(repaintTimerRef.current);
+    repaintTimerRef.current = window.setTimeout(() => {
+      repaintTimerRef.current = null;
+      repaintTranscript();
+    }, REPAINT_SETTLE_MS);
+  }, [repaintTranscript]);
+
+  useEffect(
+    () => () => {
+      if (repaintTimerRef.current !== null) clearTimeout(repaintTimerRef.current);
+    },
+    [],
+  );
+
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    // Every scroll, ours included — what leaves a band behind is the
+    // scrolling, not who asked for it.
+    scheduleRepaint();
     const top = element.scrollTop;
     const previousTop = lastScrollTopRef.current;
     lastScrollTopRef.current = top;
@@ -750,7 +814,7 @@ function Transcript({
     const pinned = nearBottom || (top > previousTop && pinnedRef.current);
     pinnedRef.current = pinned;
     setShowJumpToBottom((shown) => (shown === !pinned ? shown : !pinned));
-  }, []);
+  }, [scheduleRepaint]);
 
   const jumpToBottom = useCallback(() => {
     const element = scrollRef.current;

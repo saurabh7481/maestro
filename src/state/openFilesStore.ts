@@ -18,6 +18,22 @@ const DEFAULT_META: OpenFileMeta = {
   previewMode: "preview",
 };
 
+/** Where each markdown preview was scrolled to, keyed by tab id.
+ * Deliberately *not* part of the store: this is written from a scroll
+ * handler on every frame, and a `set` would re-run every
+ * `useOpenFilesStore` selector in the app that often. Nothing renders from
+ * it either — it is read once, imperatively, while restoring. Cleared
+ * alongside the rest of a tab's metadata in `forget`. */
+const previewScrollTops = new Map<string, number>();
+
+export function rememberPreviewScroll(tabId: string, scrollTop: number): void {
+  previewScrollTops.set(tabId, scrollTop);
+}
+
+export function recallPreviewScroll(tabId: string): number {
+  return previewScrollTops.get(tabId) ?? 0;
+}
+
 interface OpenFilesState {
   byTabId: Record<string, OpenFileMeta>;
 
@@ -101,6 +117,7 @@ export const useOpenFilesStore = create<OpenFilesState>((set) => ({
 
   forget: (tabId) =>
     set((s) => {
+      previewScrollTops.delete(tabId);
       const byTabId = { ...s.byTabId };
       delete byTabId[tabId];
       return { byTabId };

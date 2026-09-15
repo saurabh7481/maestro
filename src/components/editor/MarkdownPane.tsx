@@ -1,7 +1,11 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { FileText } from "@phosphor-icons/react";
 import { fsApi } from "../../api/fs";
-import { useOpenFilesStore } from "../../state/openFilesStore";
+import {
+  recallPreviewScroll,
+  rememberPreviewScroll,
+  useOpenFilesStore,
+} from "../../state/openFilesStore";
 import { getEditorModel } from "../../editor/modelBridge";
 import { useMarkdownHtml } from "../../design/renderMarkdown";
 import type { Tab } from "../../state/tabsStore";
@@ -87,11 +91,69 @@ export function MarkdownPane({ tab }: { tab: Tab }) {
           </button>
         </div>
       </div>
-      {mode === "preview" && (
-        <div className={styles.previewScroller}>
-          <div className={styles.previewBody} dangerouslySetInnerHTML={{ __html: html }} />
-        </div>
-      )}
+      {mode === "preview" && <PreviewBody tabId={tab.id} html={html} />}
     </>
+  );
+}
+
+/** The scrolling preview itself. Split out so the scroll-restore state
+ * below belongs to one *mounting* of the preview: `MarkdownPane` survives a
+ * Source/Preview toggle, this does not. */
+function PreviewBody({ tabId, html }: { tabId: string; html: string }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  /** Whether this mounting has already put the reader back where they
+   * were. Also gates the scroll handler — see below. */
+  const restoredRef = useRef(false);
+
+  // `PaneView` renders only its active tab's body, so switching tabs
+  // unmounts a markdown tab outright and coming back rebuilds this
+  // scroller at the top — the reader lost their place in a long file on
+  // every switch. Source mode never had the problem, since Monaco keeps
+  // its own per-tab view state; this is Preview's equivalent.
+  //
+  // It can't be a one-shot on mount. The content arrives after a
+  // `readFile` round-trip (and, for the first markdown in a session, after
+  // the renderer chunk lands), and anything inside it that loads — an
+  // image — settles later still. At every one of those moments the
+  // scroller is too short to hold the offset, and assigning `scrollTop`
+  // would just clamp to the bottom of whatever exists so far. So the
+  // restore re-runs on each render that changes the HTML *and* on the
+  // height changes a render doesn't announce, and only commits once the
+  // content is genuinely tall enough.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || restoredRef.current) return;
+    const target = recallPreviewScroll(tabId);
+    if (target === 0) {
+      restoredRef.current = true;
+      return;
+    }
+    const restore = () => {
+      if (restoredRef.current) return;
+      if (scroller.scrollHeight - scroller.clientHeight < target) return;
+      scroller.scrollTop = target;
+      restoredRef.current = true;
+      observer.disconnect();
+    };
+    const observer = new ResizeObserver(restore);
+    observer.observe(scroller);
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    restore();
+    return () => observer.disconnect();
+  }, [tabId, html]);
+
+  return (
+    <div
+      className={styles.previewScroller}
+      ref={scrollerRef}
+      // Gated on the restore having happened: a freshly mounted, still-empty
+      // scroller reports 0, and recording that would erase the very offset
+      // the effect above is waiting to restore.
+      onScroll={(event) => {
+        if (restoredRef.current) rememberPreviewScroll(tabId, event.currentTarget.scrollTop);
+      }}
+    >
+      <div className={styles.previewBody} dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
   );
 }

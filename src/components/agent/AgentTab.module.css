@@ -203,6 +203,14 @@
  * offset is only ever rewritten when a row above it actually changes
  * height.
  *
+ * That did not end it either. The band survives per-row offsets too, and
+ * the last report pinned down its edge: it stopped exactly at the left
+ * edge of a user bubble's box-shadow — the boundary of the only thing on
+ * screen WebKitGTK had marked as damaged. The engine is repainting a
+ * rect that is correct and far too small, and no arrangement of rows
+ * changes which rect it picks. `AgentTab.tsx`'s `repaintTranscript` stops
+ * arguing with it and repaints the whole list once each gesture ends.
+ *
  * `gap` can't apply across absolutely-positioned rows, so the 2rem
  * spacing is per-row padding, which `measureElement` accounts for as part
  * of the row's height. */
