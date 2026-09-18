@@ -59,17 +59,29 @@ jobs:
       - name: Create placeholder mobile dist (unused by this job)
         run: |
           mkdir -p mobile/dist
-          echo '<!doctype html><title>placeholder</title>' > mobile/dist/index.html
+          echo '<!doctype html><title>placeholder</title>' \
+            > mobile/dist/index.html
 
-      # No `apt-get update` — these are long-standing Ubuntu 22.04 packages
-      # that resolve fine against the index already baked into the runner
-      # image, and skipping it avoids depending on GitHub's regional apt
-      # mirror (live-observed hanging silently for 18+ minutes on a bad
-      # mirror with no timeout to catch it). `Acquire::Retries`/`Timeout`
-      # on `install` itself is a backstop for the same class of flakiness
-      # on the package-file fetch, which still hits the network.
+      # The baked apt index in the runner image goes stale against a moving
+      # mirror: the v0.11.0 release run died fetching
+      # `gir1.2-polkit-1.0` / `libpolkit-gobject-1-dev` 0.105-33ubuntu0.1 —
+      # versions the mirror had already superseded and pruned — and a
+      # re-run on a *different* runner reproduced it byte-for-byte, so it
+      # was the image's index, not one bad mirror node. Refreshing the index
+      # is the only thing that clears that class.
+      #
+      # Which is what this job used to avoid doing: a bare `apt-get update`
+      # depends on GitHub's regional apt mirror (live-observed hanging
+      # silently for 18+ minutes on a bad mirror with no timeout to catch
+      # it). So the update gets the same `Acquire::Retries`/`Timeout` options
+      # the install already carries — a bad mirror now fails loudly in ~15s
+      # per attempt instead of hanging with nothing to see.
       - name: Install Linux Tauri build dependencies
         run: |
+          sudo apt-get update \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=15 \
+            -o Acquire::https::Timeout=15
           sudo apt-get install -y \
             -o Acquire::Retries=3 \
             -o Acquire::http::Timeout=15 \
