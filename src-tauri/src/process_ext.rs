@@ -12,6 +12,10 @@
 //! second, unrelated problem with the exact same shape (one child-process
 //! prep step every spawn site already needs): see
 //! `sanitized_ld_library_path` below.
+//!
+//! A third child-process hazard lives here for that same reason — every
+//! spawn site can hit it, and the fix belongs next to the others rather
+//! than copy-pasted into each one: `spawn_retrying_busy` below.
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -127,4 +131,159 @@ pub fn resolve_executable(name: &str) -> std::path::PathBuf {
 #[cfg(not(windows))]
 pub fn resolve_executable(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(name)
+}
+
+/// Attempts and backoff for `spawn_retrying_busy`.
+///
+/// The window this insures against is a fork/exec race measured in
+/// microseconds, so the budget is deliberately tiny: long enough to
+/// outlast a scheduling hiccup on a loaded CI runner, short enough that a
+/// file which is *genuinely* being written still surfaces its error
+/// promptly instead of stalling a turn.
+const BUSY_SPAWN_ATTEMPTS: u32 = 5;
+const BUSY_SPAWN_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Whether `error` is the kernel's "text file busy" (`ETXTBSY`) refusal.
+///
+/// `ErrorKind::ExecutableFileBusy` is the portable spelling (stabilized in
+/// Rust 1.83). The raw errno is checked as well because `ETXTBSY` is 26 on
+/// both Linux and Darwin, and a mapping gap in `ErrorKind` would silently
+/// downgrade this to "no retry" — the failure mode that is hardest to
+/// notice.
+pub fn is_text_file_busy(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::ExecutableFileBusy {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        if error.raw_os_error() == Some(26) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `spawn`, retrying while the kernel reports the executable as busy.
+///
+/// `execve(2)` refuses with `ETXTBSY` whenever the target file is open for
+/// writing *anywhere in the system* — `i_writecount > 0` on the inode, not
+/// "this process is writing it". That makes it reachable in two ways that
+/// have nothing to do with each other:
+///
+/// - On Unix, a `fork` in any thread inherits a still-open write
+///   descriptor, and the child holds it across its own `exec` until the
+///   descriptor's `O_CLOEXEC`/exit closes it. Exec'ing the just-written
+///   file during that window fails — see rust-lang/rust#114554, which is
+///   exactly the shape of the flake this helper was added for (a
+///   `cargo test` run where one test wrote a fake CLI and another test's
+///   `fork` was holding the descriptor).
+/// - In production, an npm-installed agent CLI replacing itself on disk
+///   while a turn starts: the self-update is writing the file the spawn is
+///   trying to exec.
+///
+/// Neither is a real error — the file becomes executable again the moment
+/// the writer's descriptor closes, typically microseconds later — so a
+/// short retry converts a hard failure into a success. Every other error
+/// is returned untouched: this must never turn "binary not found" or a
+/// permission problem into a delayed version of itself.
+pub async fn spawn_retrying_busy(
+    command: &mut tokio::process::Command,
+) -> std::io::Result<tokio::process::Child> {
+    spawn_with_busy_retries(command, BUSY_SPAWN_ATTEMPTS, BUSY_SPAWN_BACKOFF).await
+}
+
+/// `spawn_retrying_busy` with an injectable budget, so a test can prove the
+/// retry actually rides out an open writer without depending on the
+/// production timings landing either side of a scheduler.
+async fn spawn_with_busy_retries(
+    command: &mut tokio::process::Command,
+    attempts: u32,
+    backoff: std::time::Duration,
+) -> std::io::Result<tokio::process::Child> {
+    let mut attempt = 1;
+    loop {
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) if is_text_file_busy(&error) && attempt < attempts => {
+                // Growing backoff: a descriptor closed by a slow writer
+                // needs more than one evenly-spaced look to be seen.
+                tokio::time::sleep(backoff * attempt).await;
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn recognises_busy_and_nothing_else() {
+        assert!(is_text_file_busy(&std::io::Error::from_raw_os_error(26)));
+        assert!(is_text_file_busy(&std::io::Error::new(
+            std::io::ErrorKind::ExecutableFileBusy,
+            "busy",
+        )));
+        assert!(!is_text_file_busy(&std::io::Error::from_raw_os_error(2)));
+        assert!(!is_text_file_busy(&std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing",
+        )));
+        assert!(!is_text_file_busy(&std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "not executable",
+        )));
+    }
+
+    /// Reproduces the kernel condition deterministically: a write descriptor
+    /// held open *by this process* is enough to make `execve` return
+    /// `ETXTBSY`, so the retry loop has to outlast the writer being closed by
+    /// someone else. The budget passed here is far wider than production's,
+    /// so the assertion is about the loop riding out a real busy window, not
+    /// about this machine's timing.
+    #[tokio::test]
+    async fn rides_out_a_writer_that_closes_late() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("busy-script");
+        let mut writer = std::fs::File::create(&path).unwrap();
+        writer.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
+        writer.flush().unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let closer = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            drop(writer);
+        });
+
+        let mut command = tokio::process::Command::new(&path);
+        let mut child =
+            spawn_with_busy_retries(&mut command, 40, std::time::Duration::from_millis(25))
+                .await
+                .expect("the retry loop should outlast the open writer");
+        closer.await.unwrap();
+
+        let status = child.wait().await.unwrap();
+        assert!(status.success(), "the script exited {status}");
+    }
+
+    /// The counterpart guard: retrying must not swallow a genuine failure.
+    #[tokio::test]
+    async fn missing_binary_still_fails_fast() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does-not-exist");
+        let started = std::time::Instant::now();
+
+        let mut command = tokio::process::Command::new(&path);
+        let error = spawn_retrying_busy(&mut command).await.unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(
+            started.elapsed() < BUSY_SPAWN_BACKOFF * BUSY_SPAWN_ATTEMPTS,
+            "a non-busy failure must not pay the retry budget"
+        );
+    }
 }

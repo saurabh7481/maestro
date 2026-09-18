@@ -9,6 +9,7 @@ use crate::agents::adapter::{self, PermissionMode, ToolUseCache, TurnCtx};
 use crate::agents::capabilities::Streaming;
 use crate::agents::events::AgentEvent;
 use crate::agents::registry::AgentKind;
+use crate::process_ext::spawn_retrying_busy;
 use crate::state::{AgentCancelKind, AgentRunEntry, AppState};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -276,8 +277,14 @@ async fn run_turn(
 
     // Every early return from here on has to clear `turn_active` again, or
     // the run is wedged into "already running a turn" forever.
-    let spawned = command
-        .spawn()
+    //
+    // Spawned through `spawn_retrying_busy` because agent CLIs are
+    // npm-installed and replace themselves in place; a `git`-free race
+    // between that self-update writing the file and this exec reads as
+    // "failed to start", which is the wrong story for a CLI that is about
+    // to be perfectly runnable again.
+    let spawned = spawn_retrying_busy(&mut command)
+        .await
         .map_err(|e| format!("failed to start {}: {e}", kind.display_name()));
     let mut child = match spawned {
         Ok(child) => child,

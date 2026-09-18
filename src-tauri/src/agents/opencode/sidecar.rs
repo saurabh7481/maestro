@@ -50,7 +50,7 @@
 //! decorative.
 
 use crate::agents::opencode::client::{self, Endpoint};
-use crate::process_ext::{resolve_executable, HiddenCommandExt};
+use crate::process_ext::{resolve_executable, spawn_retrying_busy, HiddenCommandExt};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::net::TcpListener;
@@ -452,7 +452,11 @@ impl OpencodeSidecar {
         let port = free_port()?;
         let password = uuid::Uuid::new_v4().to_string();
         let mut command = build_serve_command(binary, port, &password);
-        let mut child = match command.spawn() {
+        // Retried on `ETXTBSY`: an `opencode` CLI replacing itself on disk
+        // mid-spawn would otherwise read as a hard boot failure and mark the
+        // sidecar `Failed` for a file that is executable again microseconds
+        // later (see `spawn_retrying_busy`).
+        let mut child = match spawn_retrying_busy(&mut command).await {
             Ok(child) => child,
             Err(error) => {
                 let detail = format!("could not start `{binary} serve`: {error}");
