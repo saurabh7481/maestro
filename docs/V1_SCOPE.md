@@ -125,6 +125,15 @@ in parallel without them stepping on each other.
 - Tauri's built-in bundler producing: AppImage (Linux, primary
   target/daily-driven platform; deb/rpm also available), dmg (macOS),
   msi/nsis (Windows).
+- macOS bundles are **ad-hoc signed** (`bundle.macOS.signingIdentity` set to
+  the pseudo-identity `-`). Without it the bundler seals nothing, and macOS
+  15 (Sequoia) reports the misleading "Maestro is damaged and can't be
+  opened" for a merely-unsigned app; with it, Gatekeeper shows the honest
+  "unidentified developer" prompt and the bundle is properly sealed. This
+  is _not_ notarization, so a downloaded DMG still needs the quarantine
+  attribute cleared once by the user:
+  `xattr -dr com.apple.quarantine /Applications/Maestro.app`. Full
+  Developer ID signing + notarization stays in the v2 candidates below.
 - Auto-update wired via `tauri-plugin-updater` (minisign-signed artifacts)
   for AppImage/deb/rpm; mac/Windows auto-update scaffolding present but
   code-signing for those platforms is explicitly **not** blocking v1 (see
